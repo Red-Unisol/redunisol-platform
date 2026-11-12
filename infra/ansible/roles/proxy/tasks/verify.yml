@@ -1,0 +1,55 @@
+---
+- name: Read installed Apache package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Verify the reviewed Apache package version
+  ansible.builtin.assert:
+    that:
+      - "'apache2' in ansible_facts.packages"
+      - ansible_facts.packages['apache2'][0].version == foundation_proxy_package_version
+
+- name: Validate Apache without applying changes
+  ansible.builtin.command:
+    argv: [/usr/sbin/apache2ctl, configtest]
+  changed_when: false
+  check_mode: false
+
+- name: Read the managed listener declaration
+  ansible.builtin.slurp:
+    src: /etc/apache2/ports.conf
+  register: foundation_proxy_ports
+
+- name: Verify the only declared listener
+  ansible.builtin.assert:
+    that:
+      - "(foundation_proxy_ports.content | b64decode).splitlines() | reject('match', '^\\s*(#|$)') | list == ['Listen 127.0.0.1:8088']"
+
+- name: Check private readiness without using a proxy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8088/health.txt"
+    use_proxy: false
+    return_content: true
+    status_code: 200
+  register: foundation_proxy_health
+  check_mode: false
+
+- name: Verify the readiness response
+  ansible.builtin.assert:
+    that:
+      - foundation_proxy_health.content | trim == 'redunisol-foundation-ready'
+
+- name: Read listening TCP sockets without changing them
+  ansible.builtin.command:
+    argv: [ss, -H, -ltnp]
+  register: foundation_proxy_sockets
+  changed_when: false
+  check_mode: false
+
+- name: Verify Apache is actually listening only on the private address
+  ansible.builtin.assert:
+    that:
+      - foundation_proxy_sockets.stdout_lines | select('search', 'apache2') | list | length > 0
+      - >-
+        foundation_proxy_sockets.stdout_lines | select('search', 'apache2') |
+        reject('search', '127[.]0[.]0[.]1:8088') | list | length == 0

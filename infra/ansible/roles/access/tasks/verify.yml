@@ -1,0 +1,13 @@
+---
+- name: Inspect effective SSH configuration without changing access
+  ansible.builtin.command:
+    argv: [/usr/sbin/sshd, -T]
+  register: foundation_sshd_effective
+  changed_when: false
+  check_mode: false
+
+- name: Verify preservation of the configured SSH port
+  ansible.builtin.assert:
+    that:
+      - "('port ' ~ (foundation_expected_ssh_port | string)) in foundation_sshd_effective.stdout_lines"
+    fail_msg: "Effective SSH port differs from inventory; this role does not change authentication or ports."

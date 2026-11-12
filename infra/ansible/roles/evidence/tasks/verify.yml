@@ -1,0 +1,31 @@
+---
+- name: Require the platform evidence directory
+  ansible.builtin.stat:
+    path: /var/lib/redunisol-foundation/evidence
+  register: foundation_evidence_directory
+
+- name: Check that audit evidence is private and owned by root
+  ansible.builtin.assert:
+    that:
+      - foundation_evidence_directory.stat.exists
+      - foundation_evidence_directory.stat.isdir
+      - foundation_evidence_directory.stat.pw_name == 'root'
+      - foundation_evidence_directory.stat.mode == '0750'
+
+- name: Read the applied revision evidence when a revision was specified
+  ansible.builtin.slurp:
+    src: "/var/lib/redunisol-foundation/evidence/{{ foundation_revision }}.json"
+  register: foundation_evidence_saved
+  when: foundation_revision | default('') | length > 0
+  no_log: true
+
+- name: Verify the saved revision and host identity
+  ansible.builtin.assert:
+    that:
+      - foundation_evidence_record.git_revision == foundation_revision
+      - foundation_evidence_record.hostname == foundation_expected_hostname
+      - foundation_evidence_record.environment == foundation_environment
+      - not foundation_evidence_record.application_migration_included
+  vars:
+    foundation_evidence_record: "{{ foundation_evidence_saved.content | b64decode | from_json }}"
+  when: foundation_revision | default('') | length > 0

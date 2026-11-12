@@ -1,0 +1,12 @@
+---
+# Only the reviewed backup SATA is owned by this role.
+foundation_backup_storage_enabled: false
+foundation_backup_storage_by_id: /dev/disk/by-id/ata-ST2000VN003-3CW102_ZWD0RX9Q
+foundation_backup_storage_serial: ZWD0RX9Q
+foundation_backup_storage_model: ST2000VN003-3CW102
+foundation_backup_storage_size_bytes: 2000398934016
+foundation_backup_storage_uuid: ""
+foundation_backup_storage_label: ru-backups
+foundation_backup_storage_mountpoint: /srv/redunisol-backups
+foundation_backup_storage_prepare_authorized: false
+foundation_backup_storage_confirmation: ""

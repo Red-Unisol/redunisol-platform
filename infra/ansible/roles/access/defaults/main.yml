@@ -1,0 +1,7 @@
+---
+# Empty preserves all current accounts and authentication methods.
+# Every declared account requires an explicit list of public keys.
+foundation_access_users: []
+foundation_expected_ssh_port: 2241
+foundation_access_public_key_pattern: >-
+  ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com) [A-Za-z0-9+/=]+( [^\r\n]*)?$

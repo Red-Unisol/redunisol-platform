@@ -1,0 +1,22 @@
+---
+foundation_docker_apt_key_url: https://download.docker.com/linux/debian/gpg
+foundation_docker_apt_key_fingerprint: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+foundation_docker_apt_key_sha256: 1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
+# All five exact DEB versions must be set in reviewed inventory.
+foundation_docker_package_versions: {}
+foundation_docker_conflicting_packages:
+  - docker.io
+  - docker-compose
+  - docker-doc
+  - docker-buildx
+  - podman-docker
+  - containerd
+  - runc
+foundation_docker_daemon_config:
+  live-restore: true
+  shutdown-timeout: 60
+  log-driver: local
+  log-opts:
+    max-size: 20m
+    max-file: "5"
+  data-root: /var/lib/docker

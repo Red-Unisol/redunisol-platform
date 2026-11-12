@@ -1,0 +1,43 @@
+---
+foundation_backups_enabled: false
+foundation_backups_package: restic=0.18.0-1+b4
+foundation_backups_repository: ""
+foundation_backups_repository_kind: offsite
+foundation_backups_local_mountpoint: ""
+foundation_backups_local_mount_uuid: ""
+foundation_backups_repository_is_offsite: false
+foundation_backups_repository_initialized: false
+foundation_backups_key_custody_confirmed: false
+foundation_backups_consistency_confirmed: false
+foundation_backups_password_file: /etc/redunisol-foundation/backup/restic-password
+foundation_backups_environment_file: ""
+foundation_backups_source_paths: []
+foundation_backups_state_directory: /var/lib/redunisol-foundation/backup-state
+foundation_backups_log_directory: /var/log/redunisol-foundation
+foundation_backups_textfile_directory: "{{ foundation_monitoring_textfile_directory | default('/var/lib/prometheus/node-exporter') }}"
+foundation_backups_restore_smoke_directory: /var/lib/redunisol-foundation/restore-smoke
+foundation_backups_schedule: "*-*-* 03:00:00 America/Argentina/Buenos_Aires"
+foundation_backups_check_schedule: "Sun *-*-* 05:00:00 America/Argentina/Buenos_Aires"
+foundation_backups_randomized_delay: 15m
+foundation_backups_max_attempts: 2
+foundation_backups_retry_delay_seconds: 10
+foundation_backups_timeout_seconds: 7200
+foundation_backups_check_timeout_seconds: 21600
+foundation_backups_check_mode: full
+foundation_backups_check_read_data_subset: ""
+foundation_backups_timers_enabled: false
+foundation_backups_initialize_authorized: false
+foundation_backups_restore_authorized: false
+foundation_backups_restore_snapshot: ""
+foundation_backups_restore_local_directory: /var/lib/redunisol-foundation/restore-local-config
+foundation_backups_foundation_config_files:
+  - /etc/docker/daemon.json
+  - /etc/apache2/ports.conf
+  - /etc/apache2/sites-available/redunisol-foundation.conf
+  - /etc/systemd/journald.conf.d/50-redunisol.conf
+  - /etc/apt/apt.conf.d/52redunisol-no-automatic-reboot
+  - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
+  - /etc/systemd/system/redunisol-foundation-health.service
+  - /etc/systemd/system/redunisol-foundation-health.timer
+  - /etc/fail2ban/jail.d/redunisol-security.local
+  - /etc/fail2ban/filter.d/sshd.local

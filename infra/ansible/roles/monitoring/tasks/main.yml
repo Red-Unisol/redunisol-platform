@@ -1,0 +1,94 @@
+---
+- name: Validate monitoring configuration
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_enabled | type_debug == 'bool'
+      - foundation_monitoring_listen_address in ['127.0.0.1:9100', '[::1]:9100']
+      - foundation_monitoring_textfile_directory is match('^/[A-Za-z0-9_./-]+$')
+      - "'..' not in foundation_monitoring_textfile_directory.split('/')"
+      - foundation_monitoring_backup_state_directory is match('^/[A-Za-z0-9_./-]+$')
+      - foundation_monitoring_health_interval is match('^[1-9][0-9]*[smh]$')
+      - foundation_monitoring_backup_max_age_seconds | int > 0
+      - foundation_monitoring_backup_check_max_age_seconds | int > 0
+    fail_msg: Invalid foundation monitoring settings.
+
+- name: Validate monitored systemd unit names
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9_.@:-]+\.service$')
+  loop: "{{ foundation_monitoring_expected_services }}"
+
+- name: Apply monitoring configuration only outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Install Debian node exporter
+      ansible.builtin.apt:
+        name: "{{ foundation_monitoring_package }}"
+        state: present
+        policy_rc_d: 101
+
+    - name: Create managed monitoring directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ foundation_monitoring_textfile_directory }}"
+        - /usr/local/libexec/redunisol-foundation
+        - /etc/systemd/system/prometheus-node-exporter.service.d
+
+    - name: Configure node exporter bind address and collectors
+      ansible.builtin.template:
+        src: node-exporter.conf.j2
+        dest: /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart foundation node exporter
+
+    - name: Install host health collector
+      ansible.builtin.template:
+        src: health.sh.j2
+        dest: /usr/local/libexec/redunisol-foundation/health
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install host health units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - redunisol-foundation-health.service
+        - redunisol-foundation-health.timer
+      notify: Reload foundation monitoring systemd
+
+    - name: Enable or stop node exporter
+      ansible.builtin.systemd_service:
+        name: prometheus-node-exporter.service
+        enabled: "{{ foundation_monitoring_enabled }}"
+        state: "{{ 'started' if foundation_monitoring_enabled else 'stopped' }}"
+        daemon_reload: true
+
+    - name: Enable or stop health collection timer
+      ansible.builtin.systemd_service:
+        name: redunisol-foundation-health.timer
+        enabled: "{{ foundation_monitoring_enabled }}"
+        state: "{{ 'started' if foundation_monitoring_enabled else 'stopped' }}"
+        daemon_reload: true
+
+- name: Explain monitoring boundary
+  ansible.builtin.debug:
+    msg: >-
+      Desired exporter address: {{ foundation_monitoring_listen_address }}.
+      External scraping and alert delivery are not configured or verified by this role.
+
+- name: Explain monitoring check-mode boundary
+  ansible.builtin.debug:
+    msg: Check mode validates contracts only; it does not simulate installation or prove monitoring works on an empty host.
+  when: ansible_check_mode

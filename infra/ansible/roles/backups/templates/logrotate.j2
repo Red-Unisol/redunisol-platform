@@ -1,0 +1,10 @@
+{{ foundation_backups_log_directory }}/backup.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 root root
+    su root root
+}

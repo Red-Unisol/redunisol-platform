@@ -1,0 +1,10 @@
+---
+foundation_storage_root_source: ""
+foundation_storage_root_fstype: ""
+foundation_storage_expected_disks: []
+foundation_storage_unmanaged_devices: []
+foundation_storage_directories:
+  - /srv/redunisol/platform
+  - /srv/redunisol/state
+  - /var/lib/redunisol-foundation
+  - /var/lib/redunisol-foundation/evidence

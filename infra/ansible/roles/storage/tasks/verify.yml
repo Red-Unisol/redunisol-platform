@@ -1,0 +1,14 @@
+---
+- name: Verify storage identities and safe platform paths
+  ansible.builtin.import_tasks: check.yml
+
+- name: Require every declared platform directory to exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - item.stat.pw_name == 'root'
+      - item.stat.mode == '0750'
+  loop: "{{ foundation_storage_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"

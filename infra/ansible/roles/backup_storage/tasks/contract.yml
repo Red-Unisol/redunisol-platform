@@ -1,0 +1,13 @@
+---
+- name: Restrict storage preparation to the reviewed one-disk proposal
+  ansible.builtin.assert:
+    that:
+      - foundation_backup_storage_enabled | type_debug == 'bool'
+      - foundation_backup_storage_by_id == '/dev/disk/by-id/ata-ST2000VN003-3CW102_ZWD0RX9Q'
+      - foundation_backup_storage_serial == 'ZWD0RX9Q'
+      - foundation_backup_storage_model == 'ST2000VN003-3CW102'
+      - foundation_backup_storage_size_bytes | int == 2000398934016
+      - foundation_backup_storage_label == 'ru-backups'
+      - foundation_backup_storage_mountpoint == '/srv/redunisol-backups'
+      - foundation_backup_storage_uuid is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    fail_msg: "Only the reviewed dedicated backup SATA and a fixed filesystem UUID are supported."

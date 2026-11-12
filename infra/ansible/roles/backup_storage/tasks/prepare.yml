@@ -1,0 +1,79 @@
+---
+- name: Validate the one-disk preparation contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Inspect identity signatures and usage before considering preparation
+  ansible.builtin.import_tasks: probe.yml
+
+- name: Require the separate reviewed initialization authorization
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or (foundation_backup_storage_enabled | bool)
+      - ansible_check_mode or (foundation_apply_authorized | default(false) | bool)
+      - ansible_check_mode or (foundation_backup_storage_prepare_authorized | default(false) | bool)
+      - ansible_check_mode or (foundation_revision | default('') is match('^[0-9a-f]{40}$'))
+      - >-
+        ansible_check_mode or
+        foundation_backup_storage_confirmation ==
+        ('INITIALIZE ' ~ foundation_backup_storage_serial ~ ' UUID ' ~ foundation_backup_storage_uuid)
+    fail_msg: "Initialization requires separate approval of this serial/UUID, its confirmation and a reviewed Git SHA."
+
+- name: Show the read-only storage preparation plan
+  ansible.builtin.debug:
+    msg:
+      decision: "{{ foundation_backup_storage_probe }}"
+      note: "Only verified blank storage may be initialized. Prepared filesystems keep their UUID and data."
+
+- name: Create XFS only on the verified blank approved SATA without force
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/mkfs.xfs
+      - -m
+      - "uuid={{ foundation_backup_storage_uuid }}"
+      - -L
+      - "{{ foundation_backup_storage_label }}"
+      - "{{ foundation_backup_storage_by_id }}"
+  register: foundation_backup_storage_created
+  when:
+    - not ansible_check_mode
+    - foundation_backup_storage_probe.state == 'blank'
+  changed_when: true
+
+- name: Publish the new filesystem identity to udev
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/udevadm
+      - trigger
+      - --action=change
+      - --subsystem-match=block
+      - "--sysname-match={{ foundation_backup_storage_probe.kname }}"
+  when:
+    - not ansible_check_mode
+    - foundation_backup_storage_created is changed
+  changed_when: false
+
+- name: Wait for the new persistent UUID symlink
+  ansible.builtin.command:
+    argv: [/usr/bin/udevadm, settle, --timeout=20]
+  when:
+    - not ansible_check_mode
+    - foundation_backup_storage_created is changed
+  changed_when: false
+
+- name: Reinspect filesystem creation or a safe retry
+  ansible.builtin.import_tasks: probe.yml
+  when: not ansible_check_mode
+
+- name: Require the expected filesystem before mounting
+  ansible.builtin.assert:
+    that:
+      - foundation_backup_storage_probe.state == 'prepared'
+  when: not ansible_check_mode
+
+- name: Mount the approved UUID persistently
+  ansible.builtin.import_tasks: mount.yml
+  when: not ansible_check_mode
+
+- name: Verify the prepared filesystem and native mount
+  ansible.builtin.import_tasks: verify.yml
+  when: not ansible_check_mode
