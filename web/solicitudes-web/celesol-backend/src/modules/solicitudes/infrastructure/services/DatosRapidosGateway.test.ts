@@ -114,11 +114,55 @@ describe("Mora independiente de la vigencia del préstamo", () => {
 });
 
 it("preserva Estado=0 en el listado aun con Vigente=false",async()=>{
- const {gateway,calls}=setup([[[386586,130338,false,"COMER RECURRENTE CBU",null,20000,20000,18000,-23979.88,null,null,0]]]);
+ const {gateway,calls}=setup([[[386586,130338,false,"COMER RECURRENTE CBU",null,20000,20000,18000,-23979.88,null,null,0]],[]]);
  const [prestamo]=await gateway.listPrestamosDelSocio("71");
  assert.equal(prestamo.estado,0);
  assert.equal(prestamo.montoADesembolsar,18000);
  assert.equal(prestamo.saldo,-23979.88);
  assert.equal(prestamo.vigente,false);
  assert.match(calls[0].campos,/;Estado$/);
+});
+
+describe("listPrestamosDelSocio: los activos van siempre", () => {
+  const fila = (id: number, estado: number | null) =>
+    [id, String(id), estado === 0, "LINEA", null, 1, 1, 1, -1, null, null, estado];
+
+  it("trae todos los activos y completa hasta 100 con los otros de ID mas alto", async () => {
+    const activos = [fila(441350, 0), fila(443716, 0)];
+    const idsOtros = Array.from({ length: 150 }, (_, i) => [359000 + i]);
+    const otros = [fila(359149, 102), fila(359148, 101)];
+    const { gateway, calls } = setup([activos, idsOtros, otros]);
+
+    const prestamos = await gateway.listPrestamosDelSocio("117310");
+
+    assert.equal(calls.length, 3);
+    assert.match(calls[0].cmd, /Integrantes\[Socio\.ID = 117310\]/);
+    assert.match(calls[0].cmd, /\[Estado\] = 0/);
+    assert.match(calls[1].cmd, /\[Estado\] Is Null Or \[Estado\] <> 0/);
+    assert.equal(calls[1].campos, "ID");
+    // 100 - 2 activos = 98 lugares, para los ID mas altos del resto.
+    assert.equal(calls[2].max, 98);
+    assert.match(calls[2].cmd, /\[ID\] In \(359149, 359148, /);
+    assert.doesNotMatch(calls[2].cmd, /359051/);
+    assert.match(calls[2].cmd, /Integrantes\[Socio\.ID = 117310\]/);
+    assert.deepEqual(
+      prestamos.map((p) => p.legacyId),
+      ["443716", "441350", "359149", "359148"],
+    );
+  });
+
+  it("con 100 activos o mas no pide el resto", async () => {
+    const activos = Array.from({ length: 120 }, (_, i) => fila(400000 + i, 0));
+    const { gateway, calls } = setup([activos]);
+
+    const prestamos = await gateway.listPrestamosDelSocio("71");
+
+    assert.equal(calls.length, 1);
+    assert.equal(prestamos.length, 120);
+  });
+
+  it("falla si un ID del resto no es un numero", async () => {
+    const { gateway } = setup([[], [["abc"]]]);
+    await assert.rejects(() => gateway.listPrestamosDelSocio("71"));
+  });
 });

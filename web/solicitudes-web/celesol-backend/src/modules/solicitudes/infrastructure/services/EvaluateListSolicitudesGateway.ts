@@ -81,6 +81,10 @@ export function signatureInboxLoanKey(reference: SignatureInboxLoanReference) {
 }
 
 const SIGNATURE_INBOX_LOAN_BATCH_SIZE = 120;
+// Pestaña Préstamos: hasta 100 en total, pero los activos van siempre.
+const PRESTAMOS_DEL_SOCIO_MAX = 100;
+const PRESTAMOS_DEL_SOCIO_ACTIVOS_MAX = 1000;
+const PRESTAMOS_DEL_SOCIO_OTROS_IDS_MAX = 5000;
 const CORE_LOAN_LIFECYCLE_FIELDS = [
   "ID", "NroCuenta", "Estado", "ToStr([Estado])", "EstadoPrestamo",
   "ToStr([EstadoPrestamo])", "Vigente", "Saldo",
@@ -836,11 +840,60 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return records.slice(0, 50);
   }
 
-  listPrestamosDelSocio(socioLegacyId: string) {
-    return this.executeEvaluateList(
-      buildPrestamosDelSocioDefinition(socioLegacyId),
-      100,
+  // Los activos (Estado = 0) van todos, aunque sean mas de 100: son los que
+  // se refinancian y los que se miran por mora. El resto completa hasta 100,
+  // los mas nuevos primero. Vimarx no ordena: antes, con un tope de 100 sin
+  // filtro, un socio con 245 prestamos recibia 100 de 2007-2023 y ninguno de
+  // sus 22 activos (sol 500301, 12/11/2026). Del resto se piden primero solo
+  // los ID (rapido) y despues los datos de los de ID mas alto.
+  async listPrestamosDelSocio(
+    socioLegacyId: string,
+  ): Promise<PrestamoDelSocioLegacy[]> {
+    const base = buildPrestamosDelSocioDefinition(socioLegacyId);
+    const where = (condition: string) => () =>
+      `(${base.buildCmd()}) And (${condition})`;
+
+    const activos = await this.executeEvaluateList(
+      { ...base, buildCmd: where("[Estado] = 0") },
+      PRESTAMOS_DEL_SOCIO_ACTIVOS_MAX,
+      true,
     );
+    const lugares = PRESTAMOS_DEL_SOCIO_MAX - activos.length;
+
+    if (lugares <= 0) {
+      return sortByIdDesc(activos);
+    }
+
+    const idsOtros = await this.executeEvaluateList<number>(
+      {
+        buildCmd: where("[Estado] Is Null Or [Estado] <> 0"),
+        defaultMax: PRESTAMOS_DEL_SOCIO_OTROS_IDS_MAX,
+        fields: ["ID"],
+        tipo: base.tipo,
+        mapRow: (row) => {
+          const id = String(row[0] ?? "");
+          if (row.length !== 1 || !/^\d+$/.test(id)) {
+            throw new LegacySolicitudesUnavailableError();
+          }
+          return Number(id);
+        },
+      },
+      PRESTAMOS_DEL_SOCIO_OTROS_IDS_MAX,
+      true,
+    );
+    const ids = idsOtros.sort((a, b) => b - a).slice(0, lugares);
+
+    if (ids.length === 0) {
+      return sortByIdDesc(activos);
+    }
+
+    const otros = await this.executeEvaluateList(
+      { ...base, buildCmd: where(`[ID] In (${ids.join(", ")})`) },
+      ids.length,
+      true,
+    );
+
+    return [...sortByIdDesc(activos), ...sortByIdDesc(otros)];
   }
 
   async getPrestamoDelSocio(socioLegacyId: string, prestamoLegacyId: string) {
@@ -978,6 +1031,12 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   private buildEvaluateObjUrl() {
     return new URL("/api/Empresa/EvaluateObj", this.baseUrl).toString();
   }
+}
+
+function sortByIdDesc(prestamos: PrestamoDelSocioLegacy[]) {
+  return [...prestamos].sort(
+    (a, b) => Number(b.legacyId ?? 0) - Number(a.legacyId ?? 0),
+  );
 }
 
 function signatureInboxChunks(ids: string[]) {
