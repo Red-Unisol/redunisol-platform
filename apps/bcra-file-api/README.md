@@ -70,9 +70,12 @@ instantánea con la API oficial ni se determina elegibilidad crediticia.
 
 ## Arquitectura y publicación
 
-- Un contenedor, un proceso Uvicorn y un volumen persistente
-  `bcra-file-poc_bcra-file-data`. Red interna `kestra_net` y puerto
-  `127.0.0.1:18082`; sin exposición pública ni socket Docker.
+- La topología productiva administrada con Ansible ejecuta un contenedor y un
+  proceso Uvicorn en el dedicado, con bind persistente
+  `/srv/redunisol/state/bcra-file-api` y puerto `127.0.0.1:18082`.
+  La VPS conserva únicamente un proxy TCP sin datos ni token, conectado por SSH
+  al dedicado; mantiene el alias `bcra-file-api-poc:8080` en `kestra_net`.
+  No se expone la API públicamente ni se monta el socket Docker.
 - `1 CPU`, `2 GiB` de RAM. No se agregan throttling de I/O ni prioridades de disco.
 - El arranque sólo lee la publicación existente, sin descargas ni importación.
 - `BCRA_FILE_EXTENDED_ENABLED=true` en Compose habilita la publicación ampliada.
@@ -230,9 +233,17 @@ Mediciones de partida (23/10/2026, no son una garantía de capacidad futura):
 
 ## Operación y despliegue
 
-Servicio interno: `http://bcra-file-api-poc:8080`. Para acceso desde otra máquina,
-usar un túnel SSH al puerto loopback siguiendo el acceso canónico local.
-No se agrega dominio ni configuración Apache.
+La fuente del despliegue productivo es Ansible: roles `bcra_file_api` y
+`bcra_private_link` en [`infra/ansible`](../../infra/ansible/README.md).
+El [procedimiento de migración y recuperación](../../docs/bcra-dedicated-migration.md)
+define las guardas, la copia consistente, los recibos de validación y el corte.
+
+Kestra sigue usando `http://bcra-file-api-poc:8080`, con su token y webhook key
+existentes. El nombre resuelve al proxy liviano de la VPS; el enlace SSH llega a
+la API loopback del dedicado. `kestra_net` no conecta ambas máquinas. Para acceso
+administrativo desde otra máquina, usar el túnel SSH documentado y el acceso
+canónico local. No se agrega dominio, configuración Apache ni autenticación API
+nueva.
 
 - `GET /health`: liveness sin autenticación ni datos personales.
 - `GET /status`: `ready`, `check_stale`, `dataset` y `last_successful_check_at`
@@ -252,23 +263,36 @@ No se agrega dominio ni configuración Apache.
 los outputs `status` y `data` de `/lookup`. Sus triggers se publican sólo en prod.
 El token del servicio y la key de webhook son distintos y están cifrados en Git;
 los accesos se consultan en el archivo local canónico sin copiarlos a ejemplos.
-No se registran peticiones, identificaciones ni respuestas. Logs con rotación
-a 10 MiB y tres archivos.
+No se registran peticiones, identificaciones ni respuestas. El contenedor del
+dedicado rota logs locales a 20 MiB y cinco archivos; el proxy no registra tráfico.
 
-1. Mergear el PR y ejecutar **Deploy BCRA File POC** desde main.
-2. El workflow construye/prueba la imagen `sha-<commit>` y despliega sólo
-   `/opt/bcra-file-poc`, conservando el volumen, con credenciales GHCR temporales.
-3. Mantener `terms_accepted=true` con la aceptación ya registrada del operador.
-4. Verificar imagen, `/health`, snapshot preservado, contrato GET actual y el
-   scheduler de Kestra habilitado. El despliegue no dispara una importación.
-5. Después de la carga nocturna, comprobar job `completed`, cuatro capacidades
-   activas, filas/bytes por componente, disco libre y consultas actuales/históricas.
-   Una falla sigue siendo visible en Kestra y en `/jobs`; no conectar consumidores
-   hasta validar el resultado completo.
+1. Mantener el importador original detenido y el destino sin arrancar durante la
+   copia. Conservar publicaciones, checkpoints, journals y comprimidos completos.
+2. Validar hashes y SQLite, revocar el receptor temporal y preparar/verificar el
+   backup frío inicial antes de activar el destino. Mantener la aceptación ya
+   registrada de las condiciones BCRA.
+3. Aplicar `bcra-file-api-deploy.yml` y verificar con `bcra-file-api-verify.yml`.
+   La imagen está fijada por digest y el arranque no dispara una importación.
+4. Aplicar/verificar `bcra-private-link.yml` y comprobar el alias desde Kestra.
+   Validar `/health`, `/status` autenticado y rechazo sin token, sin hacer una
+   consulta de persona ni un `POST /refresh` como prueba de conectividad.
+5. Conservar el único scheduler existente. Después de una actualización nocturna,
+   comprobar job `completed`, capacidades, filas/bytes por componente y vigencia;
+   un histórico incompleto no se declara listo por trasladarlo.
 
-Para detenerlo, deshabilitar su flag y detener Compose. Conservar el volumen;
-no usar `down -v`. Una reversión de imagen a la versión anterior vuelve a usar
-`snapshot.sqlite`, que puede estar menos actualizado; requiere revisar vigencia.
+`publish-bcra-file-api.yml` sigue probando y publicando imágenes `sha-<commit>` al
+cambiar `apps/bcra-file-api/**` en main, incluido este README. Publicar una imagen
+no despliega ni reinicia servicios. Esta migración mantiene la imagen actual
+`ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4`;
+un tag publicado posteriormente no cambia ese digest aplicado por Ansible.
+
+Se retiró el workflow de despliegue legacy a la VPS para evitar reactivar allí
+el importador. `deploy/docker-compose.yml`, su configuración cifrada y el volumen
+original `bcra-file-poc_bcra-file-data` se conservan para pruebas y rollback
+explícito; no son el camino productivo habitual ni se reinician automáticamente.
+Un rollback exige detener primero el destino, retirar el proxy/enlace y revisar
+versiones y vigencia antes de arrancar el origen. No usar `down -v` ni copiar
+automáticamente escrituras nuevas sobre el respaldo conservado.
 
 ## Validación local
 

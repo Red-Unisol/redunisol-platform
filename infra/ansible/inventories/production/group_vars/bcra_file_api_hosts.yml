@@ -1,0 +1,7 @@
+---
+# The same reviewed image is moved; application behavior is unchanged.
+bcra_file_api_image: ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4
+bcra_file_api_platform_dir: /srv/redunisol/platform/bcra-file-api
+bcra_file_api_data_dir: /srv/redunisol/state/bcra-file-api
+# Activation is promoted only after the consistent copy and SQLite verification.
+bcra_file_api_running: false

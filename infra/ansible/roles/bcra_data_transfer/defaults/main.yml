@@ -1,0 +1,12 @@
+---
+bcra_data_copy_authorized: false
+bcra_data_copy_resume_authorized: false
+bcra_data_copy_source_container: d9be0a209f53
+bcra_data_copy_bandwidth_kib: 8192
+bcra_data_copy_hash_mib_per_sec: 8
+bcra_data_copy_source_root: /var/lib/docker/volumes/bcra-file-poc_bcra-file-data/_data
+bcra_data_copy_destination_root: /srv/redunisol/state/bcra-file-api
+bcra_data_copy_transfer_home: /var/lib/redunisol-bcra-transfer
+bcra_data_copy_transfer_user: bcra-transfer
+bcra_data_copy_helper: "{{ role_path }}/../../tools/bcra-data-transfer.py"
+bcra_data_copy_manifest_helper: "{{ role_path }}/../../tools/bcra-data-manifest.py"

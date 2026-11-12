@@ -1,0 +1,13 @@
+---
+- name: Start or observe the bounded one-shot transfer without waiting for completion
+  ansible.builtin.script:
+    cmd: >-
+      {{ bcra_data_copy_helper | quote }} start
+      {{ '--resume-confirmed' if bcra_data_copy_resume_authorized | bool else '' }}
+    executable: /usr/bin/python3
+  register: bcra_data_copy_start_result
+  changed_when: (bcra_data_copy_start_result.stdout | from_json).get('status', '') == 'started'
+
+- name: Report only source-local phase and process metadata
+  ansible.builtin.debug:
+    msg: "{{ bcra_data_copy_start_result.stdout | from_json }}"

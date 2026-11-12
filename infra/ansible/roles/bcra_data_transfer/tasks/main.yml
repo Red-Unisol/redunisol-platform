@@ -1,0 +1,24 @@
+---
+- name: Require the explicit bounded BCRA data transfer contract
+  ansible.builtin.assert:
+    that:
+      - bcra_data_copy_authorized | bool
+      - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+      - groups.bcra_migration_origins | default([]) | length == 1
+      - groups.bcra_file_api_hosts | default([]) | length == 1
+      - bcra_data_copy_source_container is match('^[0-9a-f]{12,64}$')
+      - bcra_data_copy_bandwidth_kib | int > 0
+      - bcra_data_copy_hash_mib_per_sec | float > 0
+      - bcra_data_copy_source_root == '/var/lib/docker/volumes/bcra-file-poc_bcra-file-data/_data'
+      - bcra_data_copy_destination_root == '/srv/redunisol/state/bcra-file-api'
+      - bcra_data_copy_transfer_user == 'bcra-transfer'
+      - bcra_data_copy_transfer_home == '/var/lib/redunisol-bcra-transfer'
+      - hostvars[groups.bcra_migration_origins[0]].ansible_host == '66.97.34.158'
+      - hostvars[groups.bcra_migration_origins[0]].ansible_port | int == 5272
+      - hostvars[groups.bcra_file_api_hosts[0]].ansible_host == '168.197.51.104'
+      - hostvars[groups.bcra_file_api_hosts[0]].ansible_port | int == 2241
+    fail_msg: BCRA copy needs a reviewed revision, explicit approval, fixed endpoints and positive I/O limits.
+
+- name: Run the selected BCRA transfer stage
+  ansible.builtin.include_tasks: "{{ bcra_data_copy_stage }}.yml"
+  when: not ansible_check_mode

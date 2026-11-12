@@ -1,0 +1,41 @@
+---
+- name: Select the already pinned dedicated SSH public host key
+  ansible.builtin.set_fact:
+    bcra_data_copy_pinned_key: >-
+      {{ lookup('ansible.builtin.file', inventory_dir ~ '/../../known_hosts').splitlines()
+         | select('match', '^\[168\.197\.51\.104\]:2241 ssh-ed25519 ') | list }}
+
+- name: Require exactly one pinned destination key
+  ansible.builtin.assert:
+    that:
+      - bcra_data_copy_pinned_key | length == 1
+    fail_msg: The dedicated SSH host key must already be pinned in the Git-managed inventory.
+
+- name: Prepare source-local ephemeral credentials and validate the stopped source layout
+  ansible.builtin.script:
+    cmd: >-
+      {{ bcra_data_copy_helper | quote }} prepare-source
+      --source-container {{ bcra_data_copy_source_container | quote }}
+      --revision {{ foundation_revision | quote }}
+      --known-host {{ bcra_data_copy_pinned_key[0] | quote }}
+      --tool-base64 {{ lookup('ansible.builtin.file', bcra_data_copy_manifest_helper, rstrip=false) | b64encode | quote }}
+      --tool-sha256 {{ lookup('ansible.builtin.file', bcra_data_copy_manifest_helper, rstrip=false) | hash('sha256') | quote }}
+      --bwlimit-kib {{ bcra_data_copy_bandwidth_kib | int }}
+      --hash-mib-per-sec {{ bcra_data_copy_hash_mib_per_sec | float }}
+    executable: /usr/bin/python3
+  register: bcra_data_copy_source_preparation
+  no_log: true
+  changed_when: true
+
+- name: Keep only the public preparation result for the receiver
+  ansible.builtin.set_fact:
+    bcra_data_copy_prepared: "{{ bcra_data_copy_source_preparation.stdout | from_json }}"
+  no_log: true
+
+- name: Require a public key without any private material
+  ansible.builtin.assert:
+    that:
+      - bcra_data_copy_prepared.status == 'prepared'
+      - not bcra_data_copy_prepared.private_key_exported
+      - bcra_data_copy_prepared.public_key is match('^ssh-ed25519 [A-Za-z0-9+/=]+$')
+    fail_msg: Source preparation did not produce the expected public-only result.
