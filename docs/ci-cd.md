@@ -383,18 +383,23 @@ Si no se hace eso, el dominio puede quedar versionado pero no desplegable por pi
 ## BCRA File POC
 
 publish-bcra-file-api.yml prueba y publica la imagen inmutable del servicio
-persistente al cambiar su código en main. deploy-bcra-file-poc.yml es manual,
-restringido a main y al operador habitual; despliega sólo /opt/bcra-file-poc
-y descifra su env propio. La aceptación del operador quedó registrada el
-21/10/2026; el input de despliegue permite revocarla. No conecta consumidores.
+al cambiar su codigo en main. La operacion del dedicado usa Ansible, con imagen
+fijada por digest y apply/verify separados; publicar una imagen no la despliega.
+El workflow manual legacy deploy-bcra-file-poc.yml se retira durante la
+[migracion BCRA al dedicado](bcra-dedicated-migration.md) para evitar reactivar
+el importador de la VPS. El Compose/env cifrado historicos se conservan como
+referencia de pruebas y rollback explicito. La aceptacion del operador registrada
+el 21/10/2026 se conserva; no se agregan consumidores comerciales al migrar.
 
 Los dos flows BCRA usan labels.schedule_scope: prod_only: sus triggers sólo se
 publican en producción. La bandera cifrada ENV_BCRA_FILE_POC_ENABLED=true activa
 el trabajo diario a las 21:00 Argentina, con corte del importador a las 07:00.
 El normalizador también soporta dev_only para otros flows aislados.
 
-El servicio FastAPI/Uvicorn también permite consultas directas por la red Docker
-o por el puerto local `127.0.0.1:18082` mediante SSH. El despliegue reutiliza el
-volumen `bcra-file-poc_bcra-file-data` y comprueba su health HTTP local.
+La API del dedicado escucha en loopback. Kestra conserva su URL y token mediante
+un relay sin datos y un enlace SSH restringido en la VPS. La transferencia
+conserva completo el volumen original, valida datos y backup frio antes del
+arranque y deja el origen detenido para rollback. Health HTTP no demuestra por
+si solo vigencia ni cobertura del dataset; se verifica tambien el status.
 
 Ver [runbook y contrato del POC](../apps/bcra-file-api/README.md).

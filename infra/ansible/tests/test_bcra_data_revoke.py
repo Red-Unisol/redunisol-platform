@@ -47,9 +47,24 @@ class RevokeTests(unittest.TestCase):
         result = self.run_revoke()
         self.assertTrue(result["transfer_authorization_revoked"])
         self.assertTrue(result["receiver_alias_removed"])
+        self.assertTrue(result["changed"])
         self.assertFalse(self.keys.exists())
         self.assertTrue(json.loads(self.marker.read_text())["authorization_revoked"])
-        self.assertTrue(self.run_revoke()["transfer_authorization_revoked"])
+        first_timestamp = result["authorization_revoked_at"]
+        marker_before = self.marker.read_bytes()
+        repeated = self.run_revoke()
+        self.assertTrue(repeated["transfer_authorization_revoked"])
+        self.assertFalse(repeated["changed"])
+        self.assertEqual(first_timestamp, repeated["authorization_revoked_at"])
+        self.assertEqual(marker_before, self.marker.read_bytes())
+
+    @unittest.skipUnless(hasattr(__import__('os'), 'geteuid') and __import__('os').geteuid() == 0, "Root-owned synthetic files required")
+    def test_key_reappearing_after_revocation_is_preserved_for_review(self):
+        self.run_revoke()
+        self.keys.write_text(AUTH + "\n")
+        with self.assertRaisesRegex(revoke.RevokeError, "authorization_reappeared_after_revocation"):
+            self.run_revoke()
+        self.assertTrue(self.keys.exists())
 
     @unittest.skipUnless(hasattr(__import__('os'), 'geteuid') and __import__('os').geteuid() == 0, "Root-owned synthetic files required")
     def test_other_keys_are_preserved(self):

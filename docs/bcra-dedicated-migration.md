@@ -8,7 +8,7 @@ en la VPS. Las consultas comerciales identificadas siguen usando la API oficial
 del BCRA; el servicio de archivos tiene dos integraciones Kestra: actualizacion
 nocturna y consulta diagnostica.
 
-La base Ansible procede del PR #683. Esta ampliacion tiene playbooks propios y
+La base Ansible procede del PR #683, integrado a `main`. Esta ampliacion tiene playbooks propios y
 no vuelve a provisionar el host completo ni aplica cambios de seguridad ajenos
 al servicio. Todas las aplicaciones, claves y datos se administran por roles;
 las credenciales se suministran mediante archivos privados del controlador, nunca
@@ -30,6 +30,19 @@ mediante argumentos con secretos ni inventarios versionados.
 Los namespaces Docker son locales a cada host; no se supone que `kestra_net`
 conecte las dos maquinas. No se publica un dominio o puerto nuevo de la API.
 
+```mermaid
+flowchart LR
+  subgraph VPS
+    K[Kestra] --> P[Relay TCP sin datos]
+    P --> T[Cliente SSH restringido]
+  end
+  subgraph Dedicado
+    A[API e importador BCRA] --> N[Datos en NVMe]
+    N --> B[Backup frio cifrado en SATA]
+  end
+  T -- SSH cifrado --> A
+```
+
 ## Datos y corte
 
 1. Verificar identidad de ambos hosts, imagen y volumen; mantener el importador
@@ -42,14 +55,24 @@ conecte las dos maquinas. No se publica un dominio o puerto nuevo de la API.
 4. Comparar inventarios y SHA-256 antes del primer arranque. Verificar SQLite en
    el dedicado; recuperar journals pendientes con apertura normal, sin
    `immutable=1` sobre componentes incompletos. No renovar fechas de vigencia.
-5. Conservar un recibo de migracion con hashes de los reportes, imagen y corte.
-   El rol impide arrancar sin ese recibo validado y su checksum esperado.
-6. Arrancar el destino, verificar estado autenticado y rechazo sin token, y
+5. Revocar la llave temporal de recepcion, desmontar su alias validado y quitar
+   solamente la privada correspondiente en la VPS. Conservar los reportes.
+6. Derivar el recibo de migracion desde la evidencia real de copia, SQLite y
+   revocacion, sin flags de exito manuales. Guardar sus hashes, imagen y corte.
+7. Crear el backup frio completo en el repositorio Restic cifrado existente del
+   SATA, con tags y evidencia propios. Comprobar los datos del repositorio y
+   restaurar un manifest a una carpeta aislada para comparar su SHA-256. Esto
+   no acredita una restauracion integral del dataset ni un backup continuo.
+8. Arrancar el destino, verificar estado autenticado y rechazo sin token, y
    preparar el enlace privado. Mantener el importador original detenido.
-7. Comprobar desde la red real de Kestra antes de admitir un nuevo refresh. No
+9. Comprobar desde la red real de Kestra antes de admitir un nuevo refresh. No
    ejecutar dos importadores ni reutilizar el job interrumpido como si siguiera
    activo. Una ejecucion nueva permite continuar checkpoints compatibles.
-8. Retirar el acceso temporal de copia despues de verificar el resultado.
+
+El rol impide el arranque sin los recibos de migracion y backup frio, con los
+checksums esperados. La copia usa un alias bind temporal para que el receptor
+sin privilegios alcance exclusivamente el volumen BCRA; los permisos de los
+directorios de estado del host se conservan.
 
 El primer arranque cambia legitimamente `refresh.json` de running a interrupted;
 por eso los hashes se comparan antes. Las capacidades del destino deben coincidir
@@ -72,3 +95,17 @@ de 72 horas sigue aplicando.
 La copia de origen se conserva detenida como punto de vuelta hasta una retirada
 explicita. El destino externo de backups de BCRA y su restauracion se verifican
 por separado; una copia en el mismo dedicado no cubre su perdida completa.
+
+## Ruta de despliegue
+
+Los playbooks `bcra-file-api-deploy.yml` y `bcra-file-api-verify.yml` son la ruta
+operativa del servicio. Los playbooks `bcra-data-*`, `bcra-backup-cold.yml` y
+`bcra-private-link.yml` separan transferencia, integridad, respaldo y transporte.
+Los defaults no autorizan escrituras; cada apply recibe la revision Git exacta
+y la autorizacion correspondiente. CI valida codigo sin contactar los hosts.
+
+El workflow manual legacy `deploy-bcra-file-poc.yml` se retira para impedir que
+un despliegue habitual vuelva a levantar el importador en la VPS. El publisher
+de imagenes sigue disponible; publicar otro tag no cambia el digest aplicado.
+El Compose y env cifrado historicos se conservan para pruebas y rollback
+explicito, no como destino productivo de los siguientes despliegues.

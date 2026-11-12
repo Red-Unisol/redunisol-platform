@@ -220,6 +220,8 @@ class ColdBackupGateTests(unittest.TestCase):
     def receipt(self):
         return {"version": 1, "scope": "initial-cold-bcra-local", "status": "verified",
                 "snapshot_verified": True, "restored_manifest_verified": True,
+                "repository_integrity_verified": True, "read_data": True,
+                "repository_integrity_verified_at": "2026-11-12T05:00:00Z",
                 "offsite": False, "continuous_backup": False,
                 "repository_id": "7" * 64, "snapshot_id": "8" * 64,
                 "migration_manifest_sha256": "9" * 64, "restored_manifest_sha256": "9" * 64,
@@ -232,11 +234,20 @@ class ColdBackupGateTests(unittest.TestCase):
     def test_only_the_initial_restored_backup_of_the_same_cutoff_passes(self):
         self.assertEqual(self.validate(self.receipt())["snapshot_id"], "8" * 64)
         for changes in ({"snapshot_verified": False}, {"restored_manifest_verified": False},
+                        {"repository_integrity_verified": False}, {"read_data": False}, {"read_data": "true"},
+                        {"repository_integrity_verified_at": "2026-11-12T05:00:00"},
                         {"tree_sha256": "f" * 64}, {"migration_manifest_sha256": "a" * 64},
                         {"restored_manifest_sha256": "a" * 64}, {"image": "wrong"},
                         {"cutoff_at": "2026-11-12T02:00:00Z"}, {"offsite": True}):
             with self.subTest(changes=changes), self.assertRaises(CONTRACT.ContractError):
                 self.validate({**self.receipt(), **changes})
+
+    def test_version_one_receipt_without_full_pack_verification_is_rejected(self):
+        receipt = self.receipt()
+        receipt.pop("repository_integrity_verified")
+        receipt.pop("read_data")
+        with self.assertRaisesRegex(CONTRACT.ContractError, "read_data_check_required"):
+            self.validate(receipt)
 
 
 if __name__ == "__main__":

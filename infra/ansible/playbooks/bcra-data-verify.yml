@@ -1,0 +1,105 @@
+---
+- name: Read completed source evidence without source Python modules or any rehash
+  hosts: bcra_migration_origins
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require the approved verification and exact migration endpoints
+      ansible.builtin.assert:
+        that:
+          - bcra_data_verify_authorized | default(false) | bool
+          - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+          - groups.bcra_migration_origins | length == 1
+          - groups.bcra_file_api_hosts | length == 1
+          - ansible_host == '66.97.34.158'
+          - ansible_port | int == 5272
+  tasks:
+    - name: Read current completed source and process guards without exporting private credentials
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/../tools/bcra-data-revoke.py check-source"
+        executable: /usr/bin/python3
+      register: bcra_verify_source_completion
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Read the existing small source manifest with byte-exact transport only
+      ansible.builtin.raw: base64 -w0 -- /run/redunisol-bcra-transfer/source-manifest.json
+      register: bcra_verify_source_manifest
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+- name: Verify the copied stopped destination and persist each JSON stage
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require approved destination verification without application startup
+      ansible.builtin.assert:
+        that:
+          - bcra_data_verify_authorized | default(false) | bool
+          - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+          - ansible_host == '168.197.51.104'
+          - ansible_port | int == 2241
+          - bcra_data_verify_read_mib_per_sec | default(128) | float > 0
+  tasks:
+    - name: Require the already prepared private platform directory
+      ansible.builtin.stat:
+        path: /srv/redunisol/platform/bcra-file-api
+        follow: false
+      register: bcra_verify_platform
+    - name: Reject an unexpected platform directory
+      ansible.builtin.assert:
+        that:
+          - bcra_verify_platform.stat.isdir
+          - not bcra_verify_platform.stat.islnk
+          - bcra_verify_platform.stat.uid == 0
+          - bcra_verify_platform.stat.mode == '0700'
+
+    - name: Install the reviewed verification helpers outside application data
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../tools/{{ item }}"
+        dest: "/srv/redunisol/platform/bcra-file-api/{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - bcra-data-manifest.py
+        - bcra-data-transfer.py
+        - bcra-data-receipt.py
+        - bcra-data-verify.py
+
+    - name: Stage only completed public source evidence and the byte-exact existing manifest
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /srv/redunisol/platform/bcra-file-api/bcra-data-verify.py
+          - stage-source
+          - --completion-base64
+          - "{{ hostvars[groups.bcra_migration_origins[0]].bcra_verify_source_completion.stdout | from_json | to_json | b64encode }}"
+          - --manifest-base64
+          - "{{ hostvars[groups.bcra_migration_origins[0]].bcra_verify_source_manifest.stdout | trim }}"
+      register: bcra_verify_staged
+      changed_when: (bcra_verify_staged.stdout | from_json).changed | bool
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: Inventory compare and verify SQLite on the destination only with persistent stage reports
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /srv/redunisol/platform/bcra-file-api/bcra-data-verify.py
+          - verify
+          - --max-read-mib-per-sec
+          - "{{ bcra_data_verify_read_mib_per_sec | default(128) | float }}"
+          - --sqlite-timeout-seconds
+          - "{{ bcra_data_verify_sqlite_timeout_seconds | default(3600) | float }}"
+      register: bcra_verify_result
+      changed_when: (bcra_verify_result.stdout | from_json).changed | bool
+      when: not ansible_check_mode
+
+    - name: Report only verification metadata and checksums
+      ansible.builtin.debug:
+        msg: "{{ bcra_verify_result.stdout | from_json }}"
+      when: not ansible_check_mode

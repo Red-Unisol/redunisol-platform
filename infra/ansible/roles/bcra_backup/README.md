@@ -31,10 +31,22 @@ An uncertain backup acknowledgement is reconciled using those exact tags and
 source paths; ambiguous snapshots require operator review.
 
 The role verifies repository identity, snapshot ID, tags and source paths, then
-restores only `data-migration.json` to a new isolated private directory and compares
-its SHA-256. It does not restore application databases or overwrite live files.
-This is a real initial cold snapshot plus a small restoration proof, not a full
-application recovery rehearsal.
+runs a real `restic check --read-data` over the entire encrypted repository while
+holding the same lock. Backup, complete pack verification and restoration share
+one timeout budget. No receipt is issued if the full read fails or times out.
+The receipt records `repository_integrity_verified=true`, `read_data=true` and
+the UTC completion time; application activation requires these fields.
+
+It then restores only `data-migration.json` to a new isolated private directory
+and compares its SHA-256. It does not restore application databases or overwrite
+live files. This proves a real initial cold snapshot, complete encrypted-repository
+verification and a small restoration, not a full application recovery rehearsal.
+
+Reapplying with the same valid initial receipt checks repository/snapshot identity
+and the restored manifest hash, then reuses that receipt without another full
+read or changing its original integrity timestamp. This initial proof does not
+replace recurring repository health checks. A snapshot without a valid receipt
+must pass the full read before a new receipt can be produced.
 
 Success writes root-owned mode `0600` files:
 

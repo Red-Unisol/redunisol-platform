@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -13,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 try:
     import fcntl
@@ -29,6 +31,37 @@ class BackupError(ValueError):
 def require(condition, reason):
     if not condition:
         raise BackupError(reason)
+
+
+class TimeBudget:
+    def __init__(self, seconds, *, clock=time.monotonic):
+        require(60 <= seconds <= 21600, "bounded_backup_timeout_required")
+        self.clock = clock
+        self.deadline = clock() + seconds
+
+    def remaining(self, maximum=None):
+        remaining = self.deadline - self.clock()
+        require(remaining > 0, "cold_backup_time_budget_exhausted")
+        return remaining if maximum is None else min(remaining, maximum)
+
+
+class BudgetReadLimiter:
+    def __init__(self, inventory, budget, rate):
+        self.limiter = inventory.ReadLimiter(rate * 1024 ** 2)
+        self.budget = budget
+
+    @property
+    def bytes(self):
+        return self.limiter.bytes
+
+    @property
+    def rate(self):
+        return self.limiter.rate
+
+    def consume(self, count):
+        self.budget.remaining()
+        self.limiter.consume(count)
+        self.budget.remaining()
 
 
 def load_module(path, name):
@@ -49,15 +82,15 @@ def restic(prefix, *arguments, timeout=60):
     return run([*prefix, *arguments], timeout=timeout)
 
 
-def repository_id(prefix):
-    value = json.loads(restic(prefix, "cat", "config"))
+def repository_id(prefix, timeout=60):
+    value = json.loads(restic(prefix, "cat", "config", timeout=timeout))
     require(isinstance(value.get("id"), str) and re.fullmatch(r"[0-9a-f]{64}", value["id"]), "repository_identity_invalid")
     return value["id"]
 
 
-def verify_snapshot(prefix, snapshot_id, sources, tags):
+def verify_snapshot(prefix, snapshot_id, sources, tags, timeout=60):
     require(re.fullmatch(r"[0-9a-f]{64}", snapshot_id), "full_snapshot_id_required")
-    values = json.loads(restic(prefix, "snapshots", "--json", snapshot_id))
+    values = json.loads(restic(prefix, "snapshots", "--json", snapshot_id, timeout=timeout))
     require(len(values) == 1 and values[0].get("id") == snapshot_id, "snapshot_identity_mismatch")
     value = values[0]
     require(set(value.get("paths", [])) == {str(path) for path in sources}, "snapshot_source_paths_mismatch")
@@ -66,8 +99,8 @@ def verify_snapshot(prefix, snapshot_id, sources, tags):
     return value
 
 
-def matching_snapshots(prefix, sources, tags):
-    values = json.loads(restic(prefix, "snapshots", "--json", "--tag", "redunisol-bcra-cold"))
+def matching_snapshots(prefix, sources, tags, timeout=60):
+    values = json.loads(restic(prefix, "snapshots", "--json", "--tag", "redunisol-bcra-cold", timeout=timeout))
     matches = [row["id"] for row in values if set(tags).issubset(row.get("tags", []))
                and set(row.get("paths", [])) == {str(path) for path in sources}
                and row.get("hostname") == socket.gethostname()]
@@ -86,10 +119,18 @@ def create_snapshot(prefix, sources, tags, timeout):
     return ids[0]
 
 
-def restore_manifest(prefix, snapshot_id, manifest_path, target, expected_sha256):
+def verify_repository_integrity(prefix, timeout):
+    # A snapshot listing proves metadata only. Read and authenticate every pack
+    # before claiming a verified encrypted repository or allowing initial startup.
+    restic(prefix, "check", "--read-data", timeout=timeout)
+    return {"repository_integrity_verified": True, "read_data": True,
+            "repository_integrity_verified_at": datetime.now(timezone.utc).isoformat()}
+
+
+def restore_manifest(prefix, snapshot_id, manifest_path, target, expected_sha256, timeout=120):
     require(not target.exists(), "restore_target_must_be_new")
     target.mkdir(mode=0o700)
-    restic(prefix, "restore", snapshot_id, "--target", str(target), "--verify", "--include", str(manifest_path), timeout=120)
+    restic(prefix, "restore", snapshot_id, "--target", str(target), "--verify", "--include", str(manifest_path), timeout=timeout)
     restored = target / str(manifest_path).lstrip("/")
     require(restored.is_file() and not restored.is_symlink(), "restored_manifest_missing")
     require(hashlib.sha256(restored.read_bytes()).hexdigest() == expected_sha256, "restored_manifest_hash_mismatch")
@@ -138,6 +179,7 @@ def atomic_receipt(path, record):
 
 
 def execute(arguments):
+    budget = TimeBudget(arguments.timeout_seconds)
     platform, data, state = arguments.platform_dir, arguments.data_dir, arguments.state_dir
     require(platform == Path("/srv/redunisol/platform/bcra-file-api")
             and data == Path("/srv/redunisol/state/bcra-file-api")
@@ -154,12 +196,12 @@ def execute(arguments):
     require(final_hash == migration["post_recovery_manifest_sha256"] and final["tree_sha256"] == migration["tree_sha256"],
             "post_recovery_copy_evidence_mismatch")
     assert_cold(data)
-    before = inventory.inventory(data, max_read_mib_per_sec=arguments.read_mib_per_second)
+    before = inventory.inventory(data, limiter=BudgetReadLimiter(inventory, budget, arguments.read_mib_per_second))
     require(before["entries"] == final["entries"] and before["tree_sha256"] == migration["tree_sha256"], "cold_tree_changed_since_validation")
     state.joinpath("cache").mkdir(mode=0o700, exist_ok=True)
     prefix = ["/usr/bin/restic", "--repo", str(arguments.repository), "--password-file", str(arguments.password_file),
               "--cache-dir", str(state / "cache")]
-    identity = repository_id(prefix)
+    identity = repository_id(prefix, budget.remaining(60))
     sources = [data, manifest_path, platform / "docker-compose.yml"]
     small_hashes = {str(path): hashlib.sha256(contract.private_bytes(path)).hexdigest() for path in sources[1:]}
     tags = ["redunisol-bcra-cold", "service:bcra-file-api", "manifest:" + arguments.manifest_sha256,
@@ -169,25 +211,29 @@ def execute(arguments):
         raw = contract.private_bytes(receipt_path)
         record = contract.cold_backup_document(raw, hashlib.sha256(raw).hexdigest(), migration, arguments.manifest_sha256)
         require(record["repository_id"] == identity, "cold_repository_changed")
-        verify_snapshot(prefix, record["snapshot_id"], sources, tags)
+        verify_snapshot(prefix, record["snapshot_id"], sources, tags, budget.remaining(60))
         contract.read_cold_backup(receipt_path, hashlib.sha256(raw).hexdigest(), migration, arguments.manifest_sha256)
+        # Reuse the initial full-read proof and its original timestamp. This is
+        # not a recurring repository health check and must not renew freshness.
         return {"ok": True, "created": False, "snapshot_created": False, "snapshot_id": record["snapshot_id"],
                 "receipt_sha256": hashlib.sha256(raw).hexdigest()}
     require(arguments.mountpoint.stat().st_dev != data.stat().st_dev, "cold_copy_must_be_on_another_device")
     free = os.statvfs(arguments.mountpoint)
     require(free.f_bavail * free.f_frsize > before["unique_bytes_read"] * 1.1 + 1073741824, "backup_free_space_insufficient")
-    candidates = matching_snapshots(prefix, sources, tags)
-    snapshot = candidates[0] if candidates else create_snapshot(prefix, sources, tags, arguments.timeout_seconds)
-    verify_snapshot(prefix, snapshot, sources, tags)
+    candidates = matching_snapshots(prefix, sources, tags, budget.remaining(60))
+    snapshot = candidates[0] if candidates else create_snapshot(prefix, sources, tags, budget.remaining())
+    verify_snapshot(prefix, snapshot, sources, tags, budget.remaining(60))
+    integrity = verify_repository_integrity(prefix, budget.remaining())
     assert_cold(data)
-    after = inventory.inventory(data, max_read_mib_per_sec=arguments.read_mib_per_second)
+    after = inventory.inventory(data, limiter=BudgetReadLimiter(inventory, budget, arguments.read_mib_per_second))
     require(after["entries"] == before["entries"] and after["tree_sha256"] == migration["tree_sha256"], "cold_tree_changed_during_backup")
     require(small_hashes == {str(path): hashlib.sha256(contract.private_bytes(path)).hexdigest() for path in sources[1:]},
             "cold_configuration_changed_during_backup")
     restore_base = state / "restore"
     restore_base.mkdir(mode=0o700, exist_ok=True)
     run_directory = Path(tempfile.mkdtemp(prefix="proof-", dir=restore_base))
-    restored = restore_manifest(prefix, snapshot, manifest_path, run_directory / "files", arguments.manifest_sha256)
+    restored = restore_manifest(prefix, snapshot, manifest_path, run_directory / "files", arguments.manifest_sha256,
+                                budget.remaining(120))
     assert_cold(data)
     record = {"version": 1, "scope": "initial-cold-bcra-local", "status": "verified", "git_revision": arguments.revision,
               "repository_id": identity, "snapshot_id": snapshot, "snapshot_verified": True,
@@ -196,6 +242,8 @@ def execute(arguments):
               "compose_sha256": small_hashes[str(platform / "docker-compose.yml")],
               "restored_manifest_path": str(restored), "restored_manifest_sha256": arguments.manifest_sha256,
               "restored_manifest_verified": True, "offsite": False, "continuous_backup": False}
+    record.update(integrity)
+    budget.remaining()
     atomic_receipt(receipt_path, record)
     return {"ok": True, "created": True, "snapshot_created": not candidates, "snapshot_id": snapshot,
             "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest()}

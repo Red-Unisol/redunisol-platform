@@ -30,6 +30,16 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
+    - name: Preserve the original public source completion as a standalone private JSON report
+      ansible.builtin.copy:
+        dest: /srv/redunisol/platform/bcra-file-api/source-completion.json
+        content: "{{ hostvars[groups.bcra_migration_origins[0]].bcra_cleanup_source | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      when: not ansible_check_mode
+
     - name: Remove only the completed transfer public authorization
       ansible.builtin.script:
         cmd: >-
@@ -37,7 +47,16 @@
           --public-key {{ hostvars[groups.bcra_migration_origins[0]].bcra_cleanup_source.public_key | quote }}
         executable: /usr/bin/python3
       register: bcra_cleanup_receiver
-      changed_when: true
+      changed_when: (bcra_cleanup_receiver.stdout | from_json).changed | bool
+      when: not ansible_check_mode
+    - name: Preserve the original receiver revocation as a standalone private JSON report
+      ansible.builtin.copy:
+        dest: /srv/redunisol/platform/bcra-file-api/transfer-revocation.json
+        content: "{{ bcra_cleanup_receiver.stdout | from_json | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
       when: not ansible_check_mode
     - name: Report authorization revocation evidence
       ansible.builtin.debug:
@@ -55,5 +74,22 @@
           {{ playbook_dir }}/../tools/bcra-data-revoke.py source
           --public-key {{ bcra_cleanup_source.public_key | quote }}
         executable: /usr/bin/python3
-      changed_when: true
+      register: bcra_cleanup_private
+      changed_when: (bcra_cleanup_private.stdout | from_json).changed | bool
+      when: not ansible_check_mode
+
+- name: Persist source key removal on the destination using its own connection context
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Preserve the private-key removal result without copying private material
+      ansible.builtin.copy:
+        dest: /srv/redunisol/platform/bcra-file-api/source-key-cleanup.json
+        content: "{{ hostvars[groups.bcra_migration_origins[0]].bcra_cleanup_private.stdout | from_json | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
       when: not ansible_check_mode

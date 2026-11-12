@@ -10,6 +10,8 @@ Este documento sirve para ubicar rapidamente el sistema correcto, su fuente de v
 | Kestra | Ejecucion de automatizaciones | YAML y namespace files en Git | API, UI y credenciales locales |
 | Bitrix24 | CRM, tareas, chats y actividad comercial | Bitrix24 | MCP o webhook, segun la operacion |
 | VPS | Docker, Apache y servicios publicados | Compose/configuracion Git mas estado runtime | SSH |
+| Dedicado `dedicated_prod_01` | Base de host y servicio de archivos BCRA | `infra/ansible`, inventario y roles por servicio | SSH canonico `[DEDICATED_PRODUCTION_SSH]`; apply/verify Ansible separados |
+| BCRA desde archivos | API interna e importacion de archivos; distinto de la API oficial usada por consumidores comerciales | Imagen por digest, datos del dedicado y [contrato de migracion](bcra-dedicated-migration.md) | API privada; Kestra conserva alias Docker mediante enlace SSH y relay VPS |
 | Datos de recorrido web/WhatsApp/CRM | Eventos crudos para Marketing, management e IA | Volumen `/srv/redunisol-tracking`, por ambiente; [contrato y operación](journey-data.md) | Export API autenticada; credenciales `JOURNEY_EXPORT_*` |
 | Core, CredixSA y servicios financieros | Datos transaccionales | API propietaria correspondiente | endpoint y credencial local |
 | Google Sheets | Planillas compartidas | Google Drive/Sheets | service account u OAuth |

@@ -204,6 +204,9 @@
                   'data_manifest_sha256': bcra_file_api_data_manifest_sha256,
                   'cold_backup_receipt_sha256': bcra_file_api_cold_backup_receipt_sha256,
                   'cold_backup_snapshot_id': (bcra_file_api_cold_backup.stdout | from_json).snapshot_id,
+                  'repository_integrity_verified': true, 'read_data': true,
+                  'repository_integrity_verified_at':
+                    (bcra_file_api_cold_backup.stdout | from_json).repository_integrity_verified_at,
                   'migration_tree_sha256': (bcra_file_api_migration.stdout | from_json).tree_sha256,
                   'cutoff_at': (bcra_file_api_migration.stdout | from_json).cutoff_at,
                   'runtime_verified': true} | to_nice_json }}

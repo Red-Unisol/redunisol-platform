@@ -80,6 +80,15 @@ def cold_backup_document(raw, expected_sha256, migration, manifest_sha256):
     require(document.get("snapshot_verified") is True and document.get("restored_manifest_verified") is True
             and document.get("offsite") is False and document.get("continuous_backup") is False,
             "cold_backup_restore_proof_required")
+    require(document.get("repository_integrity_verified") is True and document.get("read_data") is True,
+            "full_repository_read_data_check_required")
+    checked_at = document.get("repository_integrity_verified_at")
+    require(isinstance(checked_at, str) and len(checked_at) <= 64, "repository_integrity_check_time_required")
+    try:
+        moment = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ContractError("repository_integrity_check_time_invalid") from error
+    require(moment.tzinfo is not None and moment.utcoffset() == timedelta(0), "repository_integrity_check_time_must_be_utc")
     for name in ("repository_id", "snapshot_id"):
         require(isinstance(document.get(name), str) and re.fullmatch(r"[0-9a-f]{64}", document[name]),
                 "cold_backup_repository_or_snapshot_invalid")
@@ -98,7 +107,9 @@ def read_cold_backup(path, receipt_sha256, migration, manifest_sha256):
     require(restored.is_absolute() and restored.resolve().is_relative_to(base), "cold_backup_restore_path_invalid")
     require(hashlib.sha256(private_bytes(restored)).hexdigest() == manifest_sha256, "restored_manifest_changed")
     return {"snapshot_id": document["snapshot_id"], "repository_id": document["repository_id"],
-            "tree_sha256": document["tree_sha256"], "restored_manifest_verified": True}
+            "tree_sha256": document["tree_sha256"], "restored_manifest_verified": True,
+            "repository_integrity_verified": True, "read_data": True,
+            "repository_integrity_verified_at": document["repository_integrity_verified_at"]}
 
 
 CONTAINER_FORMAT = r'''{"image_ref":{{json .Config.Image}},"image_id":{{json .Image}},"running":{{json .State.Running}},"user":{{json .Config.User}},"readonly":{{json .HostConfig.ReadonlyRootfs}},"privileged":{{json .HostConfig.Privileged}},"caps":{{json .HostConfig.CapDrop}},"security":{{json .HostConfig.SecurityOpt}},"pids":{{json .HostConfig.PidsLimit}},"memory":{{json .HostConfig.Memory}},"cpus":{{json .HostConfig.NanoCpus}},"ports":{{json .HostConfig.PortBindings}},"mounts":{{json .Mounts}},"tmpfs":{{json .HostConfig.Tmpfs}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"revision":{{json (index .Config.Labels "io.redunisol.applied-revision")}}}'''

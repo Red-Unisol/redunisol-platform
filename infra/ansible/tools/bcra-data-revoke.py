@@ -96,20 +96,34 @@ def destination_revoke(key):
             if mount.get("RW") and source and (source == str(DATA) or str(DATA).startswith(source.rstrip("/") + "/") or source.startswith(str(DATA) + "/")):
                 raise RevokeError("destination_writer_active")
     expected = 'from="66.97.34.158",restrict,command="/usr/bin/rrsync -wo /var/lib/redunisol-bcra-transfer/data" ' + key
+    was_revoked = marker.get("authorization_revoked") is True
+    changed = False
     if KEYS.exists():
+        if was_revoked:
+            raise RevokeError("authorization_reappeared_after_revocation")
         if KEYS.is_symlink() or not KEYS.is_file() or KEYS.stat().st_uid != 0 or KEYS.read_text().strip() != expected:
             raise RevokeError("unknown_authorization_will_not_be_removed")
         KEYS.unlink()
-    elif not marker.get("authorization_revoked"):
+        changed = True
+    elif not was_revoked:
         raise RevokeError("authorization_missing_without_revocation_evidence")
-    marker.update(authorization_revoked=True, authorization_revoked_at=datetime.now(timezone.utc).isoformat())
-    write_marker(marker)
-    remove_alias()
-    marker.update(receiver_alias_removed=True)
-    write_marker(marker)
+    if was_revoked:
+        stamp = marker.get("authorization_revoked_at")
+        if not isinstance(stamp, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|\+00:00)", stamp):
+            raise RevokeError("invalid_original_revocation_timestamp")
+        if marker.get("receiver_alias_removed") and (ALIAS.exists() or alias_mounts()):
+            raise RevokeError("receiver_alias_reappeared_after_revocation")
+    else:
+        marker.update(authorization_revoked=True, authorization_revoked_at=datetime.now(timezone.utc).isoformat())
+        write_marker(marker)
+    changed = remove_alias() or changed
+    if marker.get("receiver_alias_removed") is not True:
+        marker.update(receiver_alias_removed=True)
+        write_marker(marker)
+        changed = True
     return {"version": 1, "status": "revoked", "transfer_authorization_revoked": True,
             "receiver_alias_removed": True, "public_key_sha256": marker["public_key_sha256"],
-            "authorization_revoked_at": marker["authorization_revoked_at"]}
+            "authorization_revoked_at": marker["authorization_revoked_at"], "changed": changed}
 
 
 def write_marker(marker):
@@ -129,6 +143,7 @@ def alias_mounts():
 
 
 def remove_alias():
+    changed = False
     mounts = alias_mounts()
     if mounts:
         if len(mounts) != 1 or ALIAS.is_symlink() or not ALIAS.is_dir():
@@ -139,11 +154,14 @@ def remove_alias():
         result = subprocess.run(["umount", "--", str(ALIAS)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode != 0 or alias_mounts():
             raise RevokeError("receiver_alias_unmount_failed")
+        changed = True
     if ALIAS.exists():
         info = ALIAS.lstat()
         if ALIAS.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or any(ALIAS.iterdir()):
             raise RevokeError("unknown_unmounted_alias_contents")
         ALIAS.rmdir()
+        changed = True
+    return changed
 
 
 def source_remove_private(key):
@@ -151,10 +169,11 @@ def source_remove_private(key):
     if status["public_key"] != public_key(key):
         raise RevokeError("source_public_key_changed")
     private = RUNTIME / "id_ed25519"
+    changed = private.exists()
     if private.exists():
         private.unlink()
     return {"version": 1, "status": "source_private_key_removed", "private_key_present": False,
-            "source_manifest_preserved": True, "private_key_exported": False}
+            "source_manifest_preserved": True, "private_key_exported": False, "changed": changed}
 
 
 def main(argv=None):
