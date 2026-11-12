@@ -13,6 +13,7 @@ from .caja_client import CajaSession
 from .checkpoint import Checkpoint, ResultRow
 from .report import atomic_publish, build_workbook, save_workbook
 from .runner import run_candidates
+from .schedule import is_consultation_date
 from .sources import Candidate, SourceStats, collect_candidates
 
 LOCAL_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -20,13 +21,41 @@ LOCAL_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 
 def generate(now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(LOCAL_TIMEZONE)
-    run_month = resolve_run_month(os.getenv("REPORT_RUN_MONTH", ""), now)
+    scheduled_at = os.getenv("REPORT_SCHEDULE_DATE", "").strip()
+    reference = (
+        datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        if scheduled_at else now
+    )
+    if reference.tzinfo is not None:
+        reference = reference.astimezone(LOCAL_TIMEZONE)
+    run_date, run_month, run_period = resolve_run_period(
+        os.getenv("REPORT_RUN_DATE", ""), os.getenv("REPORT_RUN_MONTH", ""), reference
+    )
+    if scheduled_at and not is_consultation_date(reference.date()):
+        result = {
+            "ok": True,
+            "status": "not_scheduled",
+            "run_month": run_month,
+            "run_date": run_date,
+            "candidate_count": 0,
+            "queried_count": 0,
+            "pending_count": 0,
+            "invalid_cuil_count": 0,
+            "rebuild_only": False,
+            "ignored_new_candidate_count": 0,
+            "latest_path": "",
+            "history_path": "",
+            "error": "",
+        }
+        _set_kestra_outputs(result)
+        print(json.dumps({"event": "caja_calendar_skipped", **result}))
+        return result
     pause_seconds = _float_env("REPORT_PAUSE_SECONDS", 3.0)
     limit = _optional_positive_int(os.getenv("REPORT_LIMIT", ""))
     rebuild_only = _bool_env("REPORT_REBUILD_ONLY", False)
     reports_root = Path(os.getenv("REPORTS_ROOT", "/reports"))
     report_dir = reports_root / "analisis-credito" / "tope-descuento-caja"
-    checkpoint = Checkpoint(report_dir / ".state" / f"{run_month}.jsonl")
+    checkpoint = Checkpoint(report_dir / ".state" / f"{run_period}.jsonl")
 
     print(json.dumps({"event": "caja_monthly_sources_started", "run_month": run_month}))
     candidates, stats = collect_candidates()
@@ -57,8 +86,9 @@ def generate(now: datetime | None = None) -> dict[str, Any]:
             stats=stats,
             now=now,
             reports_root=reports_root,
-            run_month=run_month,
+            run_month=run_period,
         )
+        result.update(run_month=run_month, run_date=run_date)
         _set_kestra_outputs(result)
         print(json.dumps({"event": "caja_monthly_finished", **result}, ensure_ascii=True))
         return result
@@ -83,13 +113,14 @@ def generate(now: datetime | None = None) -> dict[str, Any]:
             stats,
             now,
             reports_root,
-            run_month,
+            run_period,
         )
 
     result = {
         "ok": summary.complete or summary.limited,
         "status": status,
         "run_month": run_month,
+        "run_date": run_date,
         "candidate_count": len(candidates),
         "queried_count": summary.queried,
         "pending_count": summary.pending,
@@ -185,6 +216,23 @@ def _publish_report(
         save_workbook(workbook, workbook_path)
         latest, history = atomic_publish(workbook_path, reports_root, run_month)
     return str(latest), str(history)
+
+
+def resolve_run_period(run_date: str, run_month: str, now: datetime) -> tuple[str, str, str]:
+    run_date, run_month = run_date.strip(), run_month.strip()
+    if run_date and run_month:
+        raise ValueError("Usar REPORT_RUN_DATE o REPORT_RUN_MONTH, no ambos.")
+    if run_month:
+        month = resolve_run_month(run_month, now)
+        return "", month, month  # Legacy monthly checkpoints remain reconstructible.
+    value = run_date or now.date().isoformat()
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise ValueError
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("REPORT_RUN_DATE debe ser una fecha valida YYYY-MM-DD.") from exc
+    return value, parsed.strftime("%Y-%m"), value
 
 
 def resolve_run_month(value: str, now: datetime) -> str:
