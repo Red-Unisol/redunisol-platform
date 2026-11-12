@@ -18,6 +18,7 @@ type LegacyGateway = Pick<
   lookupSocioRapido(
     documento: string,
     tipoDocumento?: string,
+    cuit?: string,
   ): Promise<{ id: string }[]>;
 };
 

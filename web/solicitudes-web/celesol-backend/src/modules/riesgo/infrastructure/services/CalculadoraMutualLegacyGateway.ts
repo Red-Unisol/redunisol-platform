@@ -1,3 +1,7 @@
+import {
+  SocioLegacyIdentityResolver,
+  type SocioLegacyIdentity,
+} from "../../../socios/infrastructure/services/SocioLegacyIdentityResolver";
 import type { CalculadoraMutualDatos } from "../../domain/entities/CalculadoraMutual.entity";
 import {
   CalculadoraMutualLegacyUnavailableError,
@@ -12,6 +16,7 @@ type EvaluateListDefinition<TResult> = {
   fields: readonly string[];
   mapRow: (row: EvaluateRow) => TResult;
   tipo: string;
+  requireComplete?: boolean;
 };
 
 type CalculadoraMutualLegacyGatewayConfig = {
@@ -65,9 +70,7 @@ const socioIndicadoresFieldIndex = buildFieldIndexByName(
   SOCIO_INDICADORES_FIELDS,
 );
 const titularNuevoFieldIndex = buildFieldIndexByName(TITULAR_NUEVO_FIELDS);
-const saldoPrestamosFieldIndex = buildFieldIndexByName(
-  SALDO_PRESTAMOS_FIELDS,
-);
+const saldoPrestamosFieldIndex = buildFieldIndexByName(SALDO_PRESTAMOS_FIELDS);
 const compromisoMensualFieldIndex = buildFieldIndexByName(
   COMPROMISO_MENSUAL_FIELDS,
 );
@@ -80,6 +83,7 @@ export type CalculadoraMutualSolicitudSnapshot = {
   cuotas: number | null;
   cupoDisponibleVendedor: number | null;
   dniTitular: string | null;
+  tipoDocumentoTitular?: string | null;
   fechaPrimerVencimiento: string | null;
   fechaSolicitud: string | null;
   ingresos: number | null;
@@ -100,6 +104,7 @@ export type CalculadoraMutualHistorialSocio = {
 };
 
 export class CalculadoraMutualLegacyGateway {
+  private readonly socioIdentityResolver: SocioLegacyIdentityResolver;
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
   private readonly timeoutMs: number;
@@ -108,6 +113,10 @@ export class CalculadoraMutualLegacyGateway {
     config: CalculadoraMutualLegacyGatewayConfig,
     fetcher: Fetcher = fetch,
   ) {
+    this.socioIdentityResolver = new SocioLegacyIdentityResolver(
+      config,
+      fetcher,
+    );
     this.baseUrl = config.baseUrl;
     this.fetcher = fetcher;
     this.timeoutMs = config.timeoutMs;
@@ -115,8 +124,12 @@ export class CalculadoraMutualLegacyGateway {
 
   async getDatos(oid: string): Promise<CalculadoraMutualDatos> {
     const snapshot = await this.getSolicitudSnapshot(oid);
-    const historial = await this.getHistorialByCuit(
-      snapshot.cuitTitular,
+    const historial = await this.getHistorialDelTitular(
+      {
+        cuit: snapshot.cuitTitular,
+        nroDocumento: snapshot.dniTitular,
+        tipoDocumento: snapshot.tipoDocumentoTitular,
+      },
       snapshot.fechaSolicitud,
     );
 
@@ -126,26 +139,28 @@ export class CalculadoraMutualLegacyGateway {
     };
   }
 
-  /**
-   * Datos de riesgo/historial de un socio (Situación, Rechazos, Titular
-   * Nuevo, Saldo y Compromiso de préstamos). El core propio nunca los tiene
-   * -- viven únicamente en el legado -- así que este método se reutiliza
-   * tanto cuando el snapshot de la solicitud viene del legado como cuando
-   * viene del core (buscando siempre por CUIT del titular).
-   */
-  async getHistorialByCuit(
-    cuit: string | null,
+  /** Usa el mismo SocioMutual resuelto que préstamos, CBU y datos rápidos. */
+  async getHistorialDelTitular(
+    titular: SocioLegacyIdentity,
     fechaSolicitud: string | null,
   ): Promise<CalculadoraMutualHistorialSocio> {
-    if (!cuit) {
+    let socio;
+    try {
+      socio = await this.socioIdentityResolver.resolve(titular);
+    } catch {
+      return unknownHistorial();
+    }
+    if (socio.status === "ambiguous") return unknownHistorial();
+    if (socio.status === "none") {
       return {
-        compromisoMensualVigente: null,
+        compromisoMensualVigente: 0,
         rechazosDelMes: null,
-        saldoPrestamosVigentes: null,
-        situacionSocio: null,
-        titularNuevo: null,
+        saldoPrestamosVigentes: 0,
+        situacionSocio: "SIN DATOS",
+        titularNuevo: fechaSolicitud ? true : null,
       };
     }
+    const socioId = socio.id;
 
     const [
       socioIndicadoresResult,
@@ -153,10 +168,10 @@ export class CalculadoraMutualLegacyGateway {
       saldoPrestamosVigentesResult,
       compromisoMensualVigenteResult,
     ] = await Promise.allSettled([
-      this.getSocioIndicadores(cuit),
-      this.getTitularNuevo(cuit, fechaSolicitud),
-      this.getSaldoPrestamosVigentes(cuit),
-      this.getCompromisoMensualVigente(cuit),
+      this.getSocioIndicadores(socioId),
+      this.getTitularNuevo(socioId, fechaSolicitud),
+      this.getSaldoPrestamosVigentes(socioId),
+      this.getCompromisoMensualVigente(socioId),
     ]);
 
     const socioIndicadores = resolveSettled(socioIndicadoresResult, {
@@ -179,13 +194,16 @@ export class CalculadoraMutualLegacyGateway {
     };
   }
 
-  private async getSolicitudSnapshot(oid: string): Promise<CalculadoraMutualSolicitudSnapshot> {
-    const rows = await this.executeEvaluateList<CalculadoraMutualSolicitudSnapshot>({
-      buildCmd: () => `[Oid]=${oid}`,
-      fields: SOLICITUD_SNAPSHOT_FIELDS,
-      mapRow: mapSolicitudSnapshotRow,
-      tipo: "PreSolicitud.Module.Solicitud",
-    });
+  private async getSolicitudSnapshot(
+    oid: string,
+  ): Promise<CalculadoraMutualSolicitudSnapshot> {
+    const rows =
+      await this.executeEvaluateList<CalculadoraMutualSolicitudSnapshot>({
+        buildCmd: () => `[Oid]=${oid}`,
+        fields: SOLICITUD_SNAPSHOT_FIELDS,
+        mapRow: mapSolicitudSnapshotRow,
+        tipo: "PreSolicitud.Module.Solicitud",
+      });
 
     const snapshot = rows[0];
 
@@ -196,12 +214,12 @@ export class CalculadoraMutualLegacyGateway {
     return snapshot;
   }
 
-  private async getSocioIndicadores(cuit: string) {
+  private async getSocioIndicadores(socioId: string) {
     const rows = await this.executeEvaluateList<{
       rechazosDelMes: number | null;
       situacionSocio: string | null;
     }>({
-      buildCmd: () => `[CUIT]=${cuit}`,
+      buildCmd: () => `[ID]=${socioId}`,
       fields: SOCIO_INDICADORES_FIELDS,
       mapRow: mapSocioIndicadoresRow,
       tipo: "F.Module.SocioMutual",
@@ -215,14 +233,16 @@ export class CalculadoraMutualLegacyGateway {
     );
   }
 
-  private async getTitularNuevo(cuit: string, fechaSolicitud: string | null) {
+  private async getTitularNuevo(
+    socioId: string,
+    fechaSolicitud: string | null,
+  ) {
     if (!fechaSolicitud) {
       return null;
     }
 
     const rows = await this.executeEvaluateList<{ id: number | null }>({
-      buildCmd: () =>
-        `[CUIT]=${cuit} AND [FechaAlta]<=#${fechaSolicitud}#`,
+      buildCmd: () => `[ID]=${socioId} AND [FechaAlta]<=#${fechaSolicitud}#`,
       fields: TITULAR_NUEVO_FIELDS,
       mapRow: (row) => ({
         id: getNumberValue(row, titularNuevoFieldIndex, "ID"),
@@ -233,10 +253,11 @@ export class CalculadoraMutualLegacyGateway {
     return rows.length === 0;
   }
 
-  private async getSaldoPrestamosVigentes(cuit: string) {
+  private async getSaldoPrestamosVigentes(socioId: string) {
     const rows = await this.executeEvaluateList<number | null>({
-      buildCmd: () => `[SocioTitular.Socio.CUIT]=${cuit}`,
+      buildCmd: () => `[SocioTitular.Socio.ID]=${socioId}`,
       fields: SALDO_PRESTAMOS_FIELDS,
+      requireComplete: true,
       mapRow: (row) =>
         getNumberValue(row, saldoPrestamosFieldIndex, "DeudaTotal"),
       tipo: "F.Module.Cuentas.Prestamos.Prestamo",
@@ -245,13 +266,14 @@ export class CalculadoraMutualLegacyGateway {
     return sumNullableNumbers(rows);
   }
 
-  private async getCompromisoMensualVigente(cuit: string) {
+  private async getCompromisoMensualVigente(socioId: string) {
     const { from, to } = buildNextMonthRange();
 
     const rows = await this.executeEvaluateList<number | null>({
       buildCmd: () =>
-        `[Fecha]>=#${from}# AND [Fecha]<=#${to}# AND [FechaCobro] Is Null AND [Prestamo.SocioTitular.Socio.CUIT]=${cuit}`,
+        `[Fecha]>=#${from}# AND [Fecha]<=#${to}# AND [FechaCobro] Is Null AND [Prestamo.SocioTitular.Socio.ID]=${socioId}`,
       fields: COMPROMISO_MENSUAL_FIELDS,
+      requireComplete: true,
       mapRow: (row) =>
         getNumberValue(row, compromisoMensualFieldIndex, "MontoTotal"),
       tipo: "F.Module.Cuentas.Prestamos.CuotaPrestamo",
@@ -271,7 +293,7 @@ export class CalculadoraMutualLegacyGateway {
         body: JSON.stringify({
           campos: definition.fields.join(";"),
           cmd: definition.buildCmd(),
-          max: 200,
+          max: definition.requireComplete ? 2001 : 200,
           tipo: definition.tipo,
         }),
         headers: {
@@ -291,6 +313,16 @@ export class CalculadoraMutualLegacyGateway {
         throw new CalculadoraMutualLegacyUnavailableError();
       }
 
+      if (
+        definition.requireComplete &&
+        (responseBody.length >= 2001 ||
+          responseBody.some(
+            (row) =>
+              !Array.isArray(row) || row.length !== definition.fields.length,
+          ))
+      ) {
+        throw new CalculadoraMutualLegacyUnavailableError();
+      }
       return responseBody
         .filter((row): row is EvaluateRow => Array.isArray(row))
         .map((row) => definition.mapRow(row));
@@ -385,15 +417,8 @@ function resolveSettled<T>(result: PromiseSettledResult<T>, fallback: T): T {
 }
 
 function sumNullableNumbers(values: (number | null)[]) {
-  const nonNullValues = values.filter(
-    (value): value is number => value !== null,
-  );
-
-  if (nonNullValues.length === 0) {
-    return 0;
-  }
-
-  return nonNullValues.reduce((total, value) => total + value, 0);
+  if (values.some((value) => value === null)) return null;
+  return (values as number[]).reduce((total, value) => total + value, 0);
 }
 
 function buildCmdDate(value: Date) {
@@ -410,7 +435,11 @@ function buildNextMonthRange(referenceDate = new Date()) {
     referenceDate.getMonth() + 1,
     1,
   );
-  const to = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 2, 0);
+  const to = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth() + 2,
+    0,
+  );
 
   return {
     from: buildCmdDate(from),
@@ -418,7 +447,9 @@ function buildNextMonthRange(referenceDate = new Date()) {
   };
 }
 
-function mapSolicitudSnapshotRow(row: EvaluateRow): CalculadoraMutualSolicitudSnapshot {
+function mapSolicitudSnapshotRow(
+  row: EvaluateRow,
+): CalculadoraMutualSolicitudSnapshot {
   return {
     antiguedadLaboral: getNumberValue(
       row,
@@ -457,11 +488,7 @@ function mapSolicitudSnapshotRow(row: EvaluateRow): CalculadoraMutualSolicitudSn
     fechaSolicitud: formatApiDate(
       getStringValue(row, solicitudSnapshotFieldIndex, "Fecha"),
     ),
-    ingresos: getNumberValue(
-      row,
-      solicitudSnapshotFieldIndex,
-      "MontoRecibo",
-    ),
+    ingresos: getNumberValue(row, solicitudSnapshotFieldIndex, "MontoRecibo"),
     lineaDescripcion: getStringValue(
       row,
       solicitudSnapshotFieldIndex,
@@ -509,6 +536,17 @@ function mapSocioIndicadoresRow(row: EvaluateRow) {
 
   return {
     rechazosDelMes: rechazos,
-    situacionSocio: situacion && situacion.trim() !== "" ? situacion : "SIN DATOS",
+    situacionSocio:
+      situacion && situacion.trim() !== "" ? situacion : "SIN DATOS",
+  };
+}
+
+function unknownHistorial(): CalculadoraMutualHistorialSocio {
+  return {
+    compromisoMensualVigente: null,
+    rechazosDelMes: null,
+    saldoPrestamosVigentes: null,
+    situacionSocio: null,
+    titularNuevo: null,
   };
 }

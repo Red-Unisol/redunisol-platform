@@ -12,7 +12,7 @@ type Dependencies = {
  * Híbrido: si la solicitud ya existe en el core (Postgres) por su legacyOid,
  * usa esos datos para el snapshot (línea, montos, titular, etc.) sin ir al
  * legado. El historial de riesgo del socio (Situación, Rechazos, Titular
- * Nuevo, Saldo y Compromiso de préstamos) siempre se busca por CUIT en el
+ * Nuevo, Saldo y Compromiso de préstamos) siempre usa la identidad del titular en el
  * legado, porque el core nunca lo tiene, sea cual sea el origen del
  * snapshot.
  *
@@ -37,8 +37,12 @@ export class CalculadoraMutualDatosProvider {
       return this.legacyGateway.getDatos(oid);
     }
 
-    const historial = await this.legacyGateway.getHistorialByCuit(
-      coreSnapshot.cuitTitular,
+    const historial = await this.legacyGateway.getHistorialDelTitular(
+      {
+        cuit: coreSnapshot.cuitTitular,
+        nroDocumento: coreSnapshot.dniTitular,
+        tipoDocumento: coreSnapshot.tipoDocumentoTitular,
+      },
       coreSnapshot.fechaSolicitud,
     );
 
@@ -52,7 +56,7 @@ export class CalculadoraMutualDatosProvider {
    * Para la pestaña "Calculadora" embebida en el detalle de una solicitud
    * del core: ya sabemos qué solicitud es (su id propio), así que se busca
    * directo ahí, sin pasar por legacyOid. El historial de riesgo del socio
-   * sigue yendo al legado por CUIT, como siempre.
+   * usa el mismo criterio de identidad que los préstamos.
    */
   async getDatosByCoreId(solicitudId: string): Promise<CalculadoraMutualDatos> {
     const coreSnapshot =
@@ -62,8 +66,12 @@ export class CalculadoraMutualDatosProvider {
       throw new SolicitudNotFoundError();
     }
 
-    const historial = await this.legacyGateway.getHistorialByCuit(
-      coreSnapshot.cuitTitular,
+    const historial = await this.legacyGateway.getHistorialDelTitular(
+      {
+        cuit: coreSnapshot.cuitTitular,
+        nroDocumento: coreSnapshot.dniTitular,
+        tipoDocumento: coreSnapshot.tipoDocumentoTitular,
+      },
       coreSnapshot.fechaSolicitud,
     );
 

@@ -60,9 +60,9 @@ describe("ListPrestamosDelSocioUseCase", () => {
     // Las juridicas tienen el CUIT en NroDoc.
     const buscados: string[] = [];
     const useCase = buildUseCase({
-      lookupSocioRapido: async (documento) => {
-        buscados.push(documento);
-        return documento === "30711222339" ? [{ id: "152199" }] : [];
+      lookupSocioRapido: async (documento, _tipo, cuit) => {
+        buscados.push(cuit ?? documento);
+        return cuit === "30711222339" ? [{ id: "152199" }] : [];
       },
       listPrestamosDelSocio: async () => [prestamo()],
       solicitud: {
@@ -132,6 +132,7 @@ function buildUseCase(
     lookupSocioRapido?: (
       documento: string,
       tipoDocumento?: string,
+      cuit?: string,
     ) => Promise<{ id: string }[]>;
     solicitud?: unknown;
   } = {},

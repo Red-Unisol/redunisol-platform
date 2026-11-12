@@ -76,6 +76,7 @@ function mapSolicitudSnapshotRecord(
       ? Number(record.cupoTitular)
       : null,
     dniTitular: record.titular?.nroDocumento ?? null,
+    tipoDocumentoTitular: record.titular?.tipoDocumento ?? null,
     fechaPrimerVencimiento: toDateOnly(record.fechaPrimerVencimiento),
     fechaSolicitud: toDateOnly(record.createdAt),
     ingresos: record.datosLaborales?.montoRecibo

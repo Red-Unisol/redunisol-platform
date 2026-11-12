@@ -27,6 +27,9 @@ cobros inciertos de refinanciación están en
 
 ## Diagnóstico técnico de préstamos
 
+Los criterios compartidos para identificar socios duplicados y evitar listados
+truncados están en [Identidad de socios en Vimarx](docs/socios-identidad-vimarx.md).
+
 Las peticiones y respuestas de Vimarx, la correlación de intentos y la consulta
 operativa privada están en
 [docs/technical-loan-diagnostics.md](docs/technical-loan-diagnostics.md).

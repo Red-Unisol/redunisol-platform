@@ -51,6 +51,7 @@ export function CbuHabitualVimarx({
   solicitudId,
   documento,
   tipoDocumento,
+  cuit,
   cbuSolicitud,
   cbuNoHabitual,
   identityChanged = false,
@@ -58,6 +59,7 @@ export function CbuHabitualVimarx({
   solicitudId: string;
   documento: string | null;
   tipoDocumento: string | null;
+  cuit?: string | null;
   cbuSolicitud: string | null;
   cbuNoHabitual: string | null;
   identityChanged?: boolean;
@@ -69,6 +71,7 @@ export function CbuHabitualVimarx({
       solicitudId,
       documento,
       tipoDocumento,
+      cuit,
     ],
     queryFn: () => datosRapidosApi.cbu(solicitudId),
     enabled: !identityChanged,
@@ -83,7 +86,7 @@ export function CbuHabitualVimarx({
       : undefined;
   const habitual = data?.status === "available" ? data.cbu : null;
   const message = identityChanged
-    ? "Guardá el documento para consultar el CBU habitual del titular actualizado."
+    ? "Guardá el documento y el CUIT para consultar el CBU habitual del titular actualizado."
     : query.isFetching || query.isPending
       ? "Consultando el CBU habitual en Vimarx…"
       : query.isError || !data || data.status === "unavailable"

@@ -24,9 +24,10 @@ detalle de préstamos.
 
 `lookupSocioByDocumento` y `/api/socios/lookup` consultan el padrón PostgreSQL
 sincronizado. Un resultado vacío allí no acredita ausencia actual en Vimarx.
-El bloque consulta F.Module.SocioMutual por NroDoc y TipoDoc.Descripcion, con
-máximo dos coincidencias. Una coincidencia confirma socio; cero confirma ausencia;
-múltiples, documento inválido, respuestas malformadas y errores quedan desconocidos.
+El bloque resuelve F.Module.SocioMutual con documento, tipo y CUIT según
+[Identidad de socios en Vimarx](socios-identidad-vimarx.md). El CUIT exacto permite
+desempatar documentos duplicados; las coincidencias igualmente compatibles,
+conflictos, respuestas truncadas, documentos inválidos y errores quedan desconocidos.
 No se usa la ausencia de número de socio de la solicitud para decidir.
 
 La consulta de créditos vuelve a resolver la identidad en el servidor. Reutiliza

@@ -1,3 +1,4 @@
+import { SocioLegacyIdentityResolver } from "../../../socios/infrastructure/services/SocioLegacyIdentityResolver";
 import type { SolicitudDelTitular } from "../../../solicitudes-core/domain/services/HistorialSolicitudesGateway";
 import type { CoreLoanLifecycle } from "../../../solicitudes-core/infrastructure/services/ControlledLoanReplacementService";
 import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-errors";
@@ -417,6 +418,7 @@ const vendedorHistorialFieldIndex = buildFieldIndexByName(
 );
 
 export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway {
+  private readonly socioIdentityResolver: SocioLegacyIdentityResolver;
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
   private readonly timeoutMs: number;
@@ -425,6 +427,7 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     config: EvaluateListSolicitudesGatewayConfig,
     fetcher: Fetcher = fetch,
   ) {
+    this.socioIdentityResolver = new SocioLegacyIdentityResolver(config, fetcher);
     this.baseUrl = config.baseUrl;
     this.fetcher = fetcher;
     this.timeoutMs = config.timeoutMs;
@@ -717,40 +720,35 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
 
   // Consultas acotadas del resumen: nunca inferir ausencia por un padrón
   // local desactualizado ni por el límite del listado de préstamos.
-  async lookupSocioRapido(documento: string, tipoDocumento?: string) {
-    if (!/^\d+$/.test(documento)) throw new LegacySolicitudesUnavailableError();
-    const rows = await this.executeEvaluateList({
-      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
-      defaultMax: 2,
-      fields: ["ID"],
-      tipo: "F.Module.SocioMutual",
-      mapRow: (row) => {
-        if (row.length !== 1 || !/^\d+$/.test(String(row[0] ?? ""))) {
-          throw new LegacySolicitudesUnavailableError();
-        }
-        return { id: String(row[0]) };
-      },
-    }, 2, true);
-    return rows;
-  }
-
-  async lookupCbuHabitual(documento: string, tipoDocumento?: string) {
-    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+  async lookupSocioRapido(documento: string, tipoDocumento?: string, cuit?: string) {
+    try {
+      const result = await this.socioIdentityResolver.resolve({ nroDocumento: documento, tipoDocumento, cuit });
+      if (result.status === "none") return [];
+      return (result.status === "single" ? [result.id] : result.ids).map((id) => ({ id }));
+    } catch {
       throw new LegacySolicitudesUnavailableError();
     }
-    return this.executeEvaluateList({
-      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
+  }
+
+  async lookupCbuHabitual(documento: string, tipoDocumento?: string, cuit?: string) {
+    const matches = await this.lookupSocioRapido(documento, tipoDocumento, cuit);
+    if (matches.length !== 1) return matches.map(({ id }) => ({ id, cbu: null }));
+    const socioId = matches[0]!.id;
+    const rows = await this.executeEvaluateList({
+      buildCmd: () => `[ID] = ${socioId}`,
       defaultMax: 2,
       fields: ["ID", "CuentaBancariaHabitual.CBU"],
       tipo: "F.Module.SocioMutual",
       mapRow: (row) => {
-        if (row.length !== 2 || !/^\d+$/.test(String(row[0] ?? "")) ||
+        if (row.length !== 2 || String(row[0]) !== socioId ||
             (row[1] !== null && typeof row[1] !== "string")) {
           throw new LegacySolicitudesUnavailableError();
         }
-        return { id: String(row[0]), cbu: typeof row[1] === "string" ? row[1].trim() || null : null };
+        return { id: socioId, cbu: typeof row[1] === "string" ? row[1].trim() || null : null };
       },
     }, 2, true);
+    if (rows.length !== 1) throw new LegacySolicitudesUnavailableError();
+    return rows;
   }
 
   async getConvenioRapido(lineaOid: string) {
@@ -855,11 +853,13 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return records.slice(0, 50);
   }
 
-  listPrestamosDelSocio(socioLegacyId: string) {
-    return this.executeEvaluateList(
-      buildPrestamosDelSocioDefinition(socioLegacyId),
-      100,
+  async listPrestamosDelSocio(socioLegacyId: string) {
+    const max = 2001;
+    const rows = await this.executeEvaluateList(
+      buildPrestamosDelSocioDefinition(socioLegacyId), max, true,
     );
+    if (rows.length >= max) throw new LegacySolicitudesUnavailableError();
+    return rows;
   }
 
   async getPrestamoDelSocio(socioLegacyId: string, prestamoLegacyId: string) {
@@ -1253,7 +1253,7 @@ export function buildPrestamosDelSocioDefinition(
     // El id se interpola en la expresion de criterios, asi que quien llama
     // tiene que haberlo validado como entero antes (ver el caso de uso).
     buildCmd: () => `Integrantes[Socio.ID = ${socioLegacyId}].Count() > 0`,
-    defaultMax: 100,
+    defaultMax: 2001,
     fields: PRESTAMOS_DEL_SOCIO_FIELDS,
     mapRow: mapPrestamoDelSocioRow,
     tipo: "F.Module.Cuentas.Prestamos.Prestamo",

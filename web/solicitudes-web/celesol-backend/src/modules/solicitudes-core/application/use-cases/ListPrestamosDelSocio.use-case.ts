@@ -8,6 +8,7 @@ type LegacyGateway = Pick<SolicitudesLegacyGateway, "listPrestamosDelSocio"> & {
   lookupSocioRapido(
     documento: string,
     tipoDocumento?: string,
+    cuit?: string,
   ): Promise<{ id: string }[]>;
 };
 
