@@ -63,6 +63,40 @@ class PadronesTest extends TestCase
         $this->getJson('/api/padrones/sources')->assertUnauthorized();
     }
 
+    public function test_administracion_default_mapping_imports_the_first_employee_and_named_fields(): void
+    {
+        $this->login();
+        mkdir($this->directory, 0700, true);
+        $path = $this->directory.'/administracion.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->getCurrentSheet()->setName('Hoja1');
+        $writer->addRow(Row::fromValues(['CUIL', 'nombres', 'Neto']));
+        $writer->addRow(Row::fromValues(['20123456786', 'Primera persona', 500000]));
+        $writer->addRow(Row::fromValues(['87654321', 'Segunda persona', 600000]));
+        $writer->close();
+
+        $upload = $this->post('/api/padrones/sources/administracion/versions', [
+            'period' => '2026-11',
+            'file' => new UploadedFile($path, 'administracion.xlsx', null, null, true),
+        ], ['Accept' => 'application/json'])->assertCreated();
+        $id = $upload->json('version');
+        $this->prepare($id, 'administracion', $upload->json('mapping'))
+            ->assertOk()->assertJsonPath('summary.valid', 2)
+            ->assertJsonPath('summary.invalid', 0)
+            ->assertJsonPath('summary.sample.0.row', 2)
+            ->assertJsonPath('summary.sample.0.data.nombres', 'Primera persona');
+        $this->activate($id, null, true, 'administracion')->assertOk();
+        $this->postJson('/api/padrones/lookup', ['document' => '12345678'])
+            ->assertOk()->assertJsonCount(1, 'sources.0.matches')
+            ->assertJsonPath('sources.0.matches.0.row', 2)
+            ->assertJsonPath('sources.0.matches.0.data.CUIL', '20123456786')
+            ->assertJsonPath('sources.0.matches.0.data.nombres', 'Primera persona')
+            ->assertJsonPath('sources.0.matches.0.data.Neto', '500000');
+        $this->postJson('/api/padrones/lookup', ['document' => '87654321'])
+            ->assertOk()->assertJsonPath('sources.0.matches.0.data.nombres', 'Segunda persona');
+    }
+
     public function test_drafts_do_not_affect_lookup_and_publication_preserves_all_matches(): void
     {
         $this->login();

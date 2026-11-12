@@ -17,6 +17,19 @@ estructura requieren revisión. El historial permite retomar borradores y restau
 una versión publicada. Dos publicaciones concurrentes no se pisan: la segunda
 debe recargar y volver a validar contra la versión vigente.
 
+Administración usa inicialmente la fila **1** como encabezado (`CUIL`, `nombres`,
+`Neto`). El valor inicial se aplica al crear la fuente; una fuente existente
+conserva su configuración publicada. Para corregir una carga anterior con fila 2,
+volver a subir el mismo archivo y período, seleccionar fila 1, validar y publicar
+una versión nueva. Conservar la anterior para poder restaurarla. Comprobar que la
+primera persona se importe desde la fila 2 y que los campos mantengan sus títulos.
+
+La carga de Administración de noviembre de 2026 se reimportó por la API habitual
+el **12/11/2026**, conservando el archivo original y la versión anterior. Pasó de
+19.985 a **19.986 registros**, sin filas inválidas ni documentos eliminados. Se
+verificaron los valores de los 19.985 registros previos y la recuperación de la
+primera persona. Las otras fuentes publicadas conservaron sus versiones.
+
 Se crean cinco fuentes vacías con los formatos iniciales: Administración,
 Educación, Bajas de agentes, Senado y Organismos y dependencias. Los archivos
 reales deben cargarse por la interfaz; no se incluyen datos personales en Git.
