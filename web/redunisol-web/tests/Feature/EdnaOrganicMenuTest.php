@@ -62,7 +62,7 @@ function organicMenuHarness(?Closure $resolve = null): array
 {
     $crm = Mockery::mock(EdnaBitrix::class);
     $binding = Mockery::mock(EdnaMessageBinding::class);
-    $binding->shouldReceive('resolve')->andReturnUsing($resolve ?? fn ($event) => organicMenuProof($event));
+    $binding->shouldReceive('resolveCurrent')->andReturnUsing($resolve ?? fn ($event) => organicMenuProof($event));
     $transport = Mockery::mock(EdnaOrganicTransport::class);
     $transport->shouldReceive('assertChannel')->byDefault()->andReturnNull();
     $transport->shouldReceive('schedule')->byDefault()->andReturn(['send_state' => 'accepted', 'send_reason' => null, 'accepted_at' => now()]);

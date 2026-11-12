@@ -259,7 +259,7 @@ test('an untagged follow-up waits for the paid binding and then preserves its ex
         'entry_event_id' => $entry->id, 'entry_message_id' => $entry->message_id, 'chat_id' => '601',
         'session_id' => '501', 'activity_id' => '801', 'message_id' => (string) (700 + $entry->id), 'native_lead_id' => '101'];
     $binding = Mockery::mock(EdnaMessageBinding::class);
-    $binding->shouldReceive('resolve')->once()->andReturn($proof($follow));
+    $binding->shouldReceive('resolveCurrent')->once()->andReturn($proof($follow));
     $service = new EdnaOrganicMenu(null, $binding);
     expect($service->process($menu->id))->toBe(['state' => 'waiting', 'reason' => 'paid_intake_binding_pending']);
     $waiting = DB::table('edna_organic_menus')->find($menu->id);

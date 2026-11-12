@@ -93,6 +93,16 @@ La captura del inbox no hace HTTP. El worker prueba la sesión y la atención an
 de enviar; verifica el historial Edna antes de procesar la respuesta. Un callback
 que llegue antes de esa confirmación queda guardado para conciliación.
 
+Para la bienvenida y sus botones, `EdnaMessageBinding::resolveCurrent` relee el
+teléfono de todos los candidatos lead/contact y descubre sus chats mediante
+`imopenlines.crm.chat.get`. Comprueba el mensaje externo exacto en las sesiones
+actuales de todos esos chats, incluso si su actividad pertenece a una negociación;
+no recorre sesiones históricas ni las descarta por fechas aproximadas. Una
+respuesta incompleta, un presupuesto agotado o varias pruebas impiden seleccionar
+el chat; un historial actual truncado permanece bloqueado. El resolver histórico
+del puente web conserva su contrato. Las comprobaciones de atención siguen
+ejecutándose justo antes de enviar o transferir.
+
 El menú y el puente web comparten lock por chat y leases por evento. El sondeo
 recupera lotes acotados de hasta 25 trabajos por minuto. Las escrituras inciertas
 se concilian con lecturas: nunca se repite el POST de saludo o transferencia.
