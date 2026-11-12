@@ -1,0 +1,28 @@
+---
+- name: Prepare a source-local ephemeral key and stopped BCRA source
+  hosts: bcra_migration_origins
+  gather_facts: false
+  any_errors_fatal: true
+  roles:
+    - role: bcra_data_transfer
+      vars:
+        bcra_data_copy_stage: prepare_source
+
+- name: Prepare the dedicated restricted write-only receiver
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  roles:
+    - role: bcra_data_transfer
+      vars:
+        bcra_data_copy_stage: prepare_destination
+
+- name: Launch one bounded asynchronous BCRA copy and subsequent source inventory
+  hosts: bcra_migration_origins
+  gather_facts: false
+  any_errors_fatal: true
+  roles:
+    - role: bcra_data_transfer
+      vars:
+        bcra_data_copy_stage: start_source

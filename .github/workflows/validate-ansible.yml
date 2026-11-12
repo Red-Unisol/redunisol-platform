@@ -88,6 +88,6 @@ jobs:
       - name: Check playbook syntax without contacting hosts
         working-directory: infra/ansible
         run: |
-          for playbook in provision verify maintenance storage-prepare backup-initialize restore-local-config; do
-            ansible-playbook -i inventories/production/hosts.yml "playbooks/${playbook}.yml" --syntax-check
+          for playbook in playbooks/*.yml; do
+            ansible-playbook -i inventories/production/hosts.yml "$playbook" --syntax-check
           done

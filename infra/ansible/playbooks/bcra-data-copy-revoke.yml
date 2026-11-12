@@ -1,0 +1,59 @@
+---
+- name: Require a completed source copy and inventory before removing access
+  hosts: bcra_migration_origins
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require explicit transfer cleanup and traceable source revision
+      ansible.builtin.assert:
+        that:
+          - bcra_data_copy_cleanup_authorized | default(false) | bool
+          - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+          - groups.bcra_migration_origins | length == 1
+          - groups.bcra_file_api_hosts | length == 1
+  tasks:
+    - name: Read completed source evidence without copying private material
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/../tools/bcra-data-revoke.py check-source"
+        executable: /usr/bin/python3
+      register: bcra_cleanup_source_check
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Retain only public source completion evidence
+      ansible.builtin.set_fact:
+        bcra_cleanup_source: "{{ bcra_cleanup_source_check.stdout | from_json }}"
+      when: not ansible_check_mode
+
+- name: Revoke the exact write-only receiver key before application startup
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Remove only the completed transfer public authorization
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/../tools/bcra-data-revoke.py destination
+          --public-key {{ hostvars[groups.bcra_migration_origins[0]].bcra_cleanup_source.public_key | quote }}
+        executable: /usr/bin/python3
+      register: bcra_cleanup_receiver
+      changed_when: true
+      when: not ansible_check_mode
+    - name: Report authorization revocation evidence
+      ansible.builtin.debug:
+        msg: "{{ bcra_cleanup_receiver.stdout | from_json }}"
+      when: not ansible_check_mode
+
+- name: Delete the source-only ephemeral private key after receiver revocation
+  hosts: bcra_migration_origins
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Remove the matching source key while preserving copy evidence
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/../tools/bcra-data-revoke.py source
+          --public-key {{ bcra_cleanup_source.public_key | quote }}
+        executable: /usr/bin/python3
+      changed_when: true
+      when: not ansible_check_mode

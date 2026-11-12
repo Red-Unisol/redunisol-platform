@@ -1,0 +1,141 @@
+---
+- name: Read the prepared public key without exporting source secrets
+  ansible.builtin.set_fact:
+    bcra_data_copy_public_key: "{{ hostvars[groups.bcra_migration_origins[0]].bcra_data_copy_prepared.public_key }}"
+
+- name: Check the existing restricted rsync receiver
+  ansible.builtin.stat:
+    path: /usr/bin/rrsync
+  register: bcra_data_copy_rrsync
+
+- name: Require the installed packaged rrsync command
+  ansible.builtin.assert:
+    that:
+      - bcra_data_copy_rrsync.stat.exists
+      - bcra_data_copy_rrsync.stat.isreg
+      - bcra_data_copy_rrsync.stat.executable
+    fail_msg: Install the reviewed Debian rsync package before preparing BCRA transfer.
+
+- name: Inspect ownership of the data directory without reading its contents
+  ansible.builtin.stat:
+    path: "{{ bcra_data_copy_destination_root }}"
+    follow: false
+  register: bcra_data_copy_destination_stat
+
+- name: Reject an existing unknown destination owner or link
+  ansible.builtin.assert:
+    that:
+      - not bcra_data_copy_destination_stat.stat.exists or (bcra_data_copy_destination_stat.stat.isdir and not bcra_data_copy_destination_stat.stat.islnk and bcra_data_copy_destination_stat.stat.uid == 10001 and bcra_data_copy_destination_stat.stat.gid == 10001)
+    fail_msg: Existing BCRA data root must already have the reviewed numeric owner and be a real directory.
+
+- name: Create only the dedicated data root if absent
+  ansible.builtin.file:
+    path: "{{ bcra_data_copy_destination_root }}"
+    state: directory
+    owner: '10001'
+    group: '10001'
+    mode: '0750'
+  when: not bcra_data_copy_destination_stat.stat.exists
+
+- name: Validate empty destination or matching owned resume and absence of running writers
+  ansible.builtin.script:
+    cmd: "{{ bcra_data_copy_helper | quote }} guard-destination --public-key {{ bcra_data_copy_public_key | quote }}"
+    executable: /usr/bin/python3
+  changed_when: false
+
+- name: Inspect any account already using the service numeric UID
+  ansible.builtin.getent:
+    database: passwd
+    key: '10001'
+    fail_key: false
+
+- name: Reject an unrelated numeric UID owner
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd | default({}) | dict2items | selectattr('value', 'ne', none) | map(attribute='key') | list | difference(['bcra-transfer']) | length == 0
+    fail_msg: UID10001 must be unused or already belong to this restricted transfer account.
+
+- name: Inspect any group already using the service numeric GID
+  ansible.builtin.getent:
+    database: group
+    key: '10001'
+    fail_key: false
+
+- name: Reject an unrelated numeric GID owner
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_group | default({}) | dict2items | selectattr('value', 'ne', none) | map(attribute='key') | list | difference(['bcra-transfer']) | length == 0
+    fail_msg: GID10001 must be unused or already belong to this restricted transfer group.
+
+- name: Create the transfer numeric group
+  ansible.builtin.group:
+    name: "{{ bcra_data_copy_transfer_user }}"
+    gid: 10001
+    system: true
+
+- name: Create the password-locked transfer account with no administrative groups
+  ansible.builtin.user:
+    name: "{{ bcra_data_copy_transfer_user }}"
+    uid: 10001
+    group: "{{ bcra_data_copy_transfer_user }}"
+    groups: ''
+    home: "{{ bcra_data_copy_transfer_home }}"
+    shell: /bin/sh
+    password_lock: true
+    create_home: true
+    system: true
+
+- name: Keep SSH authorization outside the writable data root and owned by root
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ bcra_data_copy_transfer_home }}"
+    - "{{ bcra_data_copy_transfer_home }}/.ssh"
+
+- name: Define the only permitted source-restricted write-only key
+  ansible.builtin.set_fact:
+    bcra_data_copy_authorized_key: >-
+      from="66.97.34.158",restrict,command="/usr/bin/rrsync -wo /var/lib/redunisol-bcra-transfer/data" {{ bcra_data_copy_public_key }}
+
+- name: Create or verify a temporary bind alias without changing canonical parent permissions
+  ansible.builtin.script:
+    cmd: "{{ bcra_data_copy_helper | quote }} prepare-alias"
+    executable: /usr/bin/python3
+  register: bcra_data_copy_alias_result
+  changed_when: (bcra_data_copy_alias_result.stdout | from_json).status == 'alias_created'
+
+- name: Inspect existing SSH authorization before writing
+  ansible.builtin.stat:
+    path: "{{ bcra_data_copy_transfer_home }}/.ssh/authorized_keys"
+    follow: false
+  register: bcra_data_copy_keys_stat
+
+- name: Require a regular existing authorization file
+  ansible.builtin.assert:
+    that:
+      - not bcra_data_copy_keys_stat.stat.exists or (bcra_data_copy_keys_stat.stat.isreg and not bcra_data_copy_keys_stat.stat.islnk)
+    fail_msg: Refusing an unexpected authorization file type.
+
+- name: Read existing public authorization for exact comparison
+  ansible.builtin.slurp:
+    src: "{{ bcra_data_copy_transfer_home }}/.ssh/authorized_keys"
+  register: bcra_data_copy_existing_keys
+  when: bcra_data_copy_keys_stat.stat.exists
+
+- name: Refuse to replace unknown SSH keys
+  ansible.builtin.assert:
+    that:
+      - not bcra_data_copy_keys_stat.stat.exists or (bcra_data_copy_existing_keys.content | b64decode | trim == bcra_data_copy_authorized_key | trim)
+    fail_msg: Existing transfer authorization differs; no key will be overwritten.
+
+- name: Install exactly the restricted public key
+  ansible.builtin.copy:
+    dest: "{{ bcra_data_copy_transfer_home }}/.ssh/authorized_keys"
+    content: "{{ bcra_data_copy_authorized_key }}\n"
+    owner: root
+    group: root
+    mode: '0644'
