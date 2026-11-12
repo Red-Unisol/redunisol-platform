@@ -12,9 +12,11 @@ use App\Services\EdnaOrganicMenu;
 use App\Services\EdnaOrganicTransport;
 use App\Services\WebFormChatRouting;
 use App\Services\WebFormReceipt;
+use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -111,6 +113,10 @@ function organicMenuConfirmed(array $harness): object
     $harness['service']->process($menu->id);
     organicMenuDue($menu->id);
     $harness['service']->process($menu->id);
+
+    // These direct handler calls stand in for completed workers, including ACK.
+    DB::table('jobs')->whereIn('id', DB::table('edna_work_queue_keys')
+        ->where('job_class', ProcessEdnaOrganicMenu::class)->where('work_id', $menu->id)->select('queue_job_id'))->delete();
 
     return DB::table('edna_organic_menus')->find($menu->id);
 }
@@ -368,6 +374,8 @@ test('an awaiting choice row with a saved callback is fairly recovered after a w
     $h['service']->receiveChoice($choice, organicMenuPayload($choice));
     organicMenuDue($menu->id, ['state' => 'awaiting_choice']);
 
+    expect($h['service']->poll())->toBe(0);
+    DB::table('jobs')->delete(); // ACK the callback's already queued worker.
     expect($h['service']->poll())->toBe(1);
 });
 
@@ -401,11 +409,12 @@ test('the recovery command splits one bounded budget between loan and menu queue
 test('capture queue failure rolls back the new menu rather than leaving an orphan', function () {
     $h = organicMenuHarness();
     $entry = organicMenuEvent();
-    Queue::shouldReceive('connection')->once()->with('edna')->andReturnSelf();
-    Queue::shouldReceive('push')->once()->andThrow(new RuntimeException('queue unavailable'));
+    Event::listen(JobQueued::class, fn () => throw new RuntimeException('queue unavailable'));
 
     expect(fn () => $h['service']->receiveEntry($entry, organicMenuPayload($entry)))->toThrow(RuntimeException::class)
         ->and(DB::table('edna_organic_menus')->count())->toBe(0)
+        ->and(DB::table('jobs')->count())->toBe(0)
+        ->and(DB::table('edna_work_queue_keys')->count())->toBe(0)
         ->and(DB::table('edna_intake_admissions')->count())->toBe(0);
 });
 

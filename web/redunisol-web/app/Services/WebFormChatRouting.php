@@ -6,7 +6,6 @@ use App\Jobs\LinkWebFormChat;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -39,7 +38,7 @@ class WebFormChatRouting
                 // reset an uncertain write or enqueue a second original attempt.
                 return false;
             }
-            Queue::connection('edna')->push(new LinkWebFormChat($entryEventId), '', 'edna');
+            app(EdnaWorkQueue::class)->push(new LinkWebFormChat($entryEventId));
 
             return true;
         });
@@ -75,24 +74,27 @@ class WebFormChatRouting
     public function poll(int $limit = 25): int
     {
         return DB::transaction(function () use ($limit): int {
-            $rows = DB::table('web_form_chat_routes')->where(function ($q): void {
-                $q->whereIn('state', ['pending', 'waiting'])
-                    ->orWhere(fn ($unknown) => $unknown->where('state', 'unknown')->whereIn('transfer_state', ['sending', 'unknown']));
-            })
+            $queue = app(EdnaWorkQueue::class);
+            $rows = $queue->withoutPending(DB::table('web_form_chat_routes'), LinkWebFormChat::class, 'web_form_chat_routes.entry_event_id')
+                ->where(function ($q): void {
+                    $q->whereIn('state', ['pending', 'waiting'])
+                        ->orWhere(fn ($unknown) => $unknown->where('state', 'unknown')->whereIn('transfer_state', ['sending', 'unknown']));
+                })
                 ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('enqueued_at')->orWhere('enqueued_at', '<=', now()->subMinute()))
                 ->orderByRaw('COALESCE(available_at, created_at)')->orderBy('entry_event_id')->limit($limit)->lockForUpdate()->get();
+            $enqueued = 0;
             foreach ($rows as $row) {
-                // A delayed queue does not need a new copy on every command run.
-                // The worker takes its own lease and controls later availability.
-                DB::table('web_form_chat_routes')->where('entry_event_id', $row->entry_event_id)->update([
-                    'enqueued_at' => now(), 'updated_at' => now(),
-                ]);
-                Queue::connection('edna')->push(new LinkWebFormChat((int) $row->entry_event_id), '', 'edna');
+                if ($queue->push(new LinkWebFormChat((int) $row->entry_event_id))) {
+                    DB::table('web_form_chat_routes')->where('entry_event_id', $row->entry_event_id)->update([
+                        'enqueued_at' => now(), 'updated_at' => now(),
+                    ]);
+                    $enqueued++;
+                }
             }
 
-            return $rows->count();
+            return $enqueued;
         });
     }
 

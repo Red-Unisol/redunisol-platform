@@ -11,7 +11,6 @@ use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -85,7 +84,7 @@ class EdnaOrganicMenu
             'state' => 'selected', 'available_at' => now(), 'enqueued_at' => now(), 'updated_at' => now(),
         ]);
         if ($claimed) {
-            Queue::connection('edna')->push(new ProcessEdnaOrganicMenu((int) $menu->id), '', 'edna');
+            app(EdnaWorkQueue::class)->push(new ProcessEdnaOrganicMenu((int) $menu->id));
         }
         $this->record($event->id, 'organic_choice_received');
 
@@ -117,7 +116,7 @@ class EdnaOrganicMenu
         ]);
         if ($inserted) {
             $id = DB::table('edna_organic_menus')->where('entry_event_id', $event->id)->value('id');
-            Queue::connection('edna')->push(new ProcessEdnaOrganicMenu((int) $id), '', 'edna');
+            app(EdnaWorkQueue::class)->push(new ProcessEdnaOrganicMenu((int) $id));
         }
         $this->record($event->id, 'organic_menu_reserved');
 
@@ -129,20 +128,25 @@ class EdnaOrganicMenu
         $limit = max(1, min(25, $limit));
 
         return DB::transaction(function () use ($limit): int {
-            $rows = DB::table('edna_organic_menus')->where(function ($query): void {
-                $query->whereIn('state', ['pending', 'waiting', 'selected', 'unknown', 'route_pending'])
-                    ->orWhere(fn ($q) => $q->where('state', 'awaiting_choice')->where(fn ($choice) => $choice
-                        ->whereNotNull('choice_event_id')->orWhere('expires_at', '<=', now())));
-            })->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
+            $queue = app(EdnaWorkQueue::class);
+            $rows = $queue->withoutPending(DB::table('edna_organic_menus'), ProcessEdnaOrganicMenu::class, 'edna_organic_menus.id')
+                ->where(function ($query): void {
+                    $query->whereIn('state', ['pending', 'waiting', 'selected', 'unknown', 'route_pending'])
+                        ->orWhere(fn ($q) => $q->where('state', 'awaiting_choice')->where(fn ($choice) => $choice
+                            ->whereNotNull('choice_event_id')->orWhere('expires_at', '<=', now())));
+                })->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('enqueued_at')->orWhere('enqueued_at', '<=', now()->subMinute()))
                 ->orderByRaw('COALESCE(available_at, created_at)')->orderBy('id')->limit($limit)->lockForUpdate()->get();
+            $enqueued = 0;
             foreach ($rows as $row) {
-                DB::table('edna_organic_menus')->where('id', $row->id)->update(['enqueued_at' => now(), 'updated_at' => now()]);
-                Queue::connection('edna')->push(new ProcessEdnaOrganicMenu((int) $row->id), '', 'edna');
+                if ($queue->push(new ProcessEdnaOrganicMenu((int) $row->id))) {
+                    DB::table('edna_organic_menus')->where('id', $row->id)->update(['enqueued_at' => now(), 'updated_at' => now()]);
+                    $enqueued++;
+                }
             }
 
-            return $rows->count();
+            return $enqueued;
         });
     }
 

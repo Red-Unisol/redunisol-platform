@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -43,10 +42,12 @@ class EdnaOrganicLoan
                 || ($menu->enqueued_at && CarbonImmutable::parse($menu->enqueued_at)->gt(now()->subMinute()))) {
                 return false;
             }
-            DB::table('edna_organic_menus')->where('id', $menuId)->update(['enqueued_at' => now(), 'updated_at' => now()]);
-            Queue::connection('edna')->push($menu->state === 'loan_pending' ? new PrepareEdnaOrganicLoan($menuId) : new SubmitEdnaOrganicLoan($menuId), '', 'edna');
+            $pushed = app(EdnaWorkQueue::class)->push($menu->state === 'loan_pending' ? new PrepareEdnaOrganicLoan($menuId) : new SubmitEdnaOrganicLoan($menuId));
+            if ($pushed) {
+                DB::table('edna_organic_menus')->where('id', $menuId)->update(['enqueued_at' => now(), 'updated_at' => now()]);
+            }
 
-            return true;
+            return $pushed;
         });
     }
 
@@ -247,7 +248,10 @@ class EdnaOrganicLoan
         DB::table('edna_organic_menus')->where('state', 'submitting')->where('lease_until', '<=', now())
             ->update(['state' => 'loan_unknown', 'reason' => 'organic_reuse_worker_interrupted', 'lease_token' => null,
                 'lease_until' => null, 'updated_at' => now()]);
-        $ids = DB::table('edna_organic_menus')->whereIn('state', ['loan_pending', 'submission_pending'])
+        $queue = app(EdnaWorkQueue::class);
+        $ids = DB::table('edna_organic_menus')->where(fn ($query) => $query
+            ->where(fn ($prepare) => $queue->withoutPending($prepare->where('state', 'loan_pending'), PrepareEdnaOrganicLoan::class, 'edna_organic_menus.id'))
+            ->orWhere(fn ($submit) => $queue->withoutPending($submit->where('state', 'submission_pending'), SubmitEdnaOrganicLoan::class, 'edna_organic_menus.id')))
             ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
             ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
             ->where(fn ($q) => $q->whereNull('enqueued_at')->orWhere('enqueued_at', '<=', now()->subMinute()))

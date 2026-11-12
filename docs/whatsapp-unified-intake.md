@@ -143,6 +143,45 @@ recibos durables. Un saludo, un v3 enviado, un perfil reutilizado o un
 `transfer_state=not_needed/observed` no prueban una transferencia automática.
 El reporte requiere intención/acuse y un evento nativo correlacionado.
 
+### Trabajo pendiente y recuperación de la cola
+
+`EdnaWorkQueue` mantiene una reserva durable para cada comando canónico de
+vinculación web, menú o preparación/envío de consulta reutilizada. La reserva
+apunta al registro real de `jobs`: también permanece mientras está reservado
+por un worker y se retira por clave foránea al eliminarse ese registro tras el
+ACK. Un minuto transcurrido desde el encolado no autoriza crear otra copia.
+Los pollers excluyen estas reservas antes de seleccionar su lote acotado.
+La conexión debe ser la misma base de datos del ledger y el insert de cola
+debe ocurrir en la transacción; una configuración incompatible falla sin enviar.
+
+La recuperación operativa es explícita y separada del scheduler:
+
+```text
+php artisan edna:work-queue preview
+php artisan edna:work-queue apply --cutoff=<cutoff> --preview-sha=<sha>
+php artisan edna:work-queue review-preview
+php artisan edna:work-queue review-apply --cutoff=<cutoff> --preview-sha=<sha>
+```
+
+Los previews son de sólo lectura y exponen identificadores técnicos y hashes.
+Cada apply exige el cutoff y SHA exactos de su preview; un cambio concurrente
+invalida el plan y revierte la operación. La deduplicación sólo admite jobs
+`LinkWebFormChat` o `ProcessEdnaOrganicMenu`, no reservados y con cero intentos,
+cuya clase, ID positivo y comando serializado coincidan exactamente con el
+comando canónico. Conserva un keeper por grupo, o la reserva válida existente;
+no elimina recepción de mensajes, envíos, bindings ni variantes desconocidas.
+Adopta los keepers en la nueva reserva sin cambiar sus argumentos ni su fecha.
+
+Reabrir reviews es otra operación: sólo admite las razones de lectura nativa o
+de proveedor pendientes, dentro de la ventana original y sin prueba, sesión,
+lease, elección, perfil, caso, envío o intención/acuse de transferencia. Conserva
+UUID, entrada, expiración y contador de intentos. No ejecuta el job ni envía un
+mensaje: el procesamiento normal debe volver a comprobar identidad y atención
+humana. No se reabren estados inciertos ni se renuevan ventanas de WhatsApp.
+
+Un job de recuperación no equivale a un chat distinto. Los conteos de cola y
+duplicados no se presentan como porcentajes de distribución automática.
+
 `edna_intake_bindings` vincula un caso/envío y su entrada con un único prospecto
 original. El teléfono permite descubrir candidatos, pero no autoriza el vínculo.
 La prueba exige simultáneamente:
