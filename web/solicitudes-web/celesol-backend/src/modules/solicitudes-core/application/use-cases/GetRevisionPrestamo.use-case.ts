@@ -108,7 +108,10 @@ export class GetRevisionPrestamoUseCase {
       lineaId: oid,
       montoAFinanciar: efectivos.montoAFinanciar as number,
       cuotas: efectivos.cuotas as number,
-      // Sin tasa ni fecha manual: las determina el sistema.
+      // La vista previa debe usar el vencimiento guardado, igual que el alta.
+      ...(solicitud.fechaPrimerVencimiento
+        ? { fechaPrimerVencimiento: solicitud.fechaPrimerVencimiento }
+        : {}),
     });
     return { titular, convenio, condiciones, calculo };
   }

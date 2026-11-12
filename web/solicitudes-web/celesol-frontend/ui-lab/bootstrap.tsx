@@ -1,4 +1,6 @@
 import { installUiLabNetworkGuard } from "./network-guard";
+import { parseCbuScenario } from "./cbu-fixtures";
+import { parseReliquidationScenario } from "./reliquidacion-fixtures";
 import "./theme.css";
 
 // Dynamic imports are intentional: production API modules may capture fetch.
@@ -17,14 +19,21 @@ installUiLabNetworkGuard(
           role: productionRole,
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
+          cbuScenario: parseCbuScenario(search.get("cbu")),
+          workflowState: search.get("state") === "evaluacion-externa"
+            ? "EvaluacionExterna"
+            : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
         },
       }
-    : {},
+    : window.location.pathname.startsWith("/reliquidacion") ? { reliquidation: parseReliquidationScenario(search.get("scenario")) }
+    : window.location.pathname.startsWith("/external-legajo") ? {
+        externalLegajo: search.get("scenario") === "approved" ? "approved" : search.get("scenario") === "error" ? "error" : "waiting",
+      } : {},
 );
 async function start() {
   const pathname = window.location.pathname;
   const ownsRouter =
-    pathname.startsWith("/headers") || pathname.startsWith("/production");
+    pathname.startsWith("/headers") || pathname.startsWith("/production") || pathname.startsWith("/cutoffs");
   const [
     { createRoot },
     { QueryClient, QueryClientProvider },
@@ -33,11 +42,19 @@ async function start() {
   ] = await Promise.all([
     import("react-dom/client"),
     import("@tanstack/react-query"),
-    pathname.startsWith("/production")
+    pathname.startsWith("/workflow-action")
+      ? import("./workflow-action-entry")
+      : pathname.startsWith("/socio-create")
+      ? import("./socio-create-entry")
+      : pathname.startsWith("/reliquidacion")
+      ? import("./reliquidacion-entry")
+      : pathname.startsWith("/cutoffs")
+      ? import("./cutoffs-entry")
+      : pathname.startsWith("/production")
       ? import("./production-entry")
       : pathname.startsWith("/headers")
         ? import("./header-gallery")
-        : import("./app"),
+        : pathname.startsWith("/external-legajo") ? import("./external-legajo-entry") : import("./app"),
     import("react-router-dom"),
   ]);
   const element = document.getElementById("root");

@@ -45,6 +45,8 @@ export function coreReconciliationPending(s: ControlledSolicitud) {
 }
 
 export function assertNoLoanReplacementPending(s: { administrativeCoreControl?: unknown }) {
+  if ((s.administrativeCoreControl as Record<string, unknown> | null)?.reliquidationHold)
+    throw new AdministrativeCorrectionError("La solicitud está pausada para reliquidación. Confirmá la anulación y su devolución a Riesgo antes de continuar.");
   if ((s.administrativeCoreControl as Record<string, unknown> | null)?.generationPending)
     throw new AdministrativeCorrectionError("Hay una generación de préstamo en curso o con resultado incierto. No repitas la generación; verificá Vimarx y recuperá el resultado.");
   if ((s.administrativeCoreControl as Record<string, unknown> | null)?.replacementPending)

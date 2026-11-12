@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import multer from "multer";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
@@ -14,6 +15,7 @@ import { createDocumentReviewWorkflow } from "./workflow";import { notifySignat
 import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "../solicitudes-core/infrastructure/services/WorkflowFinancialGuard";
 import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
 import { isAnalysisReady } from "./signature-workflow";
+import { MAX_EXTERNAL_FILES, MAX_EXTERNAL_FILE_BYTES, MAX_EXTERNAL_TOTAL_BYTES } from "./external-legajo-policy";
 import { EvaluateListSolicitudesGateway, signatureInboxLoanKey } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 
 let service: DocumentReviewService | null = null;
@@ -162,6 +164,36 @@ export function createDocumentReviewRouter(auth: GetCurrentUserUseCase) {
             )
           : e,
       );
+    }
+  });
+  const externalUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { files: MAX_EXTERNAL_FILES, fileSize: MAX_EXTERNAL_FILE_BYTES, fields: 4, fieldSize: 16000, parts: MAX_EXTERNAL_FILES + 4 },
+  }).array("files", MAX_EXTERNAL_FILES);
+  router.post("/:id/document-review/external", (req, res, next) => {
+    // Reject unauthorized uploads before buffering their bodies.
+    if (!isLegajosUser(res.locals.documentReviewUser)) return next(new DocumentReviewError("Solo Legajos Digitales puede cargar un legajo externo.", 403));
+    externalUpload(req, res, error => {
+      if (error) return next(new DocumentReviewError("Adjuntá hasta 10 archivos PDF/JPG/PNG de hasta 10 MiB cada uno.", 400));
+      const files = req.files as Express.Multer.File[] | undefined;
+      if ((files ?? []).reduce((size, file) => size + file.size, 0) > MAX_EXTERNAL_TOTAL_BYTES)
+        return next(new DocumentReviewError("El legajo supera 32 MiB en total.", 400));
+      next();
+    });
+  }, async (req, res, next) => {
+    try {
+      const id = z.uuid().parse(req.params.id);
+      const body = z.object({
+        requestId: z.uuid(), sourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+        reason: z.string().trim().min(1).max(4000), confirmed: z.literal("true"),
+      }).strict().parse(req.body);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await getService().approveExternal(id, res.locals.documentReviewUser, {
+        ...body, confirmed: true,
+        files: ((req.files as Express.Multer.File[] | undefined) ?? []).map(file => ({ name: file.originalname, contentType: file.mimetype, bytes: file.buffer })),
+      }));
+    } catch (error) {
+      next(error instanceof z.ZodError ? new DocumentReviewError("Indicá el motivo y confirmá la revisión del legajo externo.", 400) : error);
     }
   });
   router.get(

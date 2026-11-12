@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'organic_menu_enabled' => (bool) env('EDNA_ORGANIC_MENU_ENABLED', false),
+    'organic_menu_start_at' => env('EDNA_ORGANIC_MENU_START_AT', ''),
+    'organic_other_operator_id' => (int) env('EDNA_ORGANIC_OTHER_OPERATOR_ID', 5737),
+    'organic_profile_max_age_months' => (int) env('EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS', 6),
     // A dedicated published Flow; empty ID/start keeps cutover closed.
     'intake_enabled' => (bool) env('EDNA_INTAKE_ENABLED', false),
     'intake_crm_enabled' => (bool) env('EDNA_INTAKE_CRM_ENABLED', false),

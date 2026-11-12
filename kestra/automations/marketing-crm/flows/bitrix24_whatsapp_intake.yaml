@@ -32,6 +32,7 @@ tasks:
       EDNA_INTAKE_FLOW_ID: "{{ envs.edna_intake_flow_id ?? '' }}"
       EDNA_INTAKE_ACCEPTED_FLOW_IDS: "{{ envs.edna_intake_accepted_flow_ids ?? '' }}"
       EDNA_INCOMING_SUBJECT_ID: "{{ envs.edna_incoming_subject_id ?? '' }}"
+      EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS: "{{ envs.edna_organic_profile_max_age_months ?? '6' }}"
       BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW: "{{ envs.bitrix24_lead_status_assistance_review ?? '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
@@ -54,6 +55,18 @@ tasks:
       - python -m bitrix24_form_flow.kestra_whatsapp_intake_entrypoint
 
 outputs:
+  - id: contract
+    type: STRING
+    value: "{{ outputs.procesar.vars.contract ?? '' }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.procesar.vars.deal_id ?? '' }}"
+  - id: seller_id
+    type: STRING
+    value: "{{ outputs.procesar.vars.seller_id ?? '' }}"
+  - id: write_attempted
+    type: BOOL
+    value: "{{ outputs.procesar.vars.write_attempted ?? false }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.procesar.vars.ok }}"

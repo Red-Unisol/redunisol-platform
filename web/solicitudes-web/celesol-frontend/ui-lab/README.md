@@ -1,5 +1,11 @@
 # Laboratorio de interfaces de Beex
 
+`/external-legajo` renderiza el panel real de Legajos con cero intentos de MetaMap.
+Permite simular la carga y aprobación local de PDF/fotos. `?scenario=approved`
+muestra la aprobación externa y `?scenario=error` simula un fallo de almacenamiento
+para revisar el reintento. Solo esa ruta de carga tiene una respuesta POST ficticia
+cuando se elige este escenario; las demás escrituras y conexiones reales se bloquean.
+
 El laboratorio usa datos ficticios y componentes de la aplicación. Su entrada y
 build están separados del sitio operativo. No carga archivos `.env`, no usa
 sesiones reales y bloquea llamadas a APIs. Los enlaces de ejemplo usan `.invalid`.
@@ -42,8 +48,20 @@ queda en `.local/ui-lab-dist`; el build operativo continúa en `dist`.
 
 ## Galerías adicionales
 
+- `/socio-create`: formulario operativo de alta precargado desde un titular
+  ficticio, incluyendo CBU y un CBU no habitual distinto. Permite comprobar
+  validación, borrado opcional y payload enviado; Guardar sólo modifica memoria.
+  `node ui-lab/socio-create.browser-test.mjs` revisa escritorio y 390 px.
+
 - `/headers?layout=slim`: comparación de cabeceras Actual, A, B y C.
 - `/production`: ficha real de la aplicación con datos de ejemplo aislados.
+- `/cutoffs?scenario=pending`: pantalla operativa de cortes de AMEJUCA, sin fecha confirmada.
+- `/cutoffs?scenario=confirmed`: corte confirmado e historial.
+- `/cutoffs?scenario=error`: error al guardar que conserva el borrador.
+
+En /cutoffs, Guardar corte modifica sólo la memoria de la galería. Ejecutar
+`node ui-lab/cutoffs.browser-test.mjs` con ui:dev levantado para verificar esos
+estados y guardar capturas de escritorio y móvil con datos ficticios.
 
 `bootstrap.tsx` instala el transporte de fixtures antes de cargar componentes. Sólo se permiten GET de escenarios y rutas explícitas para las solicitudes ficticias; las mutaciones, rutas no previstas y orígenes externos fallan sin recurrir a la red real. La CSP permite iframes del mismo origen para el viewport móvil y bloquea conexiones externas. No se cargan archivos `.env`.
 
@@ -124,3 +142,43 @@ El runner guarda capturas e informe en `.local/ui-production-review/`. Verifica 
 real con distintos roles, pantallas de poca altura, móvil, las tres pestañas, persistencia
 de la preferencia y edición/cancelación. Las operaciones y solicitudes no previstas siguen
 bloqueadas; los datos de evaluación son ficticios y no validan reglas financieras.
+
+
+## Evaluación externa
+
+`/production?state=revision-riesgo` muestra la entrada a Evaluación Externa en
+Más acciones. `/production?state=evaluacion-externa` muestra el nuevo estado y
+Volver a Revisión Riesgo como acción principal. Usar `role=vendedor` para
+revisar la lectura sin permisos de transición. Son fixtures locales de lectura;
+confirmar una transición sigue bloqueado por el transporte del laboratorio.
+
+## Suma de cuotas y movimientos
+
+`npm run ui:visual:cuotas` prueba la suma con Ctrl+clic en escritorio y 390 px:
+cierre y reapertura por teclado entre cuotas, cambio de columna y Escape.
+Usa dos cuotas ficticias de $100 y $200 en la pestaña Préstamos de `/production`.
+
+## Comparación del CBU habitual
+
+`/production?cbu=nonhabitual` muestra el CBU de Vimarx, el de la solicitud y el
+destino no habitual con datos ficticios. El runner
+`node ui-lab/cbu-comparison.browser-test.mjs` revisa coincidencia, diferencia,
+ausencias, errores y recuperación, edición de identidad, escritorio y móvil.
+Los escenarios y el contrato están en
+[CBU habitual en Beex](../../../../docs/apis/vimarx/cbu-habitual-beex.md).
+
+## Reliquidación conservadora
+
+`/reliquidacion` usa el panel operativo con datos ficticios y mutaciones en memoria.
+Escenarios: `?scenario=prepared`, `pending`, `blocked`, `error` y `refresh-error`.
+Usa el control real con transporte simulado, incluidas respuestas POST y recargas
+de fondo lentas o fallidas. Los errores permanecen visibles después de cerrar el modal.
+`node ui-lab/reliquidacion.browser-test.mjs` verifica el circuito en escritorio y
+390/320 px y guarda capturas en `.local/reliquidacion-review`.
+
+## Confirmación de envío a firma
+
+`/workflow-action` muestra la confirmación operativa de Enviar a firmar sin
+campo de comentario manual. `?scenario=required` conserva un comentario
+obligatorio para Devolver a Revisar y `?scenario=transfer` conserva el campo
+opcional de Mandar a transferir. La confirmación sólo registra un resultado ficticio.

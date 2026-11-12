@@ -1,0 +1,498 @@
+{
+  "date": "2026-11-11",
+  "environment": "FapiTest",
+  "target": "http://192.168.88.200:83",
+  "endpoint": "POST /api/Simulador/CrearSocioMutual",
+  "synthetic_only": true,
+  "cases": [
+    {
+      "case": "T01-flat",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20261111 CBU T01 FLAT",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO CBU",
+          "NroDoc": "99111121",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27991111218",
+          "Domicilio": {
+            "Localidad": 12,
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2026-11-11"
+            }
+          ],
+          "Observaciones": "ENSAYO AUTORIZADO FAPITEST - DATOS FICTICIOS - NO OPERAR",
+          "CBU": "0110000699111100000217"
+        },
+        "validar": false
+      },
+      "before": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      },
+      "creation": {
+        "status": 200,
+        "body": {
+          "Ok": false,
+          "ID": null,
+          "Error": "La propiedad 'CBU' no existe en el tipo 'SocioMutual'."
+        }
+      },
+      "after": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      }
+    },
+    {
+      "case": "T02-collection",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20261111 CBU T02 COLLECTION",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO CBU",
+          "NroDoc": "99111122",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27991111226",
+          "Domicilio": {
+            "Localidad": 12,
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2026-11-11"
+            }
+          ],
+          "Observaciones": "ENSAYO AUTORIZADO FAPITEST - DATOS FICTICIOS - NO OPERAR",
+          "CuentasBancarias": [
+            {
+              "Nombre": "CUENTA FICTICIA PRUEBA API NO OPERAR",
+              "CBU": "0110000699111100000224",
+              "Habitual": true,
+              "Clase": "CBU",
+              "TipoCuenta": "CajaAhorro",
+              "Moneda": "Pesos",
+              "Titular": "SOCIO FICTICIO CBU",
+              "CuitTitular": "27991111226"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "before": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      },
+      "creation": {
+        "status": 200,
+        "body": {
+          "Ok": false,
+          "ID": null,
+          "Error": "Object reference not set to an instance of an object."
+        }
+      },
+      "after": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      }
+    },
+    {
+      "case": "T03-control",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20261111 CBU T03 CONTROL",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO CBU",
+          "NroDoc": "99111123",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27991111234",
+          "Domicilio": {
+            "Localidad": 12,
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2026-11-11"
+            }
+          ],
+          "Observaciones": "ENSAYO AUTORIZADO FAPITEST - DATOS FICTICIOS - NO OPERAR"
+        },
+        "validar": false
+      },
+      "before": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      },
+      "creation": {
+        "status": 200,
+        "body": {
+          "Ok": true,
+          "ID": 152979,
+          "Error": null
+        }
+      },
+      "after": {
+        "socios": {
+          "status": 200,
+          "body": [
+            [
+              152979,
+              "ZZZ PRUEBA API NO OPERAR 20261111 CBU T03 CONTROL",
+              99111123,
+              27991111234,
+              0,
+              null,
+              null,
+              2,
+              "2026-11-11"
+            ]
+          ]
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      }
+    },
+    {
+      "case": "T04-minimal",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20261111 CBU T04 MINIMAL",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO CBU",
+          "NroDoc": "99111124",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27991111242",
+          "Domicilio": {
+            "Localidad": 12,
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2026-11-11"
+            }
+          ],
+          "Observaciones": "ENSAYO AUTORIZADO FAPITEST - DATOS FICTICIOS - NO OPERAR",
+          "CuentasBancarias": [
+            {
+              "CBU": "0110000699111100000248"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "before": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      },
+      "creation": {
+        "status": 200,
+        "body": {
+          "Ok": true,
+          "ID": 152980,
+          "Error": null
+        }
+      },
+      "after": {
+        "socios": {
+          "status": 200,
+          "body": [
+            [
+              152980,
+              "ZZZ PRUEBA API NO OPERAR 20261111 CBU T04 MINIMAL",
+              99111124,
+              27991111242,
+              1,
+              75366,
+              "0110000699111100000248",
+              2,
+              "2026-11-11"
+            ]
+          ]
+        },
+        "accounts": {
+          "status": 200,
+          "body": [
+            [
+              75366,
+              152980,
+              "0110000699111100000248",
+              true,
+              0,
+              1,
+              0,
+              27991111242
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "case": "T05-explicit-habitual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20261111 CBU T05 HABITUAL",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO CBU",
+          "NroDoc": "99111125",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27991111250",
+          "Domicilio": {
+            "Localidad": 12,
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2026-11-11"
+            }
+          ],
+          "Observaciones": "ENSAYO AUTORIZADO FAPITEST - DATOS FICTICIOS - NO OPERAR",
+          "CuentasBancarias": [
+            {
+              "CBU": "0110000699111100000255",
+              "Habitual": true
+            }
+          ]
+        },
+        "validar": false
+      },
+      "before": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      },
+      "creation": {
+        "status": 200,
+        "body": {
+          "Ok": false,
+          "ID": null,
+          "Error": "Object reference not set to an instance of an object."
+        }
+      },
+      "after": {
+        "socios": {
+          "status": 200,
+          "body": []
+        },
+        "accounts": {
+          "status": 200,
+          "body": []
+        }
+      }
+    }
+  ],
+  "final_verification": {
+    "target": "http://192.168.88.200:83",
+    "readBack": {
+      "socios": {
+        "status": 200,
+        "body": [
+          [
+            152980,
+            "ZZZ PRUEBA API NO OPERAR 20261111 CBU T04 MINIMAL",
+            99111124,
+            27991111242,
+            1,
+            75366,
+            "0110000699111100000248",
+            2,
+            "2026-11-11"
+          ]
+        ]
+      },
+      "accounts": {
+        "status": 200,
+        "body": [
+          [
+            75366,
+            152980,
+            "0110000699111100000248",
+            true,
+            0,
+            1,
+            0,
+            27991111242
+          ]
+        ]
+      }
+    }
+  },
+  "historical_comparison": {
+    "target": "http://192.168.88.200:83",
+    "socioFields": [
+      "ID",
+      "NroSocio",
+      "EsSocio",
+      "CategoriaActual.ID",
+      "CategoriaActual.Nombre",
+      "FechaAlta",
+      "HistoriaCategorias.Count()",
+      "CuentasBancarias.Count()",
+      "CuentaBancariaHabitual.ID",
+      "SocAux.ID",
+      "DadoDeBaja"
+    ],
+    "created": {
+      "status": 200,
+      "body": [
+        [
+          152980,
+          114935,
+          true,
+          2,
+          "CLUB MUTUAL",
+          "2026-11-11",
+          1,
+          1,
+          75366,
+          229219,
+          false
+        ]
+      ]
+    },
+    "historical": {
+      "status": 200,
+      "sample_size": 3,
+      "note": "Identificadores de socios históricos omitidos; se comparó estructura y campos bancarios."
+    },
+    "createdAccount": {
+      "status": 200,
+      "body": [
+        {
+          "id": 75366,
+          "socioId": 152980,
+          "cbuLength": 22,
+          "habitual": true,
+          "clase": 0,
+          "tipoCuenta": 1,
+          "moneda": 0,
+          "cuitTitularMatchesSocio": true,
+          "hasAccountNumber": false,
+          "sucursalBanco": 0,
+          "bankId": null,
+          "hasName": true,
+          "hasTitular": true,
+          "validada": false,
+          "noPropia": false,
+          "cuentaMutual": false,
+          "orden": 0
+        }
+      ]
+    },
+    "historicalAccounts": {
+      "status": 200,
+      "body": [
+        {
+          "cbuLength": 22,
+          "habitual": true,
+          "clase": 0,
+          "tipoCuenta": 2,
+          "moneda": 0,
+          "cuitTitularMatchesSocio": false,
+          "hasAccountNumber": true,
+          "sucursalBanco": 1570,
+          "bankId": 8,
+          "hasName": true,
+          "hasTitular": false,
+          "validada": false,
+          "noPropia": false,
+          "cuentaMutual": false,
+          "orden": 0
+        },
+        {
+          "cbuLength": 22,
+          "habitual": true,
+          "clase": 0,
+          "tipoCuenta": 2,
+          "moneda": 0,
+          "cuitTitularMatchesSocio": false,
+          "hasAccountNumber": true,
+          "sucursalBanco": 1570,
+          "bankId": 8,
+          "hasName": true,
+          "hasTitular": false,
+          "validada": false,
+          "noPropia": false,
+          "cuentaMutual": false,
+          "orden": 0
+        },
+        {
+          "cbuLength": 22,
+          "habitual": true,
+          "clase": 0,
+          "tipoCuenta": 2,
+          "moneda": 0,
+          "cuitTitularMatchesSocio": false,
+          "hasAccountNumber": true,
+          "sucursalBanco": 1570,
+          "bankId": 8,
+          "hasName": true,
+          "hasTitular": false,
+          "validada": false,
+          "noPropia": false,
+          "cuentaMutual": false,
+          "orden": 0
+        }
+      ]
+    }
+  }
+}

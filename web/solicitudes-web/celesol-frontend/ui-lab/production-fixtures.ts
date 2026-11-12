@@ -16,12 +16,15 @@ import {
 } from "./header-fixtures.ts";
 import { SAMPLE_REQUEST } from "./header-sample.ts";
 import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
+import { solicitudCbuFixture, type CbuScenario } from "./cbu-fixtures.ts";
 
 export type ProductionRole = "riesgo" | "admin" | "vendedor";
 export type ProductionFixtureOptions = {
   role?: ProductionRole;
   externalPayment?: boolean;
   allowEdit?: boolean;
+  cbuScenario?: CbuScenario;
+  workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
 };
 
 const timestamp = "2026-10-23T20:05:00.000Z";
@@ -350,6 +353,25 @@ export function productionFixture(
 ): ProductionFixtureResult {
   const base = `/solicitudes/${HEADER_SAMPLE.id}`;
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
+  const baseSolicitud = options.workflowState ? {
+    ...PRODUCTION_SOLICITUD,
+    legacyOid: null,
+    estadoActual: {
+      ...PRODUCTION_SOLICITUD.estadoActual,
+      code: options.workflowState,
+      name: options.workflowState === "EvaluacionExterna" ? "Evaluación Externa" : "Revision Riesgo",
+      ownerId: "demo-riesgo",
+      owner: { code: "RIESGO", id: "demo-riesgo", name: "Riesgo de ejemplo" },
+    },
+    capabilities: {
+      ...PRODUCTION_SOLICITUD.capabilities!,
+      canChangeState: options.role !== "vendedor",
+    },
+  } : PRODUCTION_SOLICITUD;
+  const solicitud = options.cbuScenario ? {
+    ...baseSolicitud,
+    titular: { ...baseSolicitud.titular, ...solicitudCbuFixture(options.cbuScenario) },
+  } : baseSolicitud;
   let body: unknown;
   if (pathname === "/auth/me") body = productionSession(options.role);
   else if (pathname === "/auth/users") body = { users: USERS_FIXTURE };
@@ -361,18 +383,33 @@ export function productionFixture(
   else if (pathname === base)
     body = options.allowEdit
       ? {
-          ...PRODUCTION_SOLICITUD,
+          ...solicitud,
           capabilities: {
             ...PRODUCTION_SOLICITUD.capabilities!,
             canEdit: true,
             fieldAccess: {
               defaultMode: "readonly",
-              editableFields: ["solicitud.observaciones"],
+              editableFields: options.cbuScenario
+                ? ["solicitud.observaciones", "titular.cbu", "titular.cbuNoHabitual", "titular.nroDocumento"]
+                : ["solicitud.observaciones"],
               editableGroups: [],
             },
           },
         }
-      : PRODUCTION_SOLICITUD;
+      : solicitud;
+  else if (pathname === `${base}/transitions` && options.workflowState)
+    body = options.role === "vendedor" ? [] : (options.workflowState === "EvaluacionExterna" ? [
+      { actionCode: "volver_a_revision_riesgo", actionLabel: "Volver a Revisión Riesgo", toCode: "RevisionRiesgo", toName: "Revision Riesgo" },
+    ] : [
+      { actionCode: "preaprobar", actionLabel: "Preaprobar", toCode: "PreAprobada", toName: "Pre Aprobada" },
+      { actionCode: "revisar", actionLabel: "Revisar", toCode: "Revisar", toName: "Revisar" },
+      { actionCode: "evaluacion_externa", actionLabel: "Enviar a Evaluación Externa", toCode: "EvaluacionExterna", toName: "Evaluación Externa" },
+    ]).map((route, index) => ({
+      id: `demo-transicion-${index}`, actionCode: route.actionCode, actionLabel: route.actionLabel,
+      defaultComment: null, description: null, blockedReason: null,
+      requiresComment: false, saveAndExit: false, sortOrder: index,
+      toState: { code: route.toCode, name: route.toName, owner: { code: "RIESGO", name: "Riesgo" } },
+    }));
   else if (pathname === `${base}/adjuntos`) body = attachments;
   else if (pathname === `${base}/history`) body = history;
   // The editing scenario exercises save/cancel with notes only. No available
@@ -391,6 +428,25 @@ export function productionFixture(
       amountEditable: false,
       recovery: null,
     };
+  else if (pathname === `${base}/prestamos-socio`)
+    body = {
+      prestamos: [
+        {
+          legacyId: HEADER_SAMPLE.loanId,
+          nroCuenta: "DEMO-100241",
+          lineaPrestamoDescripcion: HEADER_SAMPLE.convenio,
+          estado: 0,
+          vigente: true,
+          fechaEmision: "2026-10-23",
+          montoPrestamo: 300,
+          montoADesembolsar: 240,
+          capital: 240,
+          saldo: 300,
+          primerVencimiento: "2099-01-01",
+          vencimiento: "2099-02-01",
+        },
+      ],
+    };
   else if (pathname === `${base}/prestamos-socio/${HEADER_SAMPLE.loanId}`)
     body = {
       prestamo: {
@@ -404,9 +460,37 @@ export function productionFixture(
         ordenCompra: null,
         tasaInicial: null,
       },
-      cuotas: [],
+      cuotas: [1, 2].map((numero) => ({
+        id: `demo-cuota-${numero}`,
+        nroCuota: numero,
+        fecha: `2099-0${numero}-01`,
+        fechaCobro: null,
+        capital: numero * 80,
+        montoTotal: numero * 100,
+        saldoCuota: numero * 100,
+        saldoCuotaConPunitorios: numero * 100,
+      })),
     };
-  else if (pathname === `${base}/admin-loan-replacements`)
+  else if (
+    [1, 2].some(
+      (numero) =>
+        pathname === `${base}/prestamos-socio/${HEADER_SAMPLE.loanId}/cuotas/demo-cuota-${numero}/movimientos`,
+    )
+  ) {
+    const numero = pathname.endsWith("demo-cuota-1/movimientos") ? 1 : 2;
+    body = {
+      movimientos: [
+        {
+          id: `demo-movimiento-${numero}`,
+          cuotaAfectada: `DEMO-100241/${numero}`,
+          tipo: "Capital",
+          fecha: `2099-0${numero}-01`,
+          monto: numero * 100,
+          creado: null,
+        },
+      ],
+    };
+  } else if (pathname === `${base}/admin-loan-replacements`)
     body = {
       canAdmin: false,
       canReplace: false,
@@ -449,7 +533,7 @@ export function productionFixture(
   else if (pathname === `${base}/document-review`)
     body = {
       ...HEADER_DOCUMENT_REVIEW_FIXTURE,
-      analysisReady: true,
+      analysisReady: !options.workflowState,
       signature: {
         status: "approved",
         completedAttempts: 1,

@@ -46,6 +46,8 @@ it('queues form persistence after receiving commercial prequalification', functi
         'qualified' => true,
         'persistence' => 'queued',
     ]);
+    expect($response->json('web_form_reference'))->toMatch('/^[A-Za-z0-9]{32}$/D')
+        ->and(DB::table('web_form_receipts')->first()->state)->toBe('pending');
 
     Queue::assertPushed(PersistFormSubmission::class, function ($job) {
         return $job->qualified

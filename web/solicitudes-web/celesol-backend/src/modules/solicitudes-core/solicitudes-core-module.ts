@@ -1,4 +1,6 @@
 import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
+import { addLoanReliquidationRoutes } from "./presentation/LoanReliquidationRoutes";
+import { LoanReliquidationService } from "./infrastructure/services/LoanReliquidationService";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
@@ -24,6 +26,8 @@ import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSo
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
+import { monthlyCutoffs } from "../monthly-cutoffs/module";
+import { businessDate } from "../monthly-cutoffs/domain";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
 import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
@@ -195,6 +199,7 @@ export function createSolicitudesCoreRouter(
   const prestamosSimulacionGateway = new PrestamosSimulacionGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    resolveDueDate: (id) => monthlyCutoffs.resolve(id),
   });
   const loanDiagnostics = createLoanDiagnosticWriter(prisma);
   const crearPrestamoGateway = new CrearPrestamoGateway({
@@ -367,10 +372,12 @@ export function createSolicitudesCoreRouter(
     db: prisma, repository: solicitudesCoreRepository, gateway: crearPrestamoGateway, linkedLoanReader,
     diagnostics: loanDiagnostics,
     loanSnapshot: loanGateways.loanSnapshot,
+    lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
     makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    monthlyCutoffs,
     linkedLoanReader, initialGeneration,
     diagnostics: loanDiagnostics,
     replaceCancelledLoan: async (input, solicitud) => {
@@ -396,7 +403,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
-    today: () => new Date().toISOString().slice(0, 10),
+    today: businessDate,
   });
   const listSolicitudTransitionsUseCase = new ListSolicitudTransitionsUseCase({
     repository: solicitudWorkflowRepository,
@@ -594,6 +601,10 @@ export function createSolicitudesCoreRouter(
       makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     });
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
+  addLoanReliquidationRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new LoanReliquidationService({ db: prisma,
+      lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct) }),
+  });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
   addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {

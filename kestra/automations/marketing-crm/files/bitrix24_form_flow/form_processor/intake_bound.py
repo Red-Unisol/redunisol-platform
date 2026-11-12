@@ -73,7 +73,9 @@ def _profile_conflict(lead, answer, config):
     }
     for field, value in expected.items():
         actual = lead.get(field)
-        if actual in (None, "", []):
+        # Bitrix returns false for an unset catalog field, including bank.
+        # Use identity for the boolean sentinel so numeric 0 remains a conflict.
+        if actual is None or actual is False or actual == "" or actual == []:
             continue
         values = actual if isinstance(actual, list) else [actual]
         if [str(item) for item in values] != [str(value)]:
@@ -147,7 +149,16 @@ def persist_bound(payload, answer, *, env, api, config, review_status, result, p
         return _review(result, lead, "bound_profile_conflict")
     owner = lead.get(config.fields.lead_commercial_owner)
     if owner and str(owner) != _resolve_enum_id(api, config.fields.lead_commercial_owner, config.commercial_owner.kestra):
-        return _review(result, lead, "bound_management_requires_review")
+        policy = lead.get(config.fields.lead_processing_policy)
+        # Native channel records start under Bitrix before their first intake.
+        # Handoff is limited to this proven, preliminary and unprocessed lead;
+        # manual ownership and an explicit processing policy remain protected.
+        native_unprocessed = (
+            str(owner) == _resolve_enum_id(api, config.fields.lead_commercial_owner, config.commercial_owner.bitrix)
+            and (policy is None or policy is False or policy == "" or policy == [])
+        )
+        if not native_unprocessed:
+            return _review(result, lead, "bound_management_requires_review")
     if lead.get("CONTACT_ID"):
         linked = api.call("crm.contact.get", {"id": str(lead["CONTACT_ID"])})
         if (not isinstance(linked, dict) or str(linked.get("ID")) != str(lead["CONTACT_ID"])

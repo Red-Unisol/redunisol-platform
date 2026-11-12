@@ -11,6 +11,36 @@ import {
 } from "./network-guard.ts";
 const route = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
 
+it("reliquidation transport is opt-in, updates only its fictional request and rejects other destinations", async () => {
+  const path = `${route}/reliquidacion`;
+  const fetcher = createUiLabFetch({ reliquidation: "ready" });
+  assert.equal((await (await fetcher(path)).json()).prepared, false);
+  const body = JSON.stringify({ requestId: "47a40294-15f9-443d-a499-9b3380381ec3", reason: "Corrección solicitada por el analista" });
+  const prepared = await (await fetcher(`${path}/preparar`, { method: "POST", body })).json();
+  assert.equal(prepared.prepared, true);
+  assert.equal((await (await fetcher(path)).json()).requestId, prepared.requestId);
+  assert.equal((await (await fetcher(path, { method: "POST", body })).json()).pending, true);
+  for (const url of [
+    `https://api-solicitudes.redunisol.com.ar${path}/preparar`,
+    path.replace(UI_LAB_SOLICITUD_ID, "another-request") + "/preparar",
+    `${route}/document-review/decisions`,
+  ]) await assert.rejects(fetcher(url, { method: "POST", body }), UiLabNetworkBlockedError);
+  await assert.rejects(createUiLabFetch()(`${path}/preparar`, { method: "POST", body }), UiLabNetworkBlockedError);
+});
+
+it("external-legajo fixture supports only its opted-in local upload and preserves zero real attempts after approval", async () => {
+  const fetcher = createUiLabFetch({ externalLegajo: "waiting" });
+  assert.equal((await (await fetcher(`${route}/document-review`)).json()).signature.approved, false);
+  const response = await fetcher(`${route}/document-review/external`, { method: "POST", body: new FormData() });
+  assert.equal(response.status, 200);
+  const summary = (await (await fetcher(`${route}/document-review`)).json()).signature;
+  assert.equal(summary.evidenceType, "external");
+  assert.equal(summary.completedAttempts, 0);
+  assert.equal(summary.approved, true);
+  await assert.rejects(fetcher(`${route}/document-review/decisions`, { method: "POST" }), UiLabNetworkBlockedError);
+  await assert.rejects(fetcher(`https://example.com${route}/document-review/external`, { method: "POST" }), UiLabNetworkBlockedError);
+});
+
 it("serves explicit real-page read fixtures with role controls while rejecting writes and unknown IDs", async () => {
   const fetcher = createUiLabFetch({ production: { role: "vendedor" } });
   const get = async (pathname: string) =>
@@ -165,6 +195,10 @@ it("serves the fictional session, applicant and review contracts used by real he
   assert.deepEqual(await get(`${route}/datos-rapidos/creditos`), {
     activos: true,
   });
+  assert.deepEqual(await get(`${route}/datos-rapidos/cbu`), {
+    status: "available",
+    cbu: "0110000699111100000248",
+  });
   const review = await get(`${route}/document-review`);
   assert.equal(review.canDecide, false);
   assert.equal(review.state, "Pagada");
@@ -197,6 +231,7 @@ it("does not grant mutations or new routes when header GET fixtures are availabl
     `${route}/datos-rapidos/convenio`,
     `${route}/datos-rapidos/mora`,
     `${route}/datos-rapidos/creditos`,
+    `${route}/datos-rapidos/cbu`,
     `${route}/document-review`,
     `${route}/document-review/evaluate`,
     `${route}/document-review/decisions`,
@@ -207,6 +242,7 @@ it("does not grant mutations or new routes when header GET fixtures are availabl
     );
   for (const path of [
     "/solicitudes/another-request/datos-rapidos/socio",
+    "/solicitudes/another-request/datos-rapidos/cbu",
     "/solicitudes/another-request/document-review",
     `${route}/datos-rapidos/unknown`,
     `${route}/document-review/evaluate`,

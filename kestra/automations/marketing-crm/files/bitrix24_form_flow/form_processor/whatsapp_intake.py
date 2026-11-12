@@ -15,6 +15,9 @@ class InvalidIntake(ValueError):
 
 
 def process(payload, *, env=None, client=None):
+    if isinstance(payload, dict) and payload.get("contract") == "organic-profile-reuse-v1":
+        from .organic_profile_reuse import process as process_reused_profile
+        return process_reused_profile(payload, env=env, client=client)
     try:
         if not isinstance(payload, dict) or payload.get("contract") not in {VERSION, TEST_CONTRACT, CHANNEL_CONTRACT}:
             raise ValueError("Invalid WhatsApp intake contract.")

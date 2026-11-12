@@ -259,7 +259,11 @@ export type CuotaPrestamoLegacy = {
   id?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
+  /** Punitorios ya pagados de la cuota (PunitoriosPagos). */
+  punitoriosPagos?: number | null;
   saldoCuota: number | null;
+  /** Lo que queda de capital de la cuota (SaldoCuotaCapital). */
+  saldoCuotaCapital?: number | null;
   saldoCuotaConPunitorios: number | null;
 };
 
@@ -268,6 +272,8 @@ export type CuotaPrestamoLegacy = {
 // lo que la cuota debe; los negativos, lo que se le pagó.
 export type MovimientoCuotaLegacy = {
   cuotaAfectada: string | null;
+  /** Alta del cobro que generó el movimiento ("24/09/26 08:38:14 aortega"); vacío en las filas del plan. */
+  creado: string | null;
   fecha: string | null;
   id: string | null;
   monto: number | null;

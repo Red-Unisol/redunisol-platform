@@ -51,6 +51,7 @@ Notas:
 ### `RevisionRiesgo`
 
 Salidas permitidas:
+- `evaluacion_externa` -> `EvaluacionExterna`
 - `rechazar` -> `Rechazada`
 - `revisar` -> `Revisar`
 - `preaprobar` -> `PreAprobada`
@@ -60,6 +61,17 @@ Notas:
 - `confirmar` (desde `RevisionRiesgo` o `PreAprobada`) requiere que el titular tenga completos: tipo y nro. de documento, apellido/denominacion, nombre, fecha de nacimiento, sexo, cuit, email y celular (`EnsureSolicitudTitularHasRequiredDataForConfirmar`);
 - si falta alguno, el backend no oculta la transicion — la anota con `blockedReason` (listando los campos faltantes) via `AnnotateSolicitudTransitionsBlockedReason`, mostrandola deshabilitada con el motivo al hacer hover, igual que `liquidar`;
 - `PreAprobada` es el ultimo estado donde la solicitud puede tener datos del titular incompletos; a partir de `confirmar` se exige la completitud.
+
+### `EvaluacionExterna`
+
+Owner: `RIESGO`. Espera de confirmación de datos por otra persona.
+
+Salidas permitidas:
+- `volver_a_revision_riesgo` -> `RevisionRiesgo`
+
+Conserva el ejecutivo y los permisos de Riesgo. Sus entradas y salidas quedan
+fechadas en el historial para medir el tiempo externo por separado del análisis.
+Para cualquier otra decisión, primero se vuelve a `RevisionRiesgo`.
 
 ### `Revisar`
 

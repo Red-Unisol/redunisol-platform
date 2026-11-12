@@ -4,6 +4,7 @@ import { Prisma, type SolicitudDocumentDecision, type SolicitudDocumentReview } 
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { assess, digest, hasMatchingSignedOperation, type Assessment } from "./domain";
 import { candidateFixture } from "./fixtures";
+import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 import {
   canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates,
   isAnalysisReady, isLegajosUser, reviewSource, signatureSummary, type SignatureSourceRow,
@@ -37,6 +38,28 @@ function approval(review: SolicitudDocumentReview) {
   } as SolicitudDocumentDecision & { review: SolicitudDocumentReview };
 }
 
+test("external evidence approves with zero MetaMap attempts and survives provider outages; source and cycle changes revoke it", () => {
+  const row = sourceRow();
+  const review = observation(row, []);
+  review.policyVersion = EXTERNAL_LEGAJO_POLICY_VERSION;
+  review.evidencePath = "private/externo.json";
+  review.legajoAdjuntoId = "private-legajo";
+  const decision = { ...approval(review), verificationId: null, reason: "Legajo en papel",
+    actingAudit: { evidenceType: "external", confirmed: true, externalDocuments: [{ name: "legajo.pdf", sha256: "abc" }] } };
+  const summary = signatureSummary(row, observation(row, []), decision);
+  assert.equal(summary.approved, true);
+  assert.equal(summary.completedAttempts, 0);
+  assert.equal(summary.evidenceType, "external");
+  for (const change of [{ legacyOid: "202" }, { cuotas: 7 }, { montoAFinanciar: new Prisma.Decimal("2000") }, { signatureCycleId: "new-cycle" }]) {
+    assert.equal(signatureSummary({ ...row, ...change }, review, decision).approved, false);
+  }
+  assert.equal(signatureSummary(row, review, { ...decision, legajoAdjuntoId: null }).approved, false);
+  assert.equal(signatureSummary(row, review, { ...decision, actingAudit: {} }).approved, false);
+  assert.equal(signatureSummary(row, review, { ...decision, humanDecision: "not_approve" }).approved, false);
+  const digital = { ...decision, review: { ...review, policyVersion: "beex-document-review/2" } };
+  assert.equal(signatureSummary(row, digital.review, digital).approved, false);
+});
+
 test("signature source and approval survive analysis handoff; state alone does not change the signed operation", () => {
   const row = sourceRow(), before = digest(reviewSource(row)), review = observation(row);
   assert.equal(isAnalysisReady(row), false);
@@ -49,19 +72,57 @@ test("signature source and approval survive analysis handoff; state alone does n
   assert.equal(signatureSummary(row, review, approval(review)).approved, true);
 });
 
-test("the first checkmark requires a completed submission, not an opened or incomplete attempt", () => {
+test("reliquidation pause suppresses an otherwise valid approval and signature link", () => {
+  const row = sourceRow(), review = observation(row), decision = approval(review);
+  assert.equal(signatureSummary(row, review, decision).approved, true);
+  row.administrativeCoreControl = { reliquidationHold: { requestId: "pending" } };
+  assert.equal(signatureSummary(row, review, decision).approved, false);
+  assert.equal(signatureSummary(row, review, decision).link, null);
+  assert.equal(canManageSignature(row), false);
+});
+
+test("signed originals establish submission without a final webhook; opening an attempt is insufficient", () => {
   const row = sourceRow(), candidate = candidateFixture();
   candidate.completedAt = null;
-  const pending = assess(reviewSource(row), [candidate]);
-  assert.equal(completedSignatureAttempts(pending).length, 0);
-  assert.equal(signatureSummary(row, observation(row, [candidate]), null).status, "waiting");
+  const signedReview = observation(row, [candidate]);
+  const signed = signatureSummary(row, signedReview, null);
+  assert.equal(signed.completedAttempts, 1);
+  assert.equal(signed.status, "to_review");
+  assert.equal(signed.approved, false);
+  assert.equal(signed.lastCompletedAt, "2026-10-13T11:57:00Z");
+  assert.equal(signatureSummary(row, signedReview, approval(signedReview)).approved, true);
+  assert.equal((signedReview.assessment as unknown as Assessment).attempts[0].completedAt, null);
   candidate.completedAt = "not-a-date";
+  assert.equal(completedSignatureAttempts(assess(reviewSource(row), [candidate])).length, 1);
+  candidate.resource!.steps = [];
   assert.equal(completedSignatureAttempts(assess(reviewSource(row), [candidate])).length, 0);
+  assert.equal(signatureSummary(row, observation(row, [candidate]), null).status, "waiting");
   candidate.completedAt = "2026-10-26T12:00:00Z";
   const sent = signatureSummary(row, observation(row, [candidate]), null);
   assert.equal(sent.completedAttempts, 1);
   assert.equal(sent.approved, false);
   assert.equal(sent.status, "to_review");
+});
+
+test("a missing final webhook does not bypass excluded attempts, a new signature cycle or another loan", () => {
+  const row = sourceRow(), candidate = candidateFixture();
+  candidate.completedAt = null;
+  row.signatureRequestedAt = new Date("2026-10-13T11:56:00Z");
+  row.signatureCycleId = "new-cycle";
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 1);
+  const review = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, review, approval(review)).approved, true);
+  row.signatureExcludedVerificationIds = [candidate.verificationId];
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 0);
+  row.signatureExcludedVerificationIds = null;
+  row.signatureRequestedAt = new Date("2026-10-13T11:58:00Z");
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 0);
+  const stale = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, stale, approval(stale)).approved, false);
+  row.signatureRequestedAt = null;
+  row.legacyOid = "202";
+  const wrongLoan = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, wrongLoan, approval(wrongLoan)).approved, false);
 });
 
 test("extra completed failed signatures do not revoke an already approved valid signature", () => {

@@ -1,4 +1,7 @@
 import { AdministrativeStateControl } from "../components/administrative-state-control";
+import { CbuHabitualVimarx } from "../components/cbu-habitual-vimarx";
+import { cbuIdentityChanged } from "../utils/cbu-comparison";
+import { LoanReliquidationControl } from "../components/loan-reliquidation-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
 import {
@@ -5150,6 +5153,12 @@ export function SolicitudesActualDetallePage() {
               </div>
             )}
 
+            <LoanReliquidationControl
+              key={`reliquidacion:${solicitudId}`}
+              solicitudId={solicitudId}
+              updatedAt={resolvedSolicitud.updatedAt}
+              isEditing={isEditing}
+            />
             <AdministrativeStateControl
               key={`admin-state:${solicitudId}`}
               solicitudId={solicitudId}
@@ -5171,6 +5180,18 @@ export function SolicitudesActualDetallePage() {
               />
             ) : null}
             <DetalleLectura
+              comparacionBancaria={
+                <CbuHabitualVimarx
+                  solicitudId={solicitudId}
+                  documento={resolvedSolicitud.titular.nroDocumento}
+                  tipoDocumento={resolvedSolicitud.titular.tipoDocumento}
+                  cbuSolicitud={currentValues.titular.cbu}
+                  cbuNoHabitual={currentValues.titular.cbuNoHabitual}
+                  identityChanged={
+                    isEditing && cbuIdentityChanged(resolvedSolicitud.titular, currentValues.titular)
+                  }
+                />
+              }
               prestamoEditable={
                 isEditing ? (
                   <SolicitudSection

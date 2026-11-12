@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Services\EdnaIntake;
 use App\Services\EdnaIntakeBinding;
+use App\Services\EdnaOrganicProfile;
 use App\Services\JourneyLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -111,6 +112,16 @@ class ProcessEdnaIntake implements ShouldQueue
             $this->record(['state' => in_array($action, ['queued', 'already_processed', 'rejected'], true) ? 'synced' : 'review',
                 'lead_id' => $result['lead_id'] ?? null, 'contact_id' => $result['contact_id'] ?? null,
                 'reason' => $result['reason'] ?? $action]);
+            if (in_array($action, ['queued', 'already_processed', 'rejected'], true)) {
+                try {
+                    app(EdnaOrganicProfile::class)->record('edna_intake_request', (string) $request->id,
+                        Crypt::decryptString($send->recipient), json_decode(Crypt::decryptString($request->answer), true, 16, JSON_THROW_ON_ERROR),
+                        $request->received_at, isset($result['lead_id']) ? (string) $result['lead_id'] : null,
+                        isset($result['contact_id']) ? (string) $result['contact_id'] : null);
+                } catch (Throwable) {
+                    // Profile retention must not replay an acknowledged CRM request.
+                }
+            }
             try {
                 app(JourneyLedger::class)->record('whatsapp.intake_processed', ['action' => $action], [
                     'journey_id' => $send->journey_id, 'request_id' => $send->request_id,

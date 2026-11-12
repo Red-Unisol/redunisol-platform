@@ -319,6 +319,7 @@ export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
 
 export type MovimientoCuotaResponse = {
   cuotaAfectada: string | null;
+  creado: string | null;
   fecha: string | null;
   id: string | null;
   monto: number | null;

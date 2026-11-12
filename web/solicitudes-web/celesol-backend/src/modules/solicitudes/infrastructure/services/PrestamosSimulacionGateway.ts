@@ -2,6 +2,7 @@ import {
   LegacySolicitudesUnavailableError,
   PrestamoSimulacionRechazadaError,
 } from "../../domain/solicitudes-errors";
+import { isAmejucaLine } from "../../../monthly-cutoffs/domain";
 
 type Fetcher = (
   input: string | URL,
@@ -15,6 +16,7 @@ type Fetcher = (
 type PrestamosSimulacionGatewayConfig = {
   baseUrl: string;
   timeoutMs: number;
+  resolveDueDate?: (lineId: number) => Promise<{ firstDueDate: string } | null>;
 };
 
 export type SimularPrestamoGatewayInput = {
@@ -60,6 +62,7 @@ export class PrestamosSimulacionGateway {
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
   private readonly timeoutMs: number;
+  private readonly resolveDueDate?: PrestamosSimulacionGatewayConfig["resolveDueDate"];
 
   constructor(
     config: PrestamosSimulacionGatewayConfig,
@@ -68,6 +71,7 @@ export class PrestamosSimulacionGateway {
     this.baseUrl = config.baseUrl;
     this.fetcher = fetcher;
     this.timeoutMs = config.timeoutMs;
+    this.resolveDueDate = config.resolveDueDate;
   }
 
   async simular(
@@ -94,10 +98,21 @@ export class PrestamosSimulacionGateway {
         }
       }
     }
-    return mapRevisionSimulacion(body);
+    const result = mapRevisionSimulacion(body);
+    if (input.fechaPrimerVencimiento &&
+      result.fechaPrimerVencimiento?.slice(0, 10) !== input.fechaPrimerVencimiento.slice(0, 10)) {
+      throw new PrestamoSimulacionRechazadaError(
+        "El vencimiento del cálculo no coincide con la fecha guardada en la solicitud.",
+      );
+    }
+    return result;
   }
 
   private async request(input: SimularPrestamoGatewayInput): Promise<unknown> {
+    const monthlyCutoff = await this.resolveDueDate?.(input.lineaId);
+    const fechaPrimerVencimiento = this.resolveDueDate && isAmejucaLine(input.lineaId)
+      ? monthlyCutoff?.firstDueDate
+      : input.fechaPrimerVencimiento;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Awaited<ReturnType<Fetcher>>;
@@ -109,7 +124,7 @@ export class PrestamosSimulacionGateway {
           body: JSON.stringify({
             capitalPuro: input.capitalPuro,
             cuotas: input.cuotas,
-            fechaPrimerVencimiento: input.fechaPrimerVencimiento,
+            fechaPrimerVencimiento,
             lineaId: input.lineaId,
             montoAFinanciar: input.montoAFinanciar,
             tasa: input.tasa,
@@ -146,6 +161,10 @@ export class PrestamosSimulacionGateway {
       );
     }
 
+    if (monthlyCutoff && (!body || typeof body !== "object" ||
+        String((body as Record<string, unknown>).FechaPrimerVencimiento ?? "").slice(0, 10) !== monthlyCutoff.firstDueDate)) {
+      throw new PrestamoSimulacionRechazadaError("El cálculo de Vimarx no respetó el vencimiento del corte confirmado de AMEJUCA.");
+    }
     return body;
   }
 

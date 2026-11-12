@@ -273,6 +273,9 @@ const CUOTAS_DEL_PRESTAMO_FIELDS = [
   "Prestamo.NroCuenta",
   "FechaCobro",
   "ID",
+  // Para el comprobante de una refinanciacion con fecha de calculo.
+  "SaldoCuotaCapital",
+  "PunitoriosPagos",
 ] as const;
 
 // Movimientos de una cuota (MovimientoPrestamo): la coleccion
@@ -283,6 +286,9 @@ const MOVIMIENTOS_DE_CUOTA_FIELDS = [
   "Tipo.Descripcion",
   "Fecha",
   "Monto",
+  // Alta del cobro (la transaccion "PG ..."): lo que Vimarx muestra como
+  // "Creado" en la ventana del cobro. Las filas del plan no tienen cobro.
+  "TransaccionAjuste.Creado.Descripcion",
 ] as const;
 
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
@@ -726,6 +732,25 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       },
     }, 2, true);
     return rows;
+  }
+
+  async lookupCbuHabitual(documento: string, tipoDocumento?: string) {
+    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+      throw new LegacySolicitudesUnavailableError();
+    }
+    return this.executeEvaluateList({
+      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
+      defaultMax: 2,
+      fields: ["ID", "CuentaBancariaHabitual.CBU"],
+      tipo: "F.Module.SocioMutual",
+      mapRow: (row) => {
+        if (row.length !== 2 || !/^\d+$/.test(String(row[0] ?? "")) ||
+            (row[1] !== null && typeof row[1] !== "string")) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return { id: String(row[0]), cbu: typeof row[1] === "string" ? row[1].trim() || null : null };
+      },
+    }, 2, true);
   }
 
   async getConvenioRapido(lineaOid: string) {
@@ -2319,6 +2344,11 @@ function mapPrestamoDelSocioDetalleRow(
   };
 }
 
+// Un campo que solo va si Vimarx lo trajo.
+function opcional<K extends string>(clave: K, valor: number | null) {
+  return valor === null ? {} : ({ [clave]: valor } as Record<K, number>);
+}
+
 function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
   const nroCuota = getNumberValue(row, cuotasDelPrestamoFieldIndex, "NroCuota");
 
@@ -2350,6 +2380,14 @@ function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
         cuotasDelPrestamoFieldIndex,
         "SaldoCuotaConPunitorios",
       ),
+      ...opcional(
+        "saldoCuotaCapital",
+        getNumberValue(row, cuotasDelPrestamoFieldIndex, "SaldoCuotaCapital"),
+      ),
+      ...opcional(
+        "punitoriosPagos",
+        getNumberValue(row, cuotasDelPrestamoFieldIndex, "PunitoriosPagos"),
+      ),
     },
     esCuotaDelPlan: esCuotaDelPlan({
       descripcion: getStringValue(
@@ -2374,6 +2412,12 @@ function mapMovimientoDeCuotaRow(row: EvaluateListRow): MovimientoCuotaLegacy {
       movimientosDeCuotaFieldIndex,
       "TransaccionPrestamo.Descripcion",
     ),
+    creado:
+      getStringValue(
+        row,
+        movimientosDeCuotaFieldIndex,
+        "TransaccionAjuste.Creado.Descripcion",
+      )?.trim() || null,
     fecha: getStringValue(row, movimientosDeCuotaFieldIndex, "Fecha"),
     id: getStringValue(row, movimientosDeCuotaFieldIndex, "ID"),
     monto: getNumberValue(row, movimientosDeCuotaFieldIndex, "Monto"),

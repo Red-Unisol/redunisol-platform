@@ -4,7 +4,6 @@ import {
   Head,
   Heading,
   Html,
-  Preview,
   Section,
   Text,
 } from "@react-email/components";
@@ -46,7 +45,6 @@ export function ConfirmAccountTemplate(
   return (
     <Html>
       <Head />
-      <Preview>Código de verificación de {metadata.appName}</Preview>
       <Body style={bodyStyle}>
         <Container style={containerStyle}>
           <Heading style={{ color: metadata.textColor, margin: "0 0 16px" }}>

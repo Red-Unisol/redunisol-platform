@@ -118,7 +118,10 @@ class EdnaIncomingController extends Controller
                     // callback. Never accept entry_context or a CRM binding here.
                     if (isset($content['referral']) && is_array($content['referral'])) {
                         $referral = [];
-                        foreach (['source_id', 'source_type', 'source_url', 'headline', 'body', 'ctwa_clid'] as $name) {
+                        // Edna documents camelCase source fields; keep legacy aliases
+                        // independently so conflicting evidence remains visible downstream.
+                        foreach (['source_id', 'sourceId', 'source_type', 'sourceType', 'source_url', 'sourceUrl',
+                            'headline', 'body', 'ctwa_clid', 'ctwaClid'] as $name) {
                             $value = $content['referral'][$name] ?? null;
                             if (is_string($value) && strlen($value) <= 2048) {
                                 $referral[$name] = $value;

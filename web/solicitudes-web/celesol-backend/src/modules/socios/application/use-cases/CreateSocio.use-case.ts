@@ -55,6 +55,7 @@ export class CreateSocioUseCase {
         tipoPersona: "FISICA",
         apellido: input.apellido,
         celular: input.celular ?? null,
+        ...(input.cbu ? { cbu: input.cbu } : {}),
         cuit,
         domicilio,
         email: input.email ?? null,
@@ -89,6 +90,7 @@ export class CreateSocioUseCase {
     const legacyResult = await this.crearSocioMutualGateway.crear({
       tipoPersona: "JURIDICA",
       celular: input.celular ?? null,
+      ...(input.cbu ? { cbu: input.cbu } : {}),
       cuit,
       domicilio,
       email: input.email ?? null,

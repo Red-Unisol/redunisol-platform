@@ -10,6 +10,7 @@ export type CreateSocioDto =
       tipoPersona: "FISICA";
       apellido: string;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;
@@ -27,6 +28,7 @@ export type CreateSocioDto =
   | {
       tipoPersona: "JURIDICA";
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;

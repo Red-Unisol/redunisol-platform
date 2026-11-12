@@ -5,6 +5,36 @@ Versión: `2026-10-13`
 Este documento conserva decisiones funcionales cerradas para evitar que conceptos
 históricos vuelvan a incorporarse por error.
 
+## `PAID-DEC-23571` — Pauta directa al v3
+
+- **Fecha y aprobación:** 11/11/2026, corrección explícita de Santiago: los ingresos
+  de paid media no son orgánicos y deben ir al v3 directamente, sin menú general.
+- **Fuentes incorporadas:** tareas Bitrix 23229, 23279 y 23055; recurso de mensaje
+  de Google Ads observado el mismo día y contrato de referral entrante de Edna.
+- **Atribución:** conservar las señales actuales verificables, sin inferir una
+  campaña o grupo de un texto genérico, una fuente social o un historial anterior.
+- **Protecciones:** atención humana, sesión nativa exacta, espera del binding,
+  idempotencia y conciliación de envíos inciertos. No cambiar un saludo ya enviado
+  por otro recorrido automático ni modificar los anuncios desde esta corrección.
+- **Alcance:** versión `2026-11-11-paid-direct-v3`; implementación en
+  `codex/paid-whatsapp-direct-v3`. No completa por sí sola la tarea 23279.
+- **Detalle:** [`ORGANIC_WHATSAPP_23571.md`](ORGANIC_WHATSAPP_23571.md) y contrato
+  técnico en `docs/whatsapp-unified-intake.md`.
+
+## `ORG-DEC-23571` — Menú orgánico y datos del recurrente
+
+- **Fecha y aprobación:** 11/11/2026, pedido y precisiones de Santiago en esta conversación.
+- **Decisión:** todo ingreso orgánico nuevo elegible presenta préstamo/otra consulta,
+  también para recurrentes. Otra consulta deriva a Tincho, usuario 5737.
+- **Préstamo:** no reenviar el v3 si ya existen datos completos, identidad coherente
+  y confirmación original dentro de seis meses calendario. Fecha configurable;
+  una edición CRM o reutilización no renueva el plazo.
+- **Continuidad:** conservar atención humana y gestión comercial abierta. La nueva
+  consulta vuelve a evaluarse cuando corresponde; no se reutiliza aprobación antigua.
+- **Estado:** integrado y desplegado mediante PR 702 el 11/11/2026; el recorrido
+  de pauta se corrige en `PAID-DEC-23571`.
+- **Tabla y casos:** [`ORGANIC_WHATSAPP_23571.md`](ORGANIC_WHATSAPP_23571.md).
+
 ## `COR-DEC-23321` — Límite de entidades para nuevos de Caja Morosos
 
 - **Fecha y aprobación:** 13/10/2026, Santiago, autorización de implementación tras

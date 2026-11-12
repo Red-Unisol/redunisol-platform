@@ -231,3 +231,88 @@ test('interactive button codes are retained for Kestra suppression without expan
     $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
     expect($payload['messageContent']['payload'])->toBe('loan-button');
 });
+
+test('authenticated referral aliases survive encrypted intake and Kestra forwarding', function (array $referral) {
+    $message = ednaMessage(['messageContent' => ['referral' => $referral + [
+        'unrecognized' => 'not retained', 'crm_binding' => ['contact_id' => 99],
+    ]]]);
+    sendEdna($message)->assertOk()->assertJsonPath('accepted', 1);
+    $event = DB::table('edna_incoming_events')->first();
+    expect($event->payload)->not->toContain('campaign-source-123', 'campaign-headline');
+    $payload = json_decode(Crypt::decryptString($event->payload), true);
+    expect($payload['messageContent']['referral'])->toBe($referral);
+
+    Http::fake(['kestra.example.test/*' => Http::response(['ok' => true, 'event_key' => '2423:101', 'kind' => 'router_entry'])]);
+    (new ReceiveEdnaInKestra($event->id))->handle();
+    Http::assertSent(fn ($request) => $request['messageContent']['referral'] === $referral);
+    Http::assertSentCount(1);
+})->with([
+    'legacy snake case' => [[
+        'source_id' => 'campaign-source-123', 'source_type' => 'ad',
+        'source_url' => 'https://ads.example.test/source', 'headline' => 'campaign-headline',
+        'body' => 'campaign-body', 'ctwa_clid' => 'click-123',
+    ]],
+    'provider camel case with compatible click identifier' => [[
+        'sourceId' => 'campaign-source-123', 'sourceType' => 'ad',
+        'sourceUrl' => 'https://ads.example.test/source', 'headline' => 'campaign-headline',
+        'body' => 'campaign-body', 'ctwaClid' => 'click-123',
+    ]],
+]);
+
+test('conflicting referral aliases are preserved without resolving them or replacing a duplicate event', function () {
+    $referral = [
+        'source_id' => 'legacy-ad', 'sourceId' => 'provider-ad',
+        'source_type' => 'ad', 'sourceType' => 'post',
+        'source_url' => 'https://legacy.example.test/ad', 'sourceUrl' => 'https://provider.example.test/post',
+        'ctwa_clid' => 'legacy-click', 'ctwaClid' => 'provider-click',
+    ];
+    sendEdna(ednaMessage(['messageContent' => ['referral' => $referral]]))
+        ->assertOk()->assertJsonPath('accepted', 1);
+    sendEdna(ednaMessage(['messageContent' => ['referral' => ['sourceId' => 'replacement']]]))
+        ->assertOk()->assertJsonPath('duplicates', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload['messageContent']['referral'])->toBe($referral)
+        ->and($payload)->not->toHaveKey('attribution')->not->toHaveKey('entry_context')->not->toHaveKey('crm_binding')
+        ->and(DB::table('edna_incoming_events')->count())->toBe(1)
+        ->and(DB::table('jobs')->count())->toBe(1);
+});
+
+test('referral fields keep the per-value byte limit while rejecting invalid types', function () {
+    $referral = [
+        'source_id' => str_repeat('s', 2048), 'sourceId' => str_repeat('c', 2049),
+        'source_type' => ['ad'], 'sourceType' => true,
+        'source_url' => null, 'sourceUrl' => 123,
+        'headline' => 'retained', 'body' => ['nested' => 'not retained'],
+        'ctwa_clid' => str_repeat('é', 1025), 'ctwaClid' => false,
+    ];
+    sendEdna(ednaMessage(['messageContent' => ['referral' => $referral]]))
+        ->assertOk()->assertJsonPath('accepted', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload['messageContent']['referral'])->toBe([
+        'source_id' => str_repeat('s', 2048), 'headline' => 'retained',
+    ]);
+});
+
+test('referral retention uses the existing total JSON byte limit across aliases', function (int $bytes, bool $retained) {
+    $referral = [
+        'source_url' => str_repeat('s', 2048), 'sourceUrl' => str_repeat('c', 2048),
+        'headline' => str_repeat('h', 2048), 'body' => '',
+    ];
+    $referral['body'] = str_repeat('b', $bytes - strlen(json_encode($referral)));
+    expect(strlen(json_encode($referral)))->toBe($bytes)->and(strlen($referral['body']))->toBeLessThanOrEqual(2048);
+    sendEdna(ednaMessage(['messageContent' => ['referral' => $referral]]))
+        ->assertOk()->assertJsonPath('accepted', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    if ($retained) {
+        expect($payload['messageContent']['referral'])->toBe($referral);
+    } else {
+        expect($payload['messageContent'])->not->toHaveKey('referral');
+    }
+})->with([[8192, true], [8193, false]]);
+
+test('malformed referral containers do not expand or reject otherwise valid messages', function (mixed $referral) {
+    sendEdna(ednaMessage(['messageContent' => ['referral' => $referral]]))
+        ->assertOk()->assertJsonPath('accepted', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload['messageContent'])->toBe(['type' => 'TEXT', 'text' => ednaMessage()['messageContent']['text']]);
+})->with([[null], [true], [123], ['untrusted'], [[]]]);

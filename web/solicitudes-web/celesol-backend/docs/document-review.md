@@ -8,7 +8,10 @@ El worker registra evidencia y avisos; nunca aprueba firmas por sí solo.
 
 El vendedor ve un resumen sin evidencia biométrica: enlace vigente, cantidad de
 envíos completos, fecha del último y aprobación. La primera tilde requiere un
-envío terminado (`completedAt` válido); abrir o iniciar un intento no alcanza.
+envío terminado (`completedAt` válido) o todos sus originales firmados con fecha
+válida y disponibles. Sin evento final, el resumen usa la última fecha de firma
+de esos documentos; el `completedAt` original permanece sin alterar en la evidencia.
+Abrir o iniciar un intento no alcanza.
 La segunda requiere una aprobación humana vigente. La bandeja de Legajos incluye
 préstamos activos aún no transferidos, también los que esperan firma o análisis.
 La bandeja excluye estados terminales, solicitudes archivadas y cualquier
@@ -77,9 +80,13 @@ de firma. Aprobar habilita la instancia de transferencia, sin ejecutar el pago.
 
 Diferir de la propuesta o aprobar un intento individual no conforme exige motivo.
 Se registran por separado la disparidad global y la excepción sobre el intento.
-Una aprobación requiere envío completo, evidencia y legajo completos incluso si
+Una aprobación requiere originales firmados, evidencia y legajo completos incluso si
 es una excepción humana. La referencia de préstamo, DNI y condiciones financieras
 firmadas deben coincidir; esos controles no admiten excepción manual.
+La fecha de recepción del evento final de MetaMap no condiciona la aprobación:
+el estado vigente del proveedor y la evidencia firmada se verifican directamente.
+En un ciclo nuevo, los documentos deben haberse firmado después del pedido aunque
+falte ese evento; los intentos excluidos siguen descartados.
 
 Antes de aprobar se consulta MetaMap nuevamente, y otra vez después de compilar
 el legajo. La firma elegida debe conservar su evidencia y estado; la propuesta
@@ -99,6 +106,36 @@ Un pedido explícito de nueva firma sí la retira. Los avisos repetidos de un in
 viejo no reabren ni completan ese pedido. Las notificaciones persistentes de BEEX
 avisan al vendedor cuando hay enlace o nueva firma solicitada, y a Legajos por
 cada envío completo nuevo. Leer un aviso no resuelve la gestión pendiente.
+
+## Usar legajo externo
+
+Legajos Digitales y los administradores pueden usar **Usar legajo externo** en el
+panel de firma. Permite adjuntar fotos de un legajo firmado en papel o un PDF
+exportado de otro sistema, incluido MetaMap cuando su conexión no está disponible.
+No requiere intentos de MetaMap ni consultas al proveedor. El revisor debe indicar
+el motivo y confirmar que revisó las firmas, el titular, el préstamo y sus condiciones.
+
+Se admiten hasta 10 PDF, JPG o PNG, de hasta 10 MiB cada uno y 32 MiB en total.
+Los PDF deben abrirse sin contraseña; la compilación admite hasta 150 páginas.
+La aprobación genera un legajo descargable con actor, fecha, motivo, datos de la
+solicitud y SHA-256 de cada archivo. Reproduce las páginas y conserva los originales
+embebidos sin cambiar sus bytes. El resumen muestra **Legajo externo** y mantiene
+el contador real de intentos de MetaMap, incluso cuando es cero.
+
+La política `external-legajo-v1` identifica esta evidencia en las tablas existentes;
+no se crean intentos digitales ficticios ni se cambia `firmaDigitalmente`.
+Una aprobación externa vigente satisface la guarda de firma. El plan de
+transferencias devuelve `verification.required=false` únicamente para esa vía,
+de modo que el cliente no exija una validación independiente de MetaMap.
+Las guardas financieras, el cierre del análisis y las reservas siguen aplicándose.
+Si el análisis terminó, aprobar manda a `Transferir`; si sigue pendiente, la
+aprobación se conserva hasta finalizarlo. No ejecuta ningún pago.
+
+La aprobación queda ligada al snapshot del préstamo y al ciclo de firma. Cambiar
+titular, préstamo o condiciones, o pedir una nueva firma, retira su vigencia.
+Nuevas observaciones o fallos de MetaMap no invalidan por sí solos un legajo externo.
+La carga conserva permisos, revalidación bajo bloqueo, idempotencia por `requestId`,
+limpieza de objetos ante rollback e inmutabilidad del legajo aprobado.
 
 ## Evidencia y auditoría
 
@@ -144,10 +181,18 @@ Todas las rutas usan la sesión autenticada existente y `Cache-Control: no-store
 | `GET /solicitudes/:id/document-review`                  | Evaluación vigente, historial y permiso para decidir            |
 | `POST /solicitudes/:id/document-review/evaluate`        | Consulta y conserva una evaluación nueva si cambió la evidencia |
 | `POST /solicitudes/:id/document-review/decisions`       | Decisión humana y avance cuando el análisis terminó                            |
+| `POST /solicitudes/:id/document-review/external` | Carga y aprobación humana de legajo externo sin MetaMap |
 | `GET /solicitudes/:id/document-review/:reviewId/legajo` | PDF de propuesta                                                |
 | Misma descarga con `?decisionId=<uuid>`                 | PDF de la decisión humana                                       |
 
-Cuerpo de decisión:
+La ruta `external` usa `multipart/form-data` con `files`, `requestId`,
+`sourceFingerprint` del resumen mostrado, `reason` y `confirmed="true"`.
+El servidor valida formatos reales, límites, permisos y datos vigentes. Reintentar
+con la misma clave y archivos no duplica la decisión; cambiar el contenido con
+esa clave devuelve conflicto. La ruta habitual de decisiones digitales conserva
+todos sus controles sobre los intentos de MetaMap.
+
+Cuerpo de decisión digital:
 
 ```json
 {

@@ -4,6 +4,10 @@ type Solicitud = {
 };
 
 export type DatosRapidosGateway = {
+  lookupCbuHabitual(
+    documento: string,
+    tipoDocumento?: string,
+  ): Promise<{ id: string; cbu: string | null }[]>;
   lookupSocioRapido(
     documento: string,
     tipoDocumento?: string,
@@ -12,6 +16,10 @@ export type DatosRapidosGateway = {
   getMoraRapido(socioId: string): Promise<boolean | null>;
   getCreditosActivosRapido(socioId: string): Promise<boolean | null>;
 };
+
+export type CbuHabitualResult =
+  | { status: "available"; cbu: string }
+  | { status: "missing" | "not_member" | "ambiguous" | "unavailable"; cbu: null };
 
 export class GetDatosRapidosUseCase {
   private readonly gateway: DatosRapidosGateway;
@@ -39,6 +47,25 @@ export class GetDatosRapidosUseCase {
       return { condicion: result.condicion };
     } catch {
       return { condicion: "unknown" as const };
+    }
+  }
+
+  async cbu(solicitud: Solicitud): Promise<CbuHabitualResult> {
+    const documento = solicitud.titular.nroDocumento?.replace(/[.\s-]/g, "") ?? "";
+    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+      return { status: "unavailable", cbu: null };
+    }
+    try {
+      const matches = await this.gateway.lookupCbuHabitual(
+        documento,
+        solicitud.titular.tipoDocumento?.trim().toUpperCase() || undefined,
+      );
+      if (matches.length === 0) return { status: "not_member", cbu: null };
+      if (matches.length !== 1) return { status: "ambiguous", cbu: null };
+      const cbu = matches[0]!.cbu?.trim() || null;
+      return cbu ? { status: "available", cbu } : { status: "missing", cbu: null };
+    } catch {
+      return { status: "unavailable", cbu: null };
     }
   }
 

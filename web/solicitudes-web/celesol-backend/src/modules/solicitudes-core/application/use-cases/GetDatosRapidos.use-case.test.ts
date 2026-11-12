@@ -14,6 +14,10 @@ function setup(overrides: Partial<DatosRapidosGateway> = {}) {
   return {
     calls,
     useCase: new GetDatosRapidosUseCase({
+      lookupCbuHabitual: async (doc, tipo) => {
+        calls.push(`cbu:${doc}:${tipo}`);
+        return [{ id: "71", cbu: "0110000699111100000248" }];
+      },
       lookupSocioRapido: async (doc, tipo) => {
         calls.push(`${doc}:${tipo}`);
         return [{ id: "71" }];
@@ -112,6 +116,37 @@ describe("Datos rápidos del solicitante", () => {
       }),
       { condicion: "none" },
     );
+  });
+});
+
+describe("CBU habitual del solicitante", () => {
+  it("consulta la identidad guardada en Vimarx y conserva el CBU de la solicitud", async () => {
+    const { useCase, calls } = setup();
+    const original = { ...solicitud, titular: { ...solicitud.titular, cbu: "otro CBU" } };
+    assert.deepEqual(await useCase.cbu(original), { status: "available", cbu: "0110000699111100000248" });
+    assert.deepEqual(calls, ["cbu:12345678:DNI"]);
+    assert.equal(original.titular.cbu, "otro CBU");
+  });
+  it("distingue socio sin CBU, no socio, coincidencia ambigua y error de consulta", async () => {
+    for (const [matches, status] of [
+      [[{ id: "71", cbu: null }], "missing"],
+      [[{ id: "71", cbu: "  " }], "missing"],
+      [[], "not_member"],
+      [[{ id: "71", cbu: "uno" }, { id: "72", cbu: "dos" }], "ambiguous"],
+    ] as const) {
+      const { useCase } = setup({ lookupCbuHabitual: async () => [...matches] });
+      assert.deepEqual(await useCase.cbu(solicitud), { status, cbu: null });
+    }
+    const { useCase } = setup({ lookupCbuHabitual: async () => { throw Error("offline"); } });
+    assert.deepEqual(await useCase.cbu(solicitud), { status: "unavailable", cbu: null });
+  });
+  it("no consulta documentos vacíos, inválidos o demasiado largos", async () => {
+    for (const nroDocumento of [null, "", "abc", "00000000", "1234567890123"]) {
+      const { useCase, calls } = setup();
+      assert.deepEqual(await useCase.cbu({ ...solicitud, titular: { ...solicitud.titular, nroDocumento } }),
+        { status: "unavailable", cbu: null });
+      assert.deepEqual(calls, []);
+    }
   });
 });
 

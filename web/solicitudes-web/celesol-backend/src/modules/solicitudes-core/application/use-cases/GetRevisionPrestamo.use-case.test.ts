@@ -15,6 +15,7 @@ function setup(
     linea?: boolean;
     monto?: number | null;
     convenioFalla?: boolean;
+    fecha?: string | null;
   } = {},
 ) {
   const calls: unknown[] = [];
@@ -45,7 +46,7 @@ function setup(
               cuotas: 6,
               montoAFinanciar:
                 options.monto === undefined ? 10000 : options.monto,
-              fechaPrimerVencimiento: "2040-12-31",
+              fechaPrimerVencimiento: options.fecha === undefined ? "2026-12-31" : options.fecha,
               tasa: 99,
             } as never),
     },
@@ -76,7 +77,7 @@ function setup(
     gateway: {
       simularRevision: async (input) => {
         calls.push(input);
-        return { fechaPrimerVencimiento: "2026-11-30", tasa: 0.165 } as never;
+        return { fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? "2026-11-30", tasa: 0.165 } as never;
       },
     },
   });
@@ -86,7 +87,7 @@ const input = {
   solicitudId: "sol-1",
   currentUser: { id: "user", workflowOwnerId: "riesgo" },
 };
-it("resolves the generation socio and line relationship, uses simulation OID and omits manual date/rate", async () => {
+it("uses the simulation OID and saved due date, leaving the rate to Vimarx", async () => {
   const { useCase, calls } = setup();
   const result = await useCase.execute(input);
   // Muestra el NroSocio de Vimarx, no el ID interno que guarda Sol Web.
@@ -97,8 +98,14 @@ it("resolves the generation socio and line relationship, uses simulation OID and
   assert.deepEqual(calls, [
     { documento: "33344455" },
     { oid: "2519" },
-    { capitalPuro: false, lineaId: 2519, montoAFinanciar: 10000, cuotas: 6 },
+    { capitalPuro: false, lineaId: 2519, montoAFinanciar: 10000, cuotas: 6, fechaPrimerVencimiento: "2026-12-31" },
   ]);
+  assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-12-31");
+});
+it("lets Vimarx suggest a date only when the solicitud has none saved", async () => {
+  const { useCase, calls } = setup({ fecha: null });
+  const result = await useCase.execute(input);
+  assert.deepEqual(calls.at(-1), { capitalPuro: false, lineaId: 2519, montoAFinanciar: 10000, cuotas: 6 });
   assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-11-30");
 });
 it("rejects other areas before external queries", async () => {
@@ -151,7 +158,7 @@ it("si Vimarx falla al leer el convenio, la revision sigue sin el", async () => 
   assert.equal(result.convenio, null);
   // Sin Vimarx no se conoce el NroSocio: mejor vacio que el ID interno.
   assert.equal(result.titular.nroSocio, null);
-  assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-11-30");
+  assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-12-31");
 });
 it("sin socio no consulta el convenio", async () => {
   const { useCase, convenioCalls } = setup({ socio: false });

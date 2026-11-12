@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MonthlyCutoffService } from "../../../monthly-cutoffs/domain";
 import { actingContext } from "../../../auth/impersonation/context";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
@@ -50,6 +51,7 @@ const MAX_CANCELACIONES_CENTAVOS = 2147483647;
 const DESTINO_REFINANCIACION_ID = "61";
 
 type Dependencies = {
+  monthlyCutoffs?: Pick<MonthlyCutoffService, "resolve">;
   archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
@@ -80,6 +82,7 @@ type Dependencies = {
 };
 
 export class CreatePrestamoLegacyUseCase {
+  private readonly monthlyCutoffs?: Pick<MonthlyCutoffService, "resolve">;
   private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly simularCuotaSolicitud: Pick<
@@ -114,6 +117,7 @@ export class CreatePrestamoLegacyUseCase {
   private readonly diagnostics?: LoanDiagnosticWriter;
 
   constructor(dependencies: Dependencies) {
+    this.monthlyCutoffs = dependencies.monthlyCutoffs;
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
@@ -300,6 +304,13 @@ export class CreatePrestamoLegacyUseCase {
     if (!limitesLinea || !limitesLinea.vigente)
       throw new LegacyLineaPrestamoUnavailableError();
     const efectivos = ajustarMaximosLinea(limitesLinea, solicitud);
+    const fechaEmision = this.today();
+    const cutoff = await this.monthlyCutoffs?.resolve(solicitud.lineaPrestamoLegacyOid, fechaEmision);
+    if (cutoff && solicitud.fechaPrimerVencimiento !== cutoff.firstDueDate) {
+      throw new AdministrativeCorrectionError(
+        "El corte confirmado de AMEJUCA requiere otro vencimiento. Recalculá y guardá las condiciones de la solicitud antes de generar el préstamo.",
+      );
+    }
     // Antes de escribir nada en Vimarx: la refinanciacion tiene que poder
     // cobrarse y entrar, junto con las cancelaciones, en lo que se desembolsa.
     const refinanciacion = await this.refinanciacion?.preparar(
@@ -349,7 +360,10 @@ export class CreatePrestamoLegacyUseCase {
     return { solicitud: huboAjuste ? (await this.repository.findById(input.solicitudId)) ?? solicitud : solicitud, codigoMutual: lineaPrestamo.codigoMutual,
       refinanciacionVersion: refinanciacion?.version,
       coreInput: {
-        cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
+        cuotas: efectivos.cuotas as number, fechaEmision,
+        ...(solicitud.fechaPrimerVencimiento
+          ? { fechaPrimerVencimiento: solicitud.fechaPrimerVencimiento }
+          : {}),
         integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
         lineaPrestamo: lineaPrestamo.id, montoDeseado: efectivos.montoAFinanciar as number,
         ...nroLote,

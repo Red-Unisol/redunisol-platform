@@ -9,6 +9,7 @@ export function buildSocioPrefillFromTitular(
   return {
     apellido: apellidoDenominacion,
     celular: titular.celular ?? "",
+    cbu: titular.cbu ?? "",
     cuit: titular.cuit ?? "",
     domicilioCalle: titular.domicilioCalle ?? "",
     domicilioLocalidad: titular.localidad ?? "",

@@ -92,14 +92,16 @@ it("an already reconciled loan is still checked as active, without duplicate rec
   assert.equal(f.writes(), 0);
 });
 
-it("a returned request can serve a fully verified signature while reconciliation remains pending, without writes", async () => {
-  const f = fixture();
-  f.row.estadoActual.code = "Revisar";
-  const result = await assertSignatureLinkFinancialReady(f.db, "s", f.deps);
-  assert.deepEqual(result, { loanId: "444", conditionsFingerprint: coreConditionsFingerprint(f.row) });
-  assert.equal(coreReconciliationPending(f.row), true);
-  assert.equal(f.writes(), 0);
-  assert.equal(f.audits.length, 0);
+it("returned requests and external evaluations can serve verified signatures without marking reconciliation done", async () => {
+  for (const state of ["Revisar", "EvaluacionExterna"]) {
+    const f = fixture();
+    f.row.estadoActual.code = state;
+    const result = await assertSignatureLinkFinancialReady(f.db, "s", f.deps);
+    assert.deepEqual(result, { loanId: "444", conditionsFingerprint: coreConditionsFingerprint(f.row) });
+    assert.equal(coreReconciliationPending(f.row), true);
+    assert.equal(f.writes(), 0);
+    assert.equal(f.audits.length, 0);
+  }
 });
 
 it("signature links reject mismatched contracts, cancelled loans and terminal/archived requests without writes", async () => {
@@ -111,7 +113,13 @@ it("signature links reject mismatched contracts, cancelled loans and terminal/ar
   const cancelled = fixture();
   cancelled.deps.lifecycle = async () => ({ id: "444", account: "100", estado: 3, estadoLabel: "Anulada", estadoPrestamo: 0, estadoPrestamoLabel: "Anulado", vigente: false, saldo: 0 });
   await assert.rejects(assertSignatureLinkFinancialReady(cancelled.db, "s", cancelled.deps), /anulado/);
-  for (const state of ["Pagada", "Desestimada", "Rechazada", "Vencida"]) {
+  const paid = fixture(); paid.row.estadoActual.code = "Pagada";
+  await assert.rejects(assertSignatureLinkFinancialReady(paid.db, "s", paid.deps), {
+    message: "Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.",
+    statusCode: 409,
+  });
+  assert.equal(paid.writes(), 0);
+  for (const state of ["Desestimada", "Rechazada", "Vencida"]) {
     const terminal = fixture(); terminal.row.estadoActual.code = state;
     await assert.rejects(assertSignatureLinkFinancialReady(terminal.db, "s", terminal.deps), /estado actual/);
     assert.equal(terminal.writes(), 0);

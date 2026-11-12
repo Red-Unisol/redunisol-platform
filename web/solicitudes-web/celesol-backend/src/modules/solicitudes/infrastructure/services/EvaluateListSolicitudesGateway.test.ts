@@ -55,6 +55,37 @@ function createGateway(response: unknown, ok = true) {
   };
 }
 
+describe("Consulta acotada del CBU habitual", () => {
+  it("consulta sólo socio y CBU habitual con tipo de documento y límite para detectar ambigüedad", async () => {
+    const { gateway, requests } = createGateway([[71, " 0110000699111100000248 "]]);
+    assert.deepEqual(await gateway.lookupCbuHabitual("99111124", "DNI"),
+      [{ id: "71", cbu: "0110000699111100000248" }]);
+    assert.deepEqual(requests[0]?.body, {
+      tipo: "F.Module.SocioMutual", max: 2,
+      cmd: "[NroDoc] = 99111124 And [TipoDoc.Descripcion] = 'DNI'",
+      campos: "ID;CuentaBancariaHabitual.CBU",
+    });
+    assert.match(String(requests[0]?.input), /\/api\/Empresa\/EvaluateList$/);
+  });
+  it("preserva ausencia y multiplicidad y rechaza respuestas mal formadas", async () => {
+    assert.deepEqual(await createGateway([]).gateway.lookupCbuHabitual("99111124"), []);
+    assert.deepEqual(await createGateway([[71, null], [72, ""]]).gateway.lookupCbuHabitual("99111124"),
+      [{ id: "71", cbu: null }, { id: "72", cbu: null }]);
+    for (const body of [null, {}, [null], [[71]], [[71, 123]], [[null, "cbu"]]]) {
+      await assert.rejects(createGateway(body).gateway.lookupCbuHabitual("99111124"), LegacySolicitudesUnavailableError);
+    }
+    await assert.rejects(createGateway([], false).gateway.lookupCbuHabitual("99111124"), LegacySolicitudesUnavailableError);
+  });
+  it("rechaza documentos no numéricos antes de consultar y escapa el tipo de documento", async () => {
+    const { gateway, requests } = createGateway([]);
+    await assert.rejects(gateway.lookupCbuHabitual("1 or 1=1"), LegacySolicitudesUnavailableError);
+    assert.equal(requests.length, 0);
+    await gateway.lookupCbuHabitual("99111124", "D'N");
+    assert.equal((requests[0]?.body as {cmd:string}).cmd,
+      "[NroDoc] = 99111124 And [TipoDoc.Descripcion] = 'D''N'");
+  });
+});
+
 describe("EvaluateListSolicitudesGateway", () => {
   it("builds table commands with the authenticated legacy user", () => {
     const request = buildEvaluateListRequest(
@@ -508,9 +539,9 @@ describe("EvaluateListSolicitudesGateway", () => {
   it("lists the movements of an installment of the prestamo, in the order they were recorded", async () => {
     // Filas reales de FapiTest: cuota 5 del prestamo 438893, cobrada adelantada.
     const { gateway, requests } = createGateway([
-      [41960337, "1013352/5", "Capital", "2026-10-27", -48627.48],
-      [41532222, "1013352/5", "Capital", "2026-12-31", 48627.48],
-      [41960335, "1013352/5", "Interes", "2026-10-27", -17370.95],
+      [41960337, "1013352/5", "Capital", "2026-10-27", -48627.48, "27/10/26 16:13:36 nsallitto"],
+      [41532222, "1013352/5", "Capital", "2026-12-31", 48627.48, ""],
+      [41960335, "1013352/5", "Interes", "2026-10-27", -17370.95, "27/10/26 16:13:36 nsallitto"],
     ]);
 
     const movimientos = await gateway.listMovimientosDeCuota(
@@ -524,11 +555,13 @@ describe("EvaluateListSolicitudesGateway", () => {
     );
     assert.deepEqual(movimientos[0], {
       cuotaAfectada: "1013352/5",
+      creado: null,
       fecha: "2026-12-31",
       id: "41532222",
       monto: 48627.48,
       tipo: "Capital",
     });
+    assert.equal(movimientos[2]?.creado, "27/10/26 16:13:36 nsallitto");
     const body = requests[0]?.body as { cmd: string; tipo: string };
     // El filtro por prestamo impide pedir una cuota de otro prestamo.
     assert.equal(

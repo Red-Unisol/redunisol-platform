@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 READ_METHODS = frozenset({
     "crm.status.list", "crm.lead.fields", "crm.lead.list", "crm.lead.get",
     "crm.contact.list", "crm.contact.get", "crm.deal.list", "crm.duplicate.findbycomm", "imopenlines.dialog.get",
+    "crm.activity.get", "imopenlines.session.history.get", "user.get",
 })
 TRANSIENT_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
 
