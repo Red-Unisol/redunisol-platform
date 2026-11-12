@@ -45,3 +45,9 @@ README.md
 tests/
 phpunit.xml
 phpunit.xml.dist
+
+# Runtime configuration is injected by Compose, never copied into build layers.
+**/.env.*
+**/*.env
+**/*.env.*
+deploy/
