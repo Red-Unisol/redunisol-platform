@@ -8,7 +8,11 @@ en la VPS. Las consultas comerciales identificadas siguen usando la API oficial
 del BCRA; el servicio de archivos tiene dos integraciones Kestra: actualizacion
 nocturna y consulta diagnostica.
 
-La base Ansible procede del PR #683, integrado a `main`. Esta ampliacion tiene playbooks propios y
+La base Ansible procede del [PR #683](https://github.com/Red-Unisol/redunisol-platform/pull/683),
+integrado a `main`. La migracion del servicio se incorporo con el
+[PR #711](https://github.com/Red-Unisol/redunisol-platform/pull/711); el estado
+integrado resultante es `474ae4a06f8bd658d204f5826a74c634afffbfee`.
+Esta ampliacion tiene playbooks propios y
 no vuelve a provisionar el host completo ni aplica cambios de seguridad ajenos
 al servicio. Todas las aplicaciones, claves y datos se administran por roles;
 las credenciales se suministran mediante archivos privados del controlador, nunca
@@ -18,6 +22,8 @@ mediante argumentos con secretos ni inventarios versionados.
 
 - El dedicado ejecuta la misma imagen OCI por digest y conserva sus datos en
   `/srv/redunisol/state/bcra-file-api`, sobre el NVMe existente.
+  La imagen fijada es
+  `ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4`.
 - Su API escucha exclusivamente en `127.0.0.1:18082`.
 - La VPS mantiene un enlace SSH persistente hacia una cuenta restringida del
   dedicado. La clave privada permanece en la VPS. La cuenta permite solamente
@@ -60,7 +66,8 @@ flowchart LR
 6. Derivar el recibo de migracion desde la evidencia real de copia, SQLite y
    revocacion, sin flags de exito manuales. Guardar sus hashes, imagen y corte.
 7. Crear el backup frio completo en el repositorio Restic cifrado existente del
-   SATA, con tags y evidencia propios. Comprobar los datos del repositorio y
+   SATA, con tags y evidencia propios. Ejecutar `restic check --read-data` sobre
+   el repositorio completo, dentro del mismo lock y presupuesto temporal, y
    restaurar un manifest a una carpeta aislada para comparar su SHA-256. Esto
    no acredita una restauracion integral del dataset ni un backup continuo.
 8. Arrancar el destino, verificar estado autenticado y rechazo sin token, y
@@ -74,8 +81,9 @@ checksums esperados. La copia usa un alias bind temporal para que el receptor
 sin privilegios alcance exclusivamente el volumen BCRA; los permisos de los
 directorios de estado del host se conservan.
 
-El primer arranque cambia legitimamente `refresh.json` de running a interrupted;
-por eso los hashes se comparan antes. Las capacidades del destino deben coincidir
+El primer arranque cambia legitimamente un `refresh.json` con estado `running`
+a `failed`, con la marca de interrupcion por reinicio; no reanuda el trabajo al
+arrancar. Por eso los hashes se comparan antes. Las capacidades del destino deben coincidir
 con el origen: un historico incompleto no se declara listo por migrarlo.
 
 ## Verificacion y recuperacion
@@ -109,3 +117,52 @@ un despliegue habitual vuelva a levantar el importador en la VPS. El publisher
 de imagenes sigue disponible; publicar otro tag no cambia el digest aplicado.
 El Compose y env cifrado historicos se conservan para pruebas y rollback
 explicito, no como destino productivo de los siguientes despliegues.
+
+## Revision final del corte
+
+Esta seccion registra las decisiones confirmadas. Los resultados del corte se
+documentan con los recibos y verificaciones reales del operador; integrar codigo
+en `main` no acredita haber ejecutado el corte.
+
+Decisiones confirmadas:
+
+- PR #683 y PR #711 integrados; base Git de esta operacion
+  `474ae4a06f8bd658d204f5826a74c634afffbfee`. Las correcciones finales conservan
+  su propia revision aplicada, que se registra por separado.
+- Se conserva el digest de imagen anterior. No se cambia la logica de importacion,
+  los contratos de consulta ni la fuente BCRA de las evaluaciones comerciales.
+- Solo se aplica el servicio BCRA, su transferencia, backup inicial y transporte
+  privado. No se ejecuta el provisionamiento general de foundation ni los roles
+  de seguridad o mantenimiento del host como parte de este corte.
+- Kestra conserva flows, scheduler, token y URL. Su red real accede mediante el
+  puente y el enlace SSH restringido; no se publica una API BCRA nueva.
+- El contenedor y volumen originales permanecen detenidos y conservados. No se
+  borran datos de origen ni se habilitan dos importadores en paralelo.
+
+Los recibos del servicio se conservan fuera del bind de datos, bajo
+`/srv/redunisol/platform/bcra-file-api`, con propietario root y modo `0600`.
+`post-recovery-manifest.json` acredita el arbol final tras SQLite; no debe
+confundirse con el arbol anterior de la copia. La evidencia estable del runtime
+se registra en `/var/lib/redunisol-foundation/evidence/bcra-file-api.json`.
+No se copian secretos ni filas de las bases a este documento.
+
+## Alcance comprobable del respaldo
+
+El respaldo BCRA de este corte es una copia fria inicial, cifrada y local en el
+SATA del mismo dedicado. Antes de emitir su recibo se verifica el repositorio
+completo mediante `check --read-data`; `repository_integrity_verified`,
+`read_data` y su fecha UTC pertenecen a ese chequeo real. Reaplicar con un recibo
+inicial valido conserva su fecha original: no renueva la prueba de integridad.
+
+La prueba de restauracion recupera solo un manifest a una carpeta aislada y
+compara su SHA. No acredita restaurar todas las bases BCRA ni una recuperacion
+integral de la aplicacion. La comprobacion cifrada del repositorio y la prueba
+de restauracion tienen alcances distintos y quedan registradas por separado.
+
+Este corte no configura un backup continuo ni una copia externa de BCRA. Los
+timers y comprobaciones existentes de foundation mantienen su propio alcance y
+evidencia de configuracion del host; no se presentan como respaldo periodico de
+las bases BCRA. Compartir el repositorio agrega sus bloques al chequeo global,
+sin cambiar las etiquetas, recibos o metricas de foundation ni aplicar retencion
+o poda. Una copia recuperable fuera del dedicado y una restauracion completa de
+BCRA requieren verificaciones propias posteriores.
