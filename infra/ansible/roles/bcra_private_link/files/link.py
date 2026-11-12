@@ -353,7 +353,26 @@ def unit_runtime():
               "NeedDaemonReload", "MainPID"]
     output = run(["/bin/systemctl", "show", UNIT.name] + ["--property=" + name for name in fields],
                  allowed=(0, 1, 3, 4))
-    return dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    if properties.get("RestrictAddressFamilies") == "[unprintable]":
+        # systemctl 239 cannot print this (bas) property. Read the same loaded
+        # unit over D-Bus, including its allowlist flag; a unit file is no proof.
+        base = ["/usr/bin/busctl", "--system"]
+        try:
+            unit = shlex.split(run(base + ["call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                                          "org.freedesktop.systemd1.Manager", "GetUnit", "s", UNIT.name]))
+            require(len(unit) == 2 and unit[0] == "o"
+                    and re.fullmatch(r"/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+", unit[1]) is not None,
+                    "tunnel_address_families_unit_lookup_invalid")
+            families = shlex.split(run(base + ["get-property", "org.freedesktop.systemd1", unit[1],
+                                              "org.freedesktop.systemd1.Service", "RestrictAddressFamilies"]))
+        except ValueError:
+            raise LinkError("tunnel_address_families_property_invalid")
+        require(len(families) == 6 and families[:3] == ["(bas)", "true", "3"]
+                and set(families[3:]) == {"AF_UNIX", "AF_INET", "AF_INET6"},
+                "tunnel_address_families_property_invalid")
+        properties["RestrictAddressFamilies"] = " ".join(families[3:])
+    return properties
 
 
 def loaded_unit_matches(properties, config):

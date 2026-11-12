@@ -246,6 +246,43 @@ class PrivateLinkGuardTests(unittest.TestCase):
             changed = dict(properties, **change)
             self.assertFalse(LINK.loaded_unit_matches(changed, values))
 
+    def test_systemd239_unprintable_families_require_the_effective_dbus_allowlist(self):
+        values = config()
+        properties = dict(unit_properties(values), RestrictAddressFamilies="[unprintable]")
+        output = "\n".join(key + "=" + value for key, value in properties.items())
+        object_path = "/org/freedesktop/systemd1/unit/redunisol_2dbcra_2dprivate_2dlink_2eservice"
+        with mock.patch.object(LINK, "run", side_effect=[output, 'o "' + object_path + '"\n',
+                                                       '(bas) true 3 "AF_INET" "AF_INET6" "AF_UNIX"\n']) as commands:
+            self.assertTrue(LINK.loaded_unit_matches(LINK.unit_runtime(), values))
+        self.assertEqual(commands.call_count, 3)
+        self.assertEqual(commands.call_args_list[1][0][0][-3:], ["GetUnit", "s", LINK.UNIT.name])
+        self.assertEqual(commands.call_args_list[2][0][0][-3:],
+                         [object_path, "org.freedesktop.systemd1.Service", "RestrictAddressFamilies"])
+
+    def test_dbus_family_denylist_extra_missing_duplicate_and_malformed_data_fail_closed(self):
+        output = "RestrictAddressFamilies=[unprintable]\n"
+        unit = 'o "/org/freedesktop/systemd1/unit/redunisol_2dbcra_2dprivate_2dlink_2eservice"\n'
+        for response in ['(bas) false 3 "AF_INET" "AF_INET6" "AF_UNIX"',
+                         '(bas) true 4 "AF_INET" "AF_INET6" "AF_UNIX" "AF_PACKET"',
+                         '(bas) true 2 "AF_INET" "AF_UNIX"',
+                         '(bas) true 3 "AF_INET" "AF_INET" "AF_UNIX"',
+                         '(bas) true 3 "AF_INET" "AF_INET6" "AF_UNIX',
+                         'as 3 "AF_INET" "AF_INET6" "AF_UNIX"', '', '[unprintable]']:
+            with self.subTest(response=response), mock.patch.object(LINK, "run", side_effect=[output, unit, response]):
+                with self.assertRaises(LINK.LinkError):
+                    LINK.unit_runtime()
+        for response in ['', 's "not-an-object"', 'o "/another/unit"']:
+            with self.subTest(unit=response), mock.patch.object(LINK, "run", side_effect=[output, response]):
+                with self.assertRaises(LINK.LinkError):
+                    LINK.unit_runtime()
+
+    def test_printable_address_families_never_invoke_a_dbus_fallback(self):
+        properties = unit_properties(config())
+        output = "\n".join(key + "=" + value for key, value in properties.items())
+        with mock.patch.object(LINK, "run", return_value=output) as commands:
+            self.assertEqual(LINK.unit_runtime(), properties)
+        self.assertEqual(commands.call_count, 1)
+
     def test_verify_rejects_loaded_unit_drift_without_daemon_reload_or_repair(self):
         values = config(action="verify")
         with tempfile.TemporaryDirectory() as folder:
