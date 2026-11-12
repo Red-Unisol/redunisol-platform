@@ -146,6 +146,20 @@ confundirse con el arbol anterior de la copia. La evidencia estable del runtime
 se registra en `/var/lib/redunisol-foundation/evidence/bcra-file-api.json`.
 No se copian secretos ni filas de las bases a este documento.
 
+La activacion de inventario se promueve el 12/11/2026 despues de verificar
+17.521.923.276 bytes unicos copiados y recuperar SQLite exclusivamente en el
+destino. La publicacion vigente conserva 42.316.211 filas y su `checked_at`;
+el padron historico pendiente conserva el checkpoint de 26.300.000 filas de
+entrada, sin declarar listo el historico. El recibo consolidado de migracion
+y el recibo de backup frio quedan fijados por SHA-256 en el inventario.
+
+El backup inicial es el snapshot Restic
+`ff8c21758a7e63d18b1309a2243907eaf74bad162478428981a636cb61c8be36`.
+El repositorio completo paso `check --read-data` el 12/11/2026 a las
+04:39:26 UTC. La restauracion aislada del manifest coincide con el SHA del
+recibo de migracion. Estos resultados habilitan el deploy; su apply y las
+pruebas reales de conectividad se registran por separado.
+
 ## Alcance comprobable del respaldo
 
 El respaldo BCRA de este corte es una copia fria inicial, cifrada y local en el
