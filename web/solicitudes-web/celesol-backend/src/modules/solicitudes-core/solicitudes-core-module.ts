@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
 import { createDocumentReviewRouter } from "../document-review/document-review-module";
+import { createPadronesRouter } from "../padrones/router";
+import { PadronesGateway } from "../padrones/PadronesGateway";
 import { InitialLoanGenerationService } from "./infrastructure/services/InitialLoanGenerationService";
 import { addInitialLoanGenerationRoutes } from "./presentation/InitialLoanGenerationRoutes";
 import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "./infrastructure/services/WorkflowFinancialGuard";
@@ -642,6 +644,14 @@ export function createSolicitudesCoreRouter(
   combined.use("/:id", crearVisibilidadVendedorGuard({ getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     repository: solicitudesCoreRepository, visibilidadVendedorResolver }));
   combined.use(createDocumentReviewRouter(dependencies.getCurrentUserUseCase));
+  combined.use(createPadronesRouter({
+    auth: dependencies.getCurrentUserUseCase,
+    gateway: new PadronesGateway({ url: env.PADRONES_API_URL, token: env.PADRONES_API_TOKEN }),
+    source: async (id, currentUser) => {
+      const solicitud = await getSolicitudByIdUseCase.execute({ id, currentUser });
+      return { dni: solicitud.titular.nroDocumento, cuit: solicitud.titular.cuit };
+    },
+  }));
   const configuracion = new ConfiguracionReconocimientoPrisma(prisma);
   combined.use("/reconocimiento-recibos", createReconocimientoRecibosRoutes({
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,

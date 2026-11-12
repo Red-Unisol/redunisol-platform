@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { PadronesSection } from "./padrones-section";
 
 import { useCredixsaSolicitudQuery } from "@/modules/solicitudes-core/hooks/use-credixsa-solicitud-query";
 import {
@@ -113,7 +114,16 @@ type CredixsaInformeSectionProps = {
   solicitudId: string;
 };
 
-export function CredixsaInformeSection({
+export function CredixsaInformeSection(props: CredixsaInformeSectionProps) {
+  return (
+    <div className="min-w-0">
+      <CredixsaReportSection {...props} />
+      <PadronesSection {...props} />
+    </div>
+  );
+}
+
+function CredixsaReportSection({
   isActive,
   solicitudId,
 }: CredixsaInformeSectionProps) {

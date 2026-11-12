@@ -17,6 +17,7 @@ import {
 import { SAMPLE_REQUEST } from "./header-sample.ts";
 import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
 import { solicitudCbuFixture, type CbuScenario } from "./cbu-fixtures.ts";
+import { padronesFixture, type PadronesScenario } from "./padrones-fixtures.ts";
 
 export type ProductionRole = "riesgo" | "admin" | "vendedor";
 export type ProductionFixtureOptions = {
@@ -24,6 +25,7 @@ export type ProductionFixtureOptions = {
   externalPayment?: boolean;
   allowEdit?: boolean;
   cbuScenario?: CbuScenario;
+  padronesScenario?: PadronesScenario;
   workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
 };
 
@@ -545,8 +547,10 @@ export function productionFixture(
         decisionId: "demo-decision-001",
       },
     };
+  else if (pathname === `${base}/padrones`)
+    body = padronesFixture(options.padronesScenario);
   else if (pathname === `${base}/credixsa`)
-    body = {
+    body = options.padronesScenario === "credixsa-error" ? { credixsa: null } : {
       credixsa: {
         ok: true,
         status: "found",
