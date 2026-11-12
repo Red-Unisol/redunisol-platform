@@ -140,6 +140,7 @@ describe("CreateSocioUseCase", () => {
 
     const socio = await useCase.execute({
       apellido: "Perez",
+      categoria: "AMEJUCA",
       celular: "11 4444 5555",
       cuit: " 20-12345678-3 ",
       ...DOMICILIO_INPUT,
@@ -165,6 +166,7 @@ describe("CreateSocioUseCase", () => {
     assert.deepEqual(receivedInput, {
       tipoPersona: "FISICA",
       apellido: "Perez",
+      categoria: "AMEJUCA",
       celular: "11 4444 5555",
       cuit: "20123456783",
       domicilio: {
@@ -233,6 +235,7 @@ describe("CreateSocioUseCase", () => {
     assert.equal(socio.nroSocioLegacy, "152199");
     assert.deepEqual(receivedInput, {
       tipoPersona: "JURIDICA",
+      categoria: "ADHERENTE_CONVENIO",
       celular: null,
       cuit: "30712345671",
       domicilio: {

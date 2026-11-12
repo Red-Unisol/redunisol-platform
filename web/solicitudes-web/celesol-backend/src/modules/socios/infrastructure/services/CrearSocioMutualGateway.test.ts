@@ -12,7 +12,12 @@ describe("CrearSocioMutualGateway", () => {
     let capturedUrl: string | undefined;
     let capturedBody: unknown;
     const gateway = new CrearSocioMutualGateway(
-      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      {
+        baseUrl: "https://legacy.example.com",
+        // 23:00 del 11/11 en Argentina: la fecha tiene que ser la local.
+        now: () => new Date("2026-11-12T02:00:00Z"),
+        timeoutMs: 5000,
+      },
       async (input, init) => {
         capturedUrl = String(input);
         capturedBody = JSON.parse(String(init?.body));
@@ -26,6 +31,7 @@ describe("CrearSocioMutualGateway", () => {
 
     const result = await gateway.crear({
       tipoPersona: "FISICA",
+      categoria: "MUDON",
       apellido: "Fernandez",
       celular: "3492654322",
       cuit: "27398765430",
@@ -61,7 +67,7 @@ describe("CrearSocioMutualGateway", () => {
         },
         Email: "marina@email.com",
         FechaDeNacimiento: "1996-05-14",
-        HistoriaCategorias: [{ Categoria: 2, Fecha: "2020-01-01" }],
+        HistoriaCategorias: [{ Categoria: 78, Fecha: "2026-11-11" }],
         Nombre: "Marina",
         NroDoc: "39876543",
         Observaciones: "DEPOSITO MP",
@@ -88,6 +94,7 @@ describe("CrearSocioMutualGateway", () => {
     for (const sexo of ["0", "1", "3", "Masculino"]) {
       await gateway.crear({
         tipoPersona: "FISICA",
+        categoria: "ADHERENTE_CONVENIO",
         apellido: "Fernandez",
         cuit: "27398765430",
         domicilio: { calle: "San Martin", codigoPostal: "", localidad: "12", nroPuerta: "" },
@@ -104,7 +111,11 @@ describe("CrearSocioMutualGateway", () => {
   it("sends the expected body for persona juridica and returns the id on success", async () => {
     let capturedBody: unknown;
     const gateway = new CrearSocioMutualGateway(
-      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      {
+        baseUrl: "https://legacy.example.com",
+        now: () => new Date("2026-11-12T15:00:00Z"),
+        timeoutMs: 5000,
+      },
       async (_input, init) => {
         capturedBody = JSON.parse(String(init?.body));
 
@@ -117,6 +128,7 @@ describe("CrearSocioMutualGateway", () => {
 
     const result = await gateway.crear({
       tipoPersona: "JURIDICA",
+      categoria: "ADHERENTE_CONVENIO",
       celular: "3492987654",
       cuit: "30712345671",
       domicilio: {
@@ -142,7 +154,7 @@ describe("CrearSocioMutualGateway", () => {
           NroPuerta: "1500",
         },
         Email: "contacto@elalba.com.ar",
-        HistoriaCategorias: [{ Categoria: 2, Fecha: "2020-01-01" }],
+        HistoriaCategorias: [{ Categoria: 9, Fecha: "2026-11-12" }],
         Nombre: "",
         Sexo: "PersonaJuridica",
       },
@@ -166,6 +178,7 @@ describe("CrearSocioMutualGateway", () => {
 
     await gateway.crear({
       tipoPersona: "JURIDICA",
+      categoria: "ADHERENTE_CONVENIO",
       cuit: "30712345671",
       domicilio: {
         calle: "Artigas 143 Alberdi",
@@ -197,6 +210,7 @@ describe("CrearSocioMutualGateway", () => {
     );
     const base = {
       tipoPersona: "JURIDICA" as const,
+      categoria: "ADHERENTE_CONVENIO" as const,
       cuit: "30712345671",
       domicilio: {
         calle: "Belgrano",
@@ -242,6 +256,7 @@ describe("CrearSocioMutualGateway", () => {
       () =>
         gateway.crear({
           tipoPersona: "FISICA",
+          categoria: "ADHERENTE_CONVENIO",
           apellido: "Fernandez",
           cuit: "27398765430",
           domicilio: {
@@ -278,6 +293,7 @@ describe("CrearSocioMutualGateway", () => {
       () =>
         gateway.crear({
           tipoPersona: "FISICA",
+          categoria: "ADHERENTE_CONVENIO",
           apellido: "Fernandez",
           cuit: "27398765430",
           domicilio: {

@@ -175,9 +175,10 @@ import { LocalidadSelect } from "@/modules/socios/components/localidad-select";
 import { SocioFormDialog } from "@/modules/socios/components/socio-form-dialog";
 import { createSocio } from "@/modules/socios/services/socios-api";
 import { useCreatePrestamoLegacyMutation } from "@/modules/solicitudes-core/hooks/use-create-prestamo-legacy-mutation";
-import type {
-  CreateSocioRequest,
-  UpdateSocioRequest,
+import {
+  socioCategoriaPorLinea,
+  type CreateSocioRequest,
+  type UpdateSocioRequest,
 } from "@/modules/socios/types";
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
@@ -5540,6 +5541,12 @@ export function SolicitudesActualDetallePage() {
           open={editAdjuntoModal !== null}
         />
         <SocioFormDialog
+          categoriaDesdeLinea={{
+            categoria: socioCategoriaPorLinea(
+              resolvedSolicitud.lineaPrestamoDescripcion,
+            ),
+            lineaDescripcion: resolvedSolicitud.lineaPrestamoDescripcion ?? null,
+          }}
           initialValues={buildSocioPrefillFromTitular(
             resolvedSolicitud.titular,
           )}

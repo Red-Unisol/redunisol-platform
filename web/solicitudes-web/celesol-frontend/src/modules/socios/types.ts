@@ -73,9 +73,40 @@ export type CreateSocioSocAux = {
   convAux?: number;
 };
 
+// Categoria con la que el socio se da de alta en Vimarx. Regla de la mutual:
+// ADHERENTE CONVENIO, salvo AMEJUCA y Mudon, que tienen la suya.
+export type SocioCategoria = "ADHERENTE_CONVENIO" | "AMEJUCA" | "MUDON";
+
+export const SOCIO_CATEGORIA_OPTIONS: { label: string; value: SocioCategoria }[] =
+  [
+    { label: "Adherente convenio", value: "ADHERENTE_CONVENIO" },
+    { label: "AMEJUCA", value: "AMEJUCA" },
+    { label: "Mudon", value: "MUDON" },
+  ];
+
+// Desde una solicitud, la categoria sale de la linea: las que se llaman
+// AMEJUCA o Mudon (de haberes o de CBU) van a la suya; el resto, y una
+// solicitud sin linea, a ADHERENTE CONVENIO.
+export function socioCategoriaPorLinea(
+  lineaDescripcion: string | null | undefined,
+): SocioCategoria {
+  const descripcion = (lineaDescripcion ?? "").toUpperCase();
+
+  if (descripcion.includes("AMEJUCA")) {
+    return "AMEJUCA";
+  }
+
+  if (descripcion.includes("MUDON")) {
+    return "MUDON";
+  }
+
+  return "ADHERENTE_CONVENIO";
+}
+
 export type CreateSocioRequest =
   | {
       apellido: string;
+      categoria?: SocioCategoria;
       celular?: string;
       cuit: string;
       domicilioCalle: string;
@@ -95,6 +126,7 @@ export type CreateSocioRequest =
     }
   | {
       apellido?: never;
+      categoria?: SocioCategoria;
       celular?: string;
       cuit: string;
       domicilioCalle: string;
