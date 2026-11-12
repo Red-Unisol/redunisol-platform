@@ -39,13 +39,13 @@ test('queued and reserved work stays unique until a real queue ACK deletes its h
         ->and(DB::table('jobs')->count())->toBe(1);
     $this->travel(10)->minutes();
     expect($dispatcher->push(new $class(42)))->toBeFalse();
-    $reserved = Queue::connection('edna')->pop('edna');
+    $reserved = Queue::connection('edna')->pop($dispatcher->queueFor(new $class(42)));
     expect($reserved)->not->toBeNull();
     $id = $reserved->getJobId();
     $this->travel(3)->minutes();
     expect($dispatcher->push(new $class(42)))->toBeFalse();
     // A crashed worker's reservation expires on the SAME database queue row.
-    $recovered = Queue::connection('edna')->pop('edna');
+    $recovered = Queue::connection('edna')->pop($dispatcher->queueFor(new $class(42)));
     expect($recovered->getJobId())->toBe($id)
         ->and(DB::table('edna_work_queue_keys')->count())->toBe(1);
     $recovered->delete();
@@ -106,7 +106,7 @@ test('web route polls cannot multiply queued or reserved work and remain fair', 
     }
     $routes = app(WebFormChatRouting::class);
     expect($routes->poll(25))->toBe(25);
-    $reserved = Queue::connection('edna')->pop('edna');
+    $reserved = Queue::connection('edna')->pop('edna-web-reconcile');
     $this->travel(2)->minutes();
     expect($routes->poll(25))->toBe(2);
     $this->travel(2)->minutes();

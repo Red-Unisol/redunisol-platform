@@ -185,7 +185,7 @@ services:
   edna-worker:
     image: ${APP_IMAGE}
     entrypoint: [php, artisan, queue:work]
-    command: [edna, --queue=edna, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+    command: [edna, "--queue=edna-inbox,edna,edna-web-reconcile", --sleep=1, --tries=8, --timeout=45, --max-time=3600]
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage

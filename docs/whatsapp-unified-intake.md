@@ -164,6 +164,14 @@ Los pollers excluyen estas reservas antes de seleccionar su lote acotado.
 La conexión debe ser la misma base de datos del ledger y el insert de cola
 debe ocurrir en la transacción; una configuración incompatible falla sin enviar.
 
+El único worker de Ventas atiende por orden `edna-inbox`, `edna` y
+`edna-web-reconcile`. Primero captura entradas; después procesa menú, v3 y
+préstamos; finalmente atiende los reintentos del puente web. La prioridad se
+aplica al tomar el siguiente job: no interrumpe el que ya está ejecutándose ni
+añade emisores simultáneos. El destino físico de la cola no modifica el comando
+serializado ni la identidad de sus reservas. Los jobs del puente ya existentes
+en `edna` siguen siendo válidos durante la transición.
+
 La recuperación operativa es explícita y separada del scheduler:
 
 ```text
@@ -171,6 +179,8 @@ php artisan edna:work-queue preview
 php artisan edna:work-queue apply --cutoff=<cutoff> --preview-sha=<sha>
 php artisan edna:work-queue review-preview
 php artisan edna:work-queue review-apply --cutoff=<cutoff> --preview-sha=<sha>
+php artisan edna:work-queue prioritize-preview
+php artisan edna:work-queue prioritize-apply --cutoff=<cutoff> --preview-sha=<sha>
 ```
 
 Los previews son de sólo lectura y exponen identificadores técnicos y hashes.
@@ -191,6 +201,15 @@ humana. No se reabren estados inciertos ni se renuevan ventanas de WhatsApp.
 
 Un job de recuperación no equivale a un chat distinto. Los conteos de cola y
 duplicados no se presentan como porcentajes de distribución automática.
+
+La priorización de jobs antiguos es una operación separada. Sólo admite comandos
+canónicos de recepción o vinculación web en `edna`, sin reserva de ejecución y
+con cero intentos. Para un vínculo exige además su reserva durable exacta. Cambia
+únicamente la cola física, conservando ID, payload, fechas, contador y reserva;
+no ejecuta handlers, envía mensajes ni modifica ledgers. Un cambio concurrente
+invalida el preview y revierte todo el apply. Desplegar primero un consumidor de
+las tres colas antes de mover jobs; cualquier rollback debe seguir consumiendo
+las tres hasta agotarlas, aunque vuelva a producir sólo en `edna`.
 
 `edna_intake_bindings` vincula un caso/envío y su entrada con un único prospecto
 original. El teléfono permite descubrir candidatos, pero no autoriza el vínculo.

@@ -1,8 +1,10 @@
 <?php
 
 use App\Jobs\ReceiveEdnaInKestra;
+use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -90,6 +92,18 @@ test('callback deduplicates in the database and stores encrypted minimal data', 
     $payload = json_decode(Crypt::decryptString($event->payload), true);
     expect($payload['subscriber']['identifier'])->toBe('5493510000000')->and($payload)->not->toHaveKey('userInfo');
     expect(DB::table('jobs')->first()->payload)->not->toContain('inbound-test-key', '5493510000000');
+    $queued = DB::table('jobs')->sole();
+    expect($queued->queue)->toBe('edna-inbox')
+        ->and(json_decode($queued->payload, true)['data']['command'])->toBe(serialize(new ReceiveEdnaInKestra((int) $event->id)));
+});
+
+test('an inbox enqueue failure rolls back the authenticated incoming event atomically', function () {
+    Event::listen(JobQueued::class, fn () => throw new RuntimeException('local queue interruption'));
+    sendEdna([ednaMessage()])->assertStatus(503);
+    expect(DB::table('edna_incoming_events')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+    Event::forget(JobQueued::class);
+    sendEdna([ednaMessage()])->assertOk()->assertJsonPath('accepted', 1);
+    expect(DB::table('edna_incoming_events')->count())->toBe(1)->and(DB::table('jobs')->sole()->queue)->toBe('edna-inbox');
 });
 
 test('external callbacks cannot inject the internal Kestra policy operation', function () {
