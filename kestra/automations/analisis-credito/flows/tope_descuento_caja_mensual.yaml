@@ -1,7 +1,7 @@
 id: tope_descuento_caja_mensual
 namespace: redunisol
 
-description: Genera mensualmente el Excel de topes de Caja para los universos elegibles de Core y Bitrix.
+description: Consulta Caja el primer dia habil y semanalmente desde el lunes siguiente, trasladando feriados nacionales al proximo habil.
 
 concurrency:
   limit: 1
@@ -16,10 +16,14 @@ labels:
   schedule_scope: prod_only
 
 inputs:
+  - id: run_date
+    type: STRING
+    required: false
+    description: Fecha de checkpoint e historico YYYY-MM-DD. Por defecto la fecha de la corrida. No combinar con run_month.
   - id: run_month
     type: STRING
     required: false
-    description: Mes de checkpoint e historico en formato YYYY-MM. Por defecto el mes actual.
+    description: Compatibilidad con checkpoints mensuales anteriores YYYY-MM. No combinar con run_date.
   - id: limit
     type: INT
     required: false
@@ -32,7 +36,7 @@ inputs:
     type: BOOL
     required: true
     defaults: false
-    description: Regenera el Excel desde un checkpoint completo sin consultar Caja.
+    description: Regenera el Excel del periodo elegido desde un checkpoint completo sin consultar Caja.
 
 tasks:
   - id: generar_reporte
@@ -49,8 +53,10 @@ tasks:
         - "/srv/redunisol-reports:/reports"
     containerImage: python:3.12-slim
     beforeCommands:
-      - pip install kestra openpyxl requests pycryptodome urllib3 > /dev/null
+      - pip install kestra openpyxl requests pycryptodome urllib3 holidays==0.104 > /dev/null
     env:
+      REPORT_SCHEDULE_DATE: "{{ trigger.date ?? '' }}"
+      REPORT_RUN_DATE: "{{ inputs.run_date ?? '' }}"
       REPORT_RUN_MONTH: "{{ inputs.run_month ?? '' }}"
       REPORT_LIMIT: "{{ inputs.limit ?? '' }}"
       REPORT_PAUSE_SECONDS: "{{ inputs.pause_seconds ?? '3' }}"
@@ -89,6 +95,9 @@ outputs:
   - id: status
     type: STRING
     value: "{{ outputs.generar_reporte.vars.status }}"
+  - id: run_date
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.run_date }}"
   - id: run_month
     type: STRING
     value: "{{ outputs.generar_reporte.vars.run_month }}"
@@ -121,7 +130,8 @@ outputs:
     value: "{{ outputs.generar_reporte.vars.error }}"
 
 triggers:
-  - id: primer_dia_del_mes
+  - id: calendario_caja
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "0 5 1 * *"
+    cron: "0 5 * * 1-5"
+    recoverMissedSchedules: LAST
     timezone: America/Argentina/Buenos_Aires

@@ -26,9 +26,11 @@ Cada uno de los siete informes del catálogo tiene un botón **Regenerar**. La
 acción exige acceso al panel Admin y crea una ejecución asíncrona del flow
 permitido para ese informe. Nunca acepta una URL ni un flow desde el cliente.
 Se usan los parámetros por defecto del generador: meses cerrados para
-Evaluación y comisiones, mes actual para Caja y día anterior para
-Transferencias. Caja y MUDON conservan sus checkpoints, cachés y procesamiento
-por lotes. Regenerar no fuerza una consulta nueva de todos los datos cacheados.
+Evaluación y comisiones, fecha actual para Caja y día anterior para
+Transferencias. Caja reanuda el checkpoint de esa fecha si existe; una nueva
+fecha consulta los cupos nuevamente. MUDON conserva sus checkpoints, cachés y
+procesamiento por lotes. Regenerar MUDON no fuerza una consulta nueva de todos
+los datos cacheados.
 
 La página consulta el estado cada 15 segundos, bloquea solicitudes repetidas
 del mismo informe y mantiene disponible la descarga anterior. Un proceso
@@ -227,11 +229,15 @@ SQLite y JSON de cada ejecución y no se muestra entre los archivos descargables
 
 Ver [reglas y mantenimiento del calendario](../kestra/automations/analisis-credito/docs/README.md#reporte_evaluacion_comisiones_management).
 
-## Topes mensuales de Caja
+## Topes de Caja por fecha de consulta
 
-El flow `tope_descuento_caja_mensual` corre el dia 1 de cada mes a las 05:00
-(hora de Buenos Aires). Toma los CUILs elegibles desde Core/Vimarx y Bitrix,
-consulta Caja una sola vez por CUIL deduplicado y publica:
+El flow `tope_descuento_caja_mensual` consulta el primer dia habil del mes y
+cada lunes desde el lunes siguiente, a las 05:00 de Buenos Aires. Un lunes
+feriado pasa al siguiente habil, manteniendo el siguiente lunes como referencia.
+Se excluyen fines de semana y feriados nacionales obligatorios argentinos.
+El trigger evalua el calendario cada lunes a viernes y sale sin consultar las
+fuentes fuera de esas fechas. Toma los CUILs elegibles de Core/Vimarx y Bitrix,
+consulta Caja una vez por CUIL deduplicado en cada fecha y publica:
 
 ```text
 /srv/redunisol-reports/
@@ -239,12 +245,14 @@ consulta Caja una sola vez por CUIL deduplicado y publica:
     tope-descuento-caja/
       ultimo.xlsx
       historico/
-        YYYY-MM.xlsx
+        YYYY-MM-DD.xlsx
       .state/
-        YYYY-MM.jsonl
+        YYYY-MM-DD.jsonl
 ```
 
 El checkpoint permite reanudar una corrida cortada sin repetir respuestas
-definitivas. Filament ignora `.jsonl`, por lo que el estado intermedio no aparece
+definitivas de esa tanda. Una nueva fecha no reutiliza el cupo anterior. Los
+historicos mensuales previos se conservan. Filament ignora `.jsonl`, por lo que
+el estado intermedio no aparece
 en **Gestion > Reportes**. Una corrida con `limit`, errores tecnicos pendientes o
 corte por rate limit no publica ni reemplaza los Excel visibles.
