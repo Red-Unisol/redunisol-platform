@@ -401,11 +401,27 @@ def local_image(config):
 
 
 def inspect_proxy():
-    result = run(["/usr/bin/docker", "container", "inspect", CONTAINER], allowed=(0, 1))
-    if not result.strip():
+    try:
+        result = subprocess.run(["/usr/bin/docker", "container", "inspect", CONTAINER],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        raise LinkError("proxy_inspection_unavailable")
+    require(result.returncode in (0, 1), "proxy_inspection_failed")
+    try:
+        records = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise LinkError("proxy_inspection_invalid_output")
+    require(isinstance(records, list), "proxy_inspection_invalid_output")
+    if not records:
+        # Docker emits [] plus rc1 when this explicit name is absent. A daemon
+        # failure can also emit []; never treat that as permission to create.
+        missing = r"(?:Error(?: response from daemon)?:\s*)?No such (?:container|object):\s*" + re.escape(CONTAINER)
+        require(result.returncode == 1 and re.fullmatch(missing, result.stderr.strip(), re.IGNORECASE) is not None,
+                "proxy_absence_not_confirmed")
         return None
-    records = json.loads(result)
-    require(len(records) == 1, "proxy_inspection_ambiguous")
+    require(result.returncode == 0 and len(records) == 1 and isinstance(records[0], dict),
+            "proxy_inspection_ambiguous")
     item = records[0]
     require(item.get("Config", {}).get("Labels", {}).get(OWNER_LABEL) == "true", "proxy_name_owned_by_another_service")
     return item

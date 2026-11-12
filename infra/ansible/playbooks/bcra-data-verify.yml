@@ -14,12 +14,12 @@
           - ansible_host == '66.97.34.158'
           - ansible_port | int == 5272
   tasks:
-    - name: Read current completed source and process guards without exporting private credentials
+    - name: Read completed source guards and repair only the expected accidental helper cache
       ansible.builtin.script:
         cmd: "{{ playbook_dir }}/../tools/bcra-data-revoke.py check-source"
         executable: /usr/bin/python3
       register: bcra_verify_source_completion
-      changed_when: false
+      changed_when: (bcra_verify_source_completion.stdout | from_json).get('changed', false) | bool
       when: not ansible_check_mode
 
     - name: Read the existing small source manifest with byte-exact transport only

@@ -9,8 +9,10 @@ import os
 from pathlib import Path
 import re
 import stat
+import struct
 import subprocess
 import sys
+import types
 
 RUNTIME = Path("/run/redunisol-bcra-transfer")
 DATA = Path("/srv/redunisol/state/bcra-file-api")
@@ -39,21 +41,69 @@ def public_key(value):
     return value
 
 
+def repair_accidental_import_cache(helper, source):
+    """Remove only the cache produced by the original Python3.6 check-source.
+
+    This is not a general runtime cleanup: unexpected files, ownership, links or
+    bytecode headers fail closed. The code is never unmarshalled or executed.
+    """
+    directory = RUNTIME / "__pycache__"
+    if not directory.exists():
+        if directory.is_symlink():
+            raise RevokeError("unsafe_accidental_import_cache")
+        return False
+    info = directory.lstat()
+    if directory.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+        raise RevokeError("unsafe_accidental_import_cache")
+    entries = list(directory.iterdir())
+    expected = directory / "transfer.cpython-36.pyc"
+    if entries and entries != [expected]:
+        raise RevokeError("unknown_import_cache_contents")
+    if entries:
+        info = expected.lstat()
+        if expected.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or not 12 < info.st_size <= 1024 * 1024:
+            raise RevokeError("unsafe_accidental_import_cache")
+        with expected.open("rb") as handle:
+            header = handle.read(12)
+        expected_header = importlib.util.MAGIC_NUMBER + struct.pack("<II", int(helper.stat().st_mtime) & 0xffffffff, len(source) & 0xffffffff)
+        if header != expected_header:
+            raise RevokeError("accidental_import_cache_header_mismatch")
+        expected.unlink()
+    directory.rmdir()
+    return True
+
+
+def source_guard(transfer, action):
+    try:
+        return action()
+    except transfer.TransferError as error:
+        # The helper SHA is already verified; export only its fixed reason-code
+        # alphabet, never traceback text, command output or filesystem paths.
+        reason = str(error)
+        raise RevokeError("transfer_" + reason if re.fullmatch(r"[a-z0-9_]{1,80}", reason) else "transfer_guard_failed")
+
+
 def source_check():
     if RUNTIME.is_symlink() or RUNTIME.resolve() != RUNTIME or RUNTIME.stat().st_uid != 0 or stat.S_IMODE(RUNTIME.stat().st_mode) != 0o700:
         raise RevokeError("unsafe_source_runtime")
     config = load(RUNTIME / "config.json")
     helper = RUNTIME / "transfer.py"
-    if helper.is_symlink() or not helper.is_file() or hashlib.sha256(helper.read_bytes()).hexdigest() != config.get("transfer_helper_sha256"):
+    if helper.is_symlink() or not helper.is_file():
         raise RevokeError("unknown_source_helper")
-    spec = importlib.util.spec_from_file_location("reviewed_bcra_transfer", str(helper))
-    transfer = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(transfer)
-    status = transfer.safe_status()
+    source = helper.read_bytes()
+    if hashlib.sha256(source).hexdigest() != config.get("transfer_helper_sha256"):
+        raise RevokeError("unknown_source_helper")
+    cache_repaired = repair_accidental_import_cache(helper, source)
+    # compile/exec consumes the verified bytes directly: no pyc cache is read or
+    # written, independently of interpreter flags and pre-existing cache files.
+    transfer = types.ModuleType("reviewed_bcra_transfer")
+    transfer.__file__ = str(helper)
+    exec(compile(source, str(helper), "exec", dont_inherit=True), transfer.__dict__)
+    status = source_guard(transfer, transfer.safe_status)
     state = status["state"]
     if status.get("phase") != "complete" or state.get("copy_returncode") != 0 or status["worker_active"] or status["rsync_active"]:
         raise RevokeError("source_transfer_not_complete_or_still_active")
-    transfer.stopped_container(config["source_container_id"])
+    source_guard(transfer, lambda: transfer.stopped_container(config["source_container_id"]))
     key_file = RUNTIME / "id_ed25519.pub"
     if key_file.is_symlink() or not key_file.is_file():
         raise RevokeError("missing_source_public_key")
@@ -62,7 +112,7 @@ def source_check():
     if private.exists():
         if private.is_symlink() or private.stat().st_uid != 0 or stat.S_IMODE(private.stat().st_mode) != 0o600:
             raise RevokeError("unsafe_source_private_key")
-        derived = transfer.command(["ssh-keygen", "-y", "-f", str(private)])
+        derived = source_guard(transfer, lambda: transfer.command(["ssh-keygen", "-y", "-f", str(private)]))
         if derived != key:
             raise RevokeError("source_key_pair_mismatch")
     for name in ("source_manifest_sha256", "tree_sha256"):
@@ -71,7 +121,8 @@ def source_check():
     return {"version": 1, "status": "source_complete", "public_key": key,
             "source_container_id": config["source_container_id"], "cutoff_at": state["cutoff_at"],
             "source_manifest_sha256": state["source_manifest_sha256"], "tree_sha256": state["tree_sha256"],
-            "private_key_present": private.exists(), "private_key_exported": False}
+            "private_key_present": private.exists(), "private_key_exported": False, "cache_repaired": cache_repaired,
+            "changed": cache_repaired, "bytecode_cleanup": "removed_expected_python36_cache" if cache_repaired else "none"}
 
 
 def destination_revoke(key):
@@ -169,11 +220,12 @@ def source_remove_private(key):
     if status["public_key"] != public_key(key):
         raise RevokeError("source_public_key_changed")
     private = RUNTIME / "id_ed25519"
-    changed = private.exists()
+    changed = private.exists() or status.get("cache_repaired", False)
     if private.exists():
         private.unlink()
     return {"version": 1, "status": "source_private_key_removed", "private_key_present": False,
-            "source_manifest_preserved": True, "private_key_exported": False, "changed": changed}
+            "source_manifest_preserved": True, "private_key_exported": False, "changed": changed,
+            "bytecode_cleanup": status.get("bytecode_cleanup", "none")}
 
 
 def main(argv=None):
