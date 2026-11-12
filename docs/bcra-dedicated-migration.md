@@ -160,6 +160,101 @@ El repositorio completo paso `check --read-data` el 12/11/2026 a las
 recibo de migracion. Estos resultados habilitan el deploy; su apply y las
 pruebas reales de conectividad se registran por separado.
 
+## Checkpoint operativo del 12/11/2026 (ART)
+
+Las horas siguientes son capturas del corte, expresadas en ART (UTC-3), con
+su referencia UTC. Acreditan lo observado en ese momento y no garantizan el
+estado actual del servicio ni la finalizacion posterior de una importacion.
+
+El [PR #712](https://github.com/Red-Unisol/redunisol-platform/pull/712) quedo
+integrado en `main` como `4dc10f98f3271976a2ec1e0ee4b50986f37d4541`.
+La API quedo activa a las 01:45:19 ART (04:45:19 UTC); su label de revision
+aplicada confirma ese SHA. El estado autenticado mostro `ready=true`,
+42.316.211 filas y periodo `202609` (septiembre), con la misma version del
+origen. `history_ready=false` conserva la limitacion previa al corte. La
+segunda aplicacion termino con `ok=40, changed=0`; el verify de solo lectura,
+con `ok=19, changed=0`.
+
+El [PR #713](https://github.com/Red-Unisol/redunisol-platform/pull/713) quedo
+integrado como `79edba8eac71fae6e5fba55d7dc0262345acad1c`. Corrige la
+verificacion de `RestrictAddressFamilies` en systemd 239: ante la salida
+`[unprintable]` consulta D-Bus, exige la firma `(bas)`, el modo de lista de
+permitidos (`true`) y las familias exactas `AF_UNIX`, `AF_INET` y `AF_INET6`.
+Sus 28 tests pasaron. Esta revision
+se aplico al cliente privado; la API conserva su revision `4dc10f98` y no
+requiere redeploy por el cambio del verificador del enlace.
+
+El cliente privado quedo operativo a las 01:50:31 ART (04:50:31 UTC). La
+primera unidad se habia escrito con `4dc10f98`; completar la aplicacion con
+`79edba8e` creo el proxy sin reiniciar el tunel. La repeticion dio
+`ok=3, changed=0`; los verifies de ambos hosts dieron `changed=0`. Desde la
+red efectiva de Kestra, `GET /status` devolvio 200 con su token existente y
+el alias resolvio solamente al proxy `172.18.0.6`. El importador de origen
+siguio detenido. Kestra conservo el mismo contenedor y fecha de arranque,
+sin reinicio durante el corte.
+
+Se admitio una actualizacion real a las 01:51:33 ART (04:51:33 UTC): ejecucion
+Kestra `E5FNkLr9UUBr9FlmD9PtV`, job BCRA
+`fcdd2c76a9cd44faa9c1a2d59bacc3e9`, con `request_id` coincidente con la
+ejecucion. La captura de las 01:56 ART (04:56 UTC) mostro fase
+`download_PADRON`, estado `running` y sin error. Esa observacion no acredita
+la finalizacion del refresh ni declara listo el historico.
+La captura de las 01:59:41 ART confirmo fase `padron`, 30.393.719 filas y
+ausencia de error: el importador ya habia superado el checkpoint conservado.
+El estado Kestra `PAUSED` entre consultas corresponde al `LoopUntil` de un
+minuto; el trabajo remoto sigue ejecutandose y no es una pausa manual.
+
+La clave temporal de copia del origen y la autorizacion/alias de recepcion
+del destino habian sido revocados. A las 01:55:59 ART (04:55:59 UTC) se
+retiraron el archivo privado `0600` y el directorio temporal vacio del
+controlador.
+
+La muestra de la VPS de origen a las 01:50 ART (04:50 UTC), con BCRA ya
+detenido, registro 31,4 % de iowait. El sitio publico respondio
+200 `DYNAMIC` en 2,235 s y el origen respondio 200 en 0,961 s. Son resultados
+puntuales; el corte no demuestra haber resuelto toda la carga de I/O ni la
+estabilidad futura del sitio.
+Un muestreo independiente de 2,53 s a las 02:03:35 ART confirmo el contenedor
+BCRA detenido y sin procesos, iowait de 39,76 % y `sda` cerca de 100 % busy
+con solo 0,36 MiB/s de escritura y aproximadamente 119 ms de espera media.
+El mayor escritor visible fue PostgreSQL de Kestra, con 0,08 MiB/s; no se
+atribuye a ese proceso la causa del problema. El siguiente diagnostico debe
+correlacionar la latencia/flush del bloque de la VPS con sus escrituras y WAL,
+sin asumir que hay otro importador masivo ni modificar servicios por esta
+medicion breve.
+
+## Resultado del primer refresh y limite de alcance
+
+El job termino `failed` el 12/11/2026 a las 02:27:21 ART (05:27:21 UTC),
+despues de construir el padron y antes de publicar `active.json`. El ultimo
+progreso registrado fue 65.386.328 filas. Kestra registro `FAILED` a las
+02:28:22 ART, al recibir el HTTP 500 con que la API comunica el fallo del job;
+el inicio por HTTP habia sido exitoso. No quedo un refresh activo o en pausa.
+
+El error fue `Historical publication references an entity absent from its
+master`: el maestro de entidades financieras contiene 580 codigos; el
+historico contiene 587, con 10 ausentes del maestro, y las rectificativas
+contienen 241, con 7 ausentes. Una lectura inmutable de metadatos y codigos
+en el origen detenido y en el dedicado comprobo las mismas versiones,
+identidades y conjuntos ausentes. La condicion ya existia en la copia
+congelada anterior al traslado; no es perdida de datos por la migracion ni
+una falla del transporte de Kestra. Su causa funcional precisa requiere
+revisar la cobertura temporal del maestro y la validacion de entidades.
+
+Se conserva ese rechazo de consistencia: no se excluyen entidades ni se
+publica un historico incompleto para forzar un resultado verde. La API sigue
+saludable, `ready=true`, con su publicacion actual de 42.316.211 filas;
+`history_ready=false` conserva la limitacion previa. A las 02:33:52 ART,
+`quick_check(1)` de la base actualmente publicada dio `ok`, en modo
+`ro&immutable=1`, sin abrir pendientes ni cambiar archivos. Ese resultado
+no acredita integridad ni publicacion de todos los componentes historicos.
+
+El scheduler de las 21:00 ART permanece habilitado. Se preservan los
+componentes completos y sus checkpoints, sin lanzar otro refresh identico.
+El corte y el procesamiento remoto estan verificados; resolver el desajuste
+del maestro historico es una correccion funcional separada. Tambien queda
+separado el diagnostico de latencia del almacenamiento de la VPS.
+
 ## Alcance comprobable del respaldo
 
 El respaldo BCRA de este corte es una copia fria inicial, cifrada y local en el
