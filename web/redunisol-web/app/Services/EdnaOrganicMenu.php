@@ -101,7 +101,8 @@ class EdnaOrganicMenu
     private function captureEntry(object $event, array $payload): bool
     {
         $stored = $this->authenticatedPayload($event, $payload);
-        if (! $stored || ! $this->eligible($event, $stored)) {
+        if (! $stored || ! $this->eligible($event, $stored)
+            || app(EdnaPaidEntry::class)->classify($event, $stored)) {
             return false;
         }
         $received = CarbonImmutable::parse($stored['receivedAt']);
@@ -166,6 +167,18 @@ class EdnaOrganicMenu
             if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
                 return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
             }
+            // Pending work captured before the paid/organic split can change route
+            // only while no greeting has been attempted. Accepted or uncertain
+            // sends keep their original receipt and are never followed by a replay.
+            if ($menu->send_state === 'pending' && ! $menu->choice_event_id
+                && ($paid = app(EdnaPaidEntry::class)->classify($event, $payload))) {
+                return DB::transaction(function () use ($event, $payload, $paid): array {
+                    $sendId = (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
+
+                    return $this->finish('preserved', $sendId ? 'paid_entry_routed_direct_v3' : 'paid_existing_flow_preserved',
+                        $sendId ? ['flow_send_id' => $sendId, 'transfer_state' => 'preserved'] : ['transfer_state' => 'preserved']);
+                });
+            }
             $proof = $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null;
             if (! $proof) {
                 $this->assertBudget(35);
@@ -190,6 +203,13 @@ class EdnaOrganicMenu
             $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
                 'proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
             $menu = $this->current();
+            if ($menu->send_state === 'pending'
+                && app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash)) {
+                return $this->wait('paid_intake_binding_pending');
+            }
+            if ($menu->send_state === 'pending' && app(EdnaPaidFlowGuard::class)->continuesSession($proof, $menu->subject_id)) {
+                return $this->finish('preserved', 'paid_intake_session_preserved', ['transfer_state' => 'preserved']);
+            }
             if ($uncertainTransfer) {
                 return $this->reconcileTransfer($menu, $proof);
             }

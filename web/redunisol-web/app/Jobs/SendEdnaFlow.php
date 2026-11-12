@@ -9,6 +9,7 @@ use App\Services\EdnaFlowTransport;
 use App\Services\EdnaIntake;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicTransport;
+use App\Services\EdnaPaidFlowGuard;
 use App\Services\WebFormContinuation;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\DatabaseStore;
@@ -82,10 +83,13 @@ class SendEdnaFlow implements ShouldQueue
 
                 return;
             }
-            $organic = $this->organicContext($send);
+            $organic = $this->routingContext($send);
             if ($organic === false) {
                 $this->cancelOrganic($send, 'organic_flow_context_changed');
 
+                return;
+            }
+            if (is_array($organic) && ! $this->paidReady($send, $organic)) {
                 return;
             }
             if ($organic !== null) {
@@ -174,6 +178,13 @@ class SendEdnaFlow implements ShouldQueue
     }
 
     /** Null means legacy; false means an organic context exists but cannot authorize a send. */
+    private function routingContext(object $send): array|false|null
+    {
+        $paid = app(EdnaPaidFlowGuard::class)->context($send);
+
+        return $paid !== null ? $paid : $this->organicContext($send);
+    }
+
     private function organicContext(object $send): array|false|null
     {
         $rows = DB::table('edna_organic_menus')->where(fn ($q) => $q->where('flow_send_id', $send->id)
@@ -241,7 +252,10 @@ class SendEdnaFlow implements ShouldQueue
 
             return false;
         }
-        $fresh = $this->organicContext($send);
+        $fresh = $this->routingContext($send);
+        if (is_array($fresh) && ! $this->paidReady($send, $fresh)) {
+            return false;
+        }
         if (! is_array($fresh) || $fresh !== $original) {
             $this->cancelOrganic($send, 'organic_flow_context_changed');
 
@@ -261,6 +275,21 @@ class SendEdnaFlow implements ShouldQueue
         }
 
         return true;
+    }
+
+    private function paidReady(object $send, array $context): bool
+    {
+        $status = $context['status'] ?? 'ready';
+        if ($status === 'ready') {
+            return true;
+        }
+        if ($status === 'waiting') {
+            $this->deferOrganic($send, $context['reason'] ?? 'paid_native_binding_pending');
+        } else {
+            $this->cancelOrganic($send, $context['reason'] ?? 'paid_native_binding_invalid');
+        }
+
+        return false;
     }
 
     private function deferOrganic(object $send, string $reason): void

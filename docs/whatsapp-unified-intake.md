@@ -5,8 +5,10 @@
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se
 documentan en [ORG-23571](../kestra/automations/marketing-crm/docs/commercial-rules/ORGANIC_WHATSAPP_23571.md).
-Los formularios web explícitos o vigentes mantienen prioridad; un reingreso
-antiguo sin continuación web vigente también puede ver el menú.
+Los formularios web explícitos o vigentes mantienen prioridad. Los ingresos con
+evidencia actual de pauta pasan directamente al v3, sin el menú general. Un
+reingreso antiguo sin continuación web vigente ni pauta actual también puede ver
+el menú.
 
 `Quiero un préstamo` reutiliza un perfil completo y confirmado dentro de los
 últimos seis meses calendario; sólo los datos faltantes, vencidos o insuficientes
@@ -14,6 +16,49 @@ requieren el v3. `Otra consulta` deriva el chat a Tincho, usuario `5737`, con
 lectura previa de atención, responsables y sesión. El texto escrito libremente
 no autoriza una selección: se valida el token opaco por envío, teléfono,
 subject, conversación, vencimiento y selección única.
+
+### Pauta y atribución de la entrada
+
+`EdnaPaidEntry` separa pauta de la bienvenida general usando el inbox autenticado:
+`referral.sourceType=ad` o su variante snake_case, los 15 códigos Google `G-*`
+documentados en las tareas [23229](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23229/)
+y [23279](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23279/),
+el mensaje precargado comprobado en el recurso de WhatsApp de Google Ads, o una
+referencia web vigente que acredita una última adquisición paga reciente. En
+esta última vía se verifica teléfono/canal y la adquisición dentro de las 24 horas
+anteriores a la entrada: click ID de Google o medio pago explícito. El primer
+touch histórico, `fbclid` aislado y una fuente Facebook/Instagram sin medio pago
+no acreditan que esta consulta actual venga de pauta. Los UTMs
+`whatsapp/messaging/web_whatsapp_router` describen asistencia y tampoco lo prueban.
+
+El receptor conserva los alias camelCase y snake_case de Edna, incluidos los
+conflictos, dentro de los límites del inbox. Los nombres oficiales de Edna son
+`sourceId/sourceType/sourceUrl`; `ctwaClid` se conserva por compatibilidad, sin
+suponer que fue recibido ni atribuir un anuncio a partir de ese campo solo.
+
+La selección queda congelada como `entry_routing` dentro del snapshot cifrado
+del Flow. No crea journey, anuncio, grupo o campaña ficticios; el texto genérico
+declara intención publicitaria, pero conserva red/campaña desconocidas cuando
+faltan pruebas. Los códigos se conservan como etiquetas, sin convertirlos en
+IDs numéricos de Google. El contrato existente transporta este contexto en
+`UF_CRM_ATTR_JSON` y lo conserva hacia la negociación. La fuente CRM puede seguir
+como «Sin origen» si el contrato no tiene una adquisición atribuible; la decisión
+de pedir v3 por pauta no completa datos de campaña por inferencia.
+
+La vía paga reserva el v3 real de forma idempotente, sin menú ni elección de
+cliente ficticios. Espera el vínculo nativo exacto y verifica atención humana
+justo antes de enviar, con el lock compartido por chat. Otra entrada de la misma
+sesión no envía otro v3 ni reabre el menú. Un vínculo pago todavía pendiente
+aplaza el saludo mientras se resuelve, sin atribuirlo como origen confirmado.
+Un Flow confirmado de más de 23 horas permite reservar otra consulta paga, pero
+su envío exige demostrar una sesión distinta; las escrituras inciertas siguen
+bloqueadas. Los recorridos orgánicos y web conservan su comportamiento previo.
+
+Los menús pendientes capturados antes de esta corrección se redirigen sólo si
+todavía no se intentó el saludo. Un envío ya aceptado, confirmado o incierto
+conserva su conciliación y sus botones; no se le suma un nuevo v3 sin selección.
+Este cambio no modifica anuncios, presupuestos, UTMs ni recursos en Google Ads,
+ni da por completado el resto de la tarea 23279.
 
 `EDNA_INTAKE_ENTRY_SCOPE=sales_channel` habilita el Flow de intake para los nuevos
 ingresos autenticados del canal WhatsApp de Ventas, desde

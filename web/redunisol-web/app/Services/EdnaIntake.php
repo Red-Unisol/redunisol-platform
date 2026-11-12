@@ -87,8 +87,16 @@ class EdnaIntake
             return false;
         }
         if (config('edna.organic_menu_enabled')) {
-            if (app(WebFormContinuation::class)->receive($event, $payload)
-                || app(EdnaOrganicMenu::class)->receiveEntry($event, $payload)
+            if (app(WebFormContinuation::class)->receive($event, $payload)) {
+                return true;
+            }
+            $paid = app(EdnaPaidEntry::class)->classify($event, $payload);
+            if ($paid) {
+                (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
+
+                return true;
+            }
+            if (app(EdnaOrganicMenu::class)->receiveEntry($event, $payload)
                 || app(WebFormChatRouting::class)->receiveReentry($event, $payload)) {
                 return true;
             }
