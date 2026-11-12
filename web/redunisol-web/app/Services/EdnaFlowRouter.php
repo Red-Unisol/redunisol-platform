@@ -26,6 +26,35 @@ class EdnaFlowRouter
         $this->reserve($event, $payload);
     }
 
+    public function startPaidEntry(object $event, array $payload, array $decision): ?int
+    {
+        return DB::transaction(function () use ($event, $payload, $decision): ?int {
+            $marker = (new EdnaPaidFlowGuard)->marker($decision, (int) $event->id);
+            $entry = DB::table('edna_incoming_events')->where('id', $event->id)->lockForUpdate()->first();
+            try {
+                $stored = $this->organicEventPayload($entry, (string) config('edna.subject_id'), (string) ($payload['subscriber']['identifier'] ?? ''));
+            } catch (\Throwable) {
+                return null;
+            }
+            if (! $marker || ! $stored || $entry->subject_id !== $event->subject_id
+                || ($payload['id'] ?? null) !== $entry->message_id || ! (new EdnaIntake)->salesChannelEntry($entry, $stored)) {
+                return null;
+            }
+            $existing = DB::table('edna_flow_sends')->where('entry_event_id', $entry->id)->first();
+            if ($existing) {
+                try {
+                    $snapshot = json_decode(Crypt::decryptString($existing->attribution_snapshot ?? ''), true, 32, JSON_THROW_ON_ERROR);
+
+                    return ($snapshot['entry_routing'] ?? null) === $marker ? (int) $existing->id : null;
+                } catch (\Throwable) {
+                    return null;
+                }
+            }
+
+            return $this->reserve($entry, $stored, null, $marker);
+        }, 5);
+    }
+
     public function startOrganicChoice(int $menuId): ?int
     {
         return DB::transaction(function () use ($menuId): ?int {
@@ -93,7 +122,7 @@ class EdnaFlowRouter
         return $payload;
     }
 
-    private function reserve(object $event, array $payload, ?string $organicRequestId = null): ?int
+    private function reserve(object $event, array $payload, ?string $organicRequestId = null, ?array $paidRouting = null): ?int
     {
         if (! config('edna.router_enabled')) {
             $this->record($event->id, 'disabled');
@@ -106,6 +135,12 @@ class EdnaFlowRouter
         $channelEntry = $intake->salesChannelEntry($event, $payload);
         $journeyId = $test ? null : (new AttributionJourney)->bind($text,
             (string) $payload['subscriber']['identifier'], (string) $event->subject_id);
+        if (($paidRouting['evidence']['kind'] ?? '') === 'tracked_paid_click'
+            && (! $journeyId || ($paidRouting['evidence']['journey_id'] ?? null) !== $journeyId)) {
+            $this->record($event->id, 'paid_attribution_unavailable');
+
+            return null;
+        }
         $received = CarbonImmutable::parse($payload['receivedAt']);
         $start = config('edna.router_start_at');
         if (! $start || ! config('edna.api_key') || ! preg_match('/^[0-9]+$/D', (string) config('edna.cascade_id'))) {
@@ -143,8 +178,11 @@ class EdnaFlowRouter
         $recipientScope = hash_hmac('sha256', 'flow-recipient:'.$event->subject_id.':'.$phone, (string) config('app.key'));
         DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $recipientScope, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('edna_router_contacts')->where('scope', $recipientScope)->lockForUpdate()->first();
-        if ($organicRequestId !== null && $this->hasActiveOrganicFlow($event->subject_id, $phone, $organicRequestId)) {
-            $this->record($event->id, 'organic_active_flow');
+        $specialScope = $paidRouting !== null
+            ? hash_hmac('sha256', 'paid-entry:'.$event->id, (string) config('app.key'))
+            : ($organicRequestId !== null ? hash_hmac('sha256', 'organic-menu:'.$organicRequestId, (string) config('app.key')) : null);
+        if ($specialScope !== null && $this->hasActiveFlow($event->subject_id, $phone, $specialScope, $paidRouting !== null)) {
+            $this->record($event->id, $paidRouting !== null ? 'paid_active_flow' : 'organic_active_flow');
 
             return null;
         }
@@ -155,13 +193,13 @@ class EdnaFlowRouter
             return null;
         }
         $flowId = $test ? $intake->flowId() : ($admission?->flow_id ?? self::FLOW_ID);
-        if ($organicRequestId !== null && $flowId !== $intake->flowId()) {
-            $this->record($event->id, 'organic_flow_contract_changed');
+        if ($specialScope !== null && $flowId !== $intake->flowId()) {
+            $this->record($event->id, $paidRouting !== null ? 'paid_flow_contract_changed' : 'organic_flow_contract_changed');
 
             return null;
         }
-        $scope = $organicRequestId !== null
-            ? hash_hmac('sha256', 'organic-menu:'.$organicRequestId, (string) config('app.key'))
+        $scope = $specialScope !== null
+            ? $specialScope
             : ($test
             ? hash_hmac('sha256', 'intake-test-entry:'.$event->id, (string) config('app.key'))
             : ($admission
@@ -170,7 +208,7 @@ class EdnaFlowRouter
         DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('edna_router_contacts')->where('scope', $scope)->lockForUpdate()->first();
         $previousQuery = DB::table('edna_flow_sends')->where('scope', $scope);
-        if (! $channelEntry && $organicRequestId === null) {
+        if (! $channelEntry && $specialScope === null) {
             $previousQuery->where('created_at', '>', now()->subHours(24));
         }
         $previous = $previousQuery->latest('id')->first();
@@ -194,6 +232,16 @@ class EdnaFlowRouter
             }
         }
         $entry = $channelEntry ? $intake->freezeEntryAttribution($event, $payload, $journeyId, $flowId) : null;
+        if (($paidRouting['evidence']['kind'] ?? '') === 'tracked_paid_click'
+            && (($entry['snapshot']['status'] ?? '') !== 'resolved'
+                || ($entry['snapshot']['journey_id'] ?? null) !== ($paidRouting['evidence']['journey_id'] ?? null))) {
+            $this->record($event->id, 'paid_attribution_unavailable');
+
+            return null;
+        }
+        if ($paidRouting !== null && $entry) {
+            $entry['snapshot']['entry_routing'] = $paidRouting;
+        }
         $id = DB::table('edna_flow_sends')->insertGetId([
             'request_id' => (string) Str::uuid(), 'entry_event_id' => $event->id,
             'journey_id' => $entry ? $entry['journey_id'] : $journeyId,
@@ -206,8 +254,11 @@ class EdnaFlowRouter
             'recipient' => Crypt::encryptString($phone), 'state' => 'pending',
             'entry_received_at' => $received, 'created_at' => now(), 'updated_at' => now(),
         ]);
+        if ($paidRouting !== null && $entry) {
+            Queue::connection('edna')->push(new ResolveEdnaIntakeBinding(0, $id), '', 'edna');
+        }
         Queue::connection('edna')->push(new SendEdnaFlow($id), '', 'edna');
-        if ($entry) {
+        if ($entry && $paidRouting === null) {
             Queue::connection('edna')->push(new ResolveEdnaIntakeBinding(0, $id), '', 'edna');
         }
         $this->record($event->id, 'scheduled', $id);
@@ -215,9 +266,8 @@ class EdnaFlowRouter
         return $id;
     }
 
-    private function hasActiveOrganicFlow(string $subject, string $phone, string $requestId): bool
+    private function hasActiveFlow(string $subject, string $phone, string $scope, bool $allowExpiredConfirmed = false): bool
     {
-        $scope = hash_hmac('sha256', 'organic-menu:'.$requestId, (string) config('app.key'));
         $hash = (new AttributionJourney)->phoneHash($phone);
         $admissions = DB::table('edna_intake_admissions as a')
             ->join('edna_intake_pilots as p', 'p.id', '=', 'a.pilot_key')
@@ -225,6 +275,15 @@ class EdnaFlowRouter
         $active = DB::table('edna_flow_sends')->where('subject_id', $subject)->where('scope', '!=', $scope)
             ->whereIn('state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed'])->get();
         foreach ($active as $send) {
+            if ($allowExpiredConfirmed && $send->state === 'confirmed') {
+                try {
+                    if (CarbonImmutable::parse($send->entry_received_at)->lt(now()->subHours(23))) {
+                        continue;
+                    }
+                } catch (\Throwable) {
+                    return true;
+                }
+            }
             if (in_array($send->intake_admission_id, $admissions, false)
                 || hash_equals($send->scope, $this->scope($subject, $phone, $send->flow_id))) {
                 return true;

@@ -120,7 +120,8 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
-| 2026-11-11-organic-menu-profile-reuse | Menú orgánico y recurrencia sin repetir v3 con datos vigentes | Implementado en rama, pendiente de integración y despliegue | Pedido y precisiones de Santiago el 11/11/2026, registrados en ORGANIC_WHATSAPP_23571.md | Rama codex/organic-whatsapp-menu |
+| 2026-11-11-paid-direct-v3 | Pauta identificada al v3 sin menú general | Regla aprobada e implementada; verificar activación en runtime | Corrección explícita de Santiago el 11/11/2026, registrada en PAID-DEC-23571 | Rama codex/paid-whatsapp-direct-v3 |
+| 2026-11-11-organic-menu-profile-reuse | Menú orgánico y recurrencia sin repetir v3 con datos vigentes | Integrado y desplegado el 11/11/2026 | Pedido y precisiones de Santiago el 11/11/2026, registrados en ORGANIC_WHATSAPP_23571.md | PR 702 |
 | 2026-11-03-buenos-aires-sin-publico-provincial | Retirar Empleado Publico Provincial de Buenos Aires de GANADO | Implementado en rama, pendiente de merge y deploy | Confirmacion de Santiago el 03/11/2026, registrada en BUENOS_AIRES.md y DECISION_LOG.md | Rama codex/buenos-aires-publico-rechazo |
 | 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
 | 2026-10-30 | Asignacion directa general de pools con un unico habilitado | Implementado en rama, pendiente de deploy | Confirmacion explicita de Santiago en esta conversacion; DEAL_ROUTING.md | Seguimiento del PR #631 |

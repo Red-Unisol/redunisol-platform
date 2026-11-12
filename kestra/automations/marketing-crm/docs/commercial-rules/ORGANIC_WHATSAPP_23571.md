@@ -25,6 +25,7 @@ respondió o transfirió explícitamente el chat.
 |---|---|---|
 | ORG-010 | Continuación web con referencia, recibo vigente o declaración de formulario | Mantener la continuidad web y sus comprobaciones. |
 | ORG-020 | Atención humana o asignación que deba conservarse | Conservar atención; no enviar una bienvenida ni sobreescribirla. |
+| ORG-025 | Entrada actual con evidencia de pauta: referencia de anuncio, código Google documentado, prefill comprobado o última adquisición paga reciente vinculada | Reservar el v3 directamente, sin el menú general; conservar la atribución comprobable y el guard de atención humana. |
 | ORG-030 | Nueva sesión orgánica elegible, incluido recurrente sin continuación web vigente | Una bienvenida por sesión nativa comprobada. |
 | ORG-040 | Elige Otra consulta | Derivar el chat a Martín Rodríguez, Tincho, usuario 5737, si conserva elegibilidad y sus responsables CRM. |
 | ORG-050 | Elige préstamo y tiene datos completos confirmados hace menos de seis meses | Reutilizar esos datos sin enviar el v3. |
@@ -45,6 +46,13 @@ Un teléfono compartido no autoriza elegir entre personas. La reutilización exi
 una identidad única y coherente con los contactos y prospectos actuales, una
 fuente fechada y una conversación de origen comprobada. No se reutiliza una
 aprobación crediticia anterior: la evaluación comercial vigente se vuelve a ejecutar.
+
+Corrección del 11/11/2026: el menú general queda reservado al ingreso sin pauta
+actual identificada. La pauta directa pide v3 según la instrucción explícita de
+Santiago; la regla de reutilización de seis meses pertenece al recorrido orgánico
+después de elegir préstamo. Una continuación web comprobada mantiene prioridad
+para evitar pedir de nuevo un formulario ya enviado. Un anuncio directo a
+WhatsApp no se clasifica como orgánico por el hecho de no pasar por una landing.
 
 ## Casos de aceptación
 
