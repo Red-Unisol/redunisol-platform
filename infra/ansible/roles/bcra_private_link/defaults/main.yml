@@ -1,0 +1,15 @@
+---
+bcra_private_link_side: client
+bcra_private_link_action: plan
+bcra_private_link_apply_authorized: false
+bcra_private_link_revision: ""
+bcra_private_link_server_host: ""
+bcra_private_link_server_port: 2241
+bcra_private_link_server_host_key: ""
+bcra_private_link_client_public_key: ""
+bcra_private_link_client_source_ip: ""
+bcra_private_link_expected_hostname: ""
+bcra_private_link_expected_machine_id: ""
+bcra_private_link_expected_gateway: "172.18.0.1"
+bcra_private_link_expected_subnet: "172.18.0.0/16"
+bcra_private_link_proxy_image: "ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4"

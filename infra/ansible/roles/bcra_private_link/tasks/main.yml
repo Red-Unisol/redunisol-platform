@@ -1,0 +1,55 @@
+---
+- name: Validate the private link operation without contacting Python modules on the VPS
+  ansible.builtin.assert:
+    that:
+      - bcra_private_link_side in ['client', 'server']
+      - bcra_private_link_action in ['plan', 'prepare_key', 'apply', 'verify']
+      - bcra_private_link_action != 'prepare_key' or bcra_private_link_side == 'client'
+      - >-
+        ansible_check_mode or bcra_private_link_action not in ['prepare_key', 'apply'] or
+        ((bcra_private_link_apply_authorized | bool) and bcra_private_link_revision is match('^[0-9a-f]{40}$'))
+    fail_msg: "Private link writes require explicit authorization and the reviewed complete Git revision."
+
+- name: Report the default private link plan
+  ansible.builtin.debug:
+    msg: >-
+      No changes. Prepare the key on the VPS, authorize only that public key on the dedicated host,
+      then apply the VPS tunnel and data-free TCP proxy. Verify performs reads only.
+  when: bcra_private_link_action == 'plan' or ansible_check_mode
+
+- name: Execute only the selected Python 3.6 compatible private link operation
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/link.py
+      --config {{ bcra_private_link_request | to_json | b64encode | quote }}
+      --proxy {{ lookup('ansible.builtin.file', role_path + '/files/proxy.py', rstrip=false) | b64encode | quote }}
+    executable: /usr/bin/python3
+  vars:
+    bcra_private_link_request:
+      side: "{{ bcra_private_link_side }}"
+      action: "{{ bcra_private_link_action }}"
+      apply_authorized: "{{ bcra_private_link_apply_authorized | bool }}"
+      revision: "{{ bcra_private_link_revision }}"
+      server_host: "{{ bcra_private_link_server_host }}"
+      server_port: "{{ bcra_private_link_server_port | int }}"
+      server_host_key: "{{ bcra_private_link_server_host_key }}"
+      client_public_key: "{{ bcra_private_link_client_public_key }}"
+      client_source_ip: "{{ bcra_private_link_client_source_ip }}"
+      expected_hostname: "{{ bcra_private_link_expected_hostname }}"
+      expected_machine_id: "{{ bcra_private_link_expected_machine_id }}"
+      expected_gateway: "{{ bcra_private_link_expected_gateway }}"
+      expected_subnet: "{{ bcra_private_link_expected_subnet }}"
+      proxy_image: "{{ bcra_private_link_proxy_image }}"
+  register: bcra_private_link_operation
+  changed_when: (bcra_private_link_operation.stdout | trim | from_json).changed | bool
+  when: bcra_private_link_action != 'plan' and not ansible_check_mode
+
+- name: Preserve the safe private link result for the coordinating playbook
+  ansible.builtin.set_fact:
+    bcra_private_link_result: "{{ bcra_private_link_operation.stdout | trim | from_json }}"
+  when: bcra_private_link_action != 'plan' and not ansible_check_mode
+
+- name: Return only the generated public key for the coordinating server operation
+  ansible.builtin.debug:
+    msg: "{{ bcra_private_link_result.public_key }}"
+  when: bcra_private_link_action == 'prepare_key' and not ansible_check_mode
