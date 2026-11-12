@@ -130,6 +130,25 @@ class SourceCacheRegressionTests(unittest.TestCase):
         self.check()
         self.assertFalse((self.runtime / "__pycache__").exists())
 
+    def test_original_real_import_creates_the_cache_that_breaks_the_runtime_allowlist(self):
+        spec = revoke.importlib.util.spec_from_file_location("original_import_regression", str(self.helper))
+        imported = revoke.importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(imported)
+        directory = self.runtime / "__pycache__"
+        self.assertTrue(directory.is_dir())
+        compiled = Path(spec.cached)
+        self.assertEqual(directory, compiled.parent)
+        self.assertTrue(compiled.is_file())
+        with self.assertRaisesRegex(imported.TransferError, "unknown_runtime_contents"):
+            imported.safe_status()
+        # Remove only this test's actual interpreter cache. Production repair is
+        # intentionally narrower: its sole observed Python3.6 file/header.
+        self.assertEqual([compiled], list(directory.iterdir()))
+        compiled.unlink()
+        directory.rmdir()
+        self.assertEqual("source_complete", self.check()["status"])
+        self.assertFalse(directory.exists())
+
     def test_exact_python36_cache_is_repaired_once_and_reported(self):
         directory = self.cache()
         result = self.check()
