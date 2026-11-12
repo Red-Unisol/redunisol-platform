@@ -126,6 +126,7 @@ export const PRODUCTION_SOLICITUD: SolicitudCoreResponse = {
     estadoCivil: "Soltera",
     fechaNacimiento: "1960-01-01",
     localidad: "Localidad de ejemplo",
+    localidadId: null,
     nacionalidad: "Argentina",
     nroPuerta: "100",
     nroSocio: HEADER_SAMPLE.member,
