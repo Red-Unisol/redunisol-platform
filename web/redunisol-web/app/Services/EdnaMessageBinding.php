@@ -24,6 +24,106 @@ class EdnaMessageBinding
         $this->crm = $crm ?? new EdnaBitrix;
     }
 
+    /** Greetings and their buttons can act only on each candidate chat's current session. */
+    public function resolveCurrent(object $event, array $payload, ?int $knownChatId = null): ?array
+    {
+        $this->deadline = microtime(true) + 30;
+        $this->calls = 0;
+        $phoneHash = $this->entryPhone($event, $payload);
+        if ($knownChatId !== null) {
+            if ($knownChatId < 1) {
+                throw new RuntimeException('Invalid known message chat.');
+            }
+
+            return $this->knownChat($event, $phoneHash, $knownChatId);
+        }
+
+        $candidates = [];
+        $count = 0;
+        foreach (['LEAD' => 'lead', 'CONTACT' => 'contact'] as $type => $entity) {
+            $result = $this->call('crm.duplicate.findbycomm', [
+                'entity_type' => $type, 'type' => 'PHONE', 'values' => [(string) $payload['subscriber']['identifier']],
+            ]);
+            $ids = is_array($result) ? ($result[$type] ?? []) : null;
+            if (! is_array($ids) || ! array_is_list($ids)) {
+                throw new RuntimeException('Invalid message candidate identifiers.');
+            }
+            foreach ($ids as $id) {
+                if (! $this->positiveId($id)) {
+                    throw new RuntimeException('Invalid message candidate identifier.');
+                }
+                $candidates[$entity][(string) $id] = (string) $id;
+            }
+            $count += count($candidates[$entity] ?? []);
+            if ($count > 100) {
+                throw new RuntimeException('Message candidate window requires review.');
+            }
+        }
+
+        // Revalidate every candidate before using any CRM-to-chat relation.
+        foreach ($candidates as $entity => $ids) {
+            foreach (array_chunk(array_values($ids), 50) as $batch) {
+                $records = $this->call('crm.'.$entity.'.list', ['filter' => ['@ID' => $batch], 'select' => ['ID', 'PHONE'], 'start' => -1]);
+                if (! is_array($records) || ! array_is_list($records)) {
+                    throw new RuntimeException('Invalid message candidate records.');
+                }
+                $returned = array_map(fn ($record) => (string) ($record['ID'] ?? ''), $records);
+                $expected = $batch;
+                sort($returned);
+                sort($expected);
+                if ($returned !== $expected) {
+                    throw new RuntimeException('Message candidate response is incomplete.');
+                }
+                foreach ($records as $record) {
+                    if (! is_array($record['PHONE'] ?? null) || ! collect($record['PHONE'])->contains(fn ($phone) => is_array($phone)
+                        && (new AttributionJourney)->phoneHash((string) ($phone['VALUE'] ?? '')) === $phoneHash)) {
+                        throw new RuntimeException('Message candidate does not match the sender.');
+                    }
+                }
+            }
+        }
+
+        $chats = [];
+        $connectors = [];
+        foreach ($candidates as $entity => $ids) {
+            foreach ($ids as $id) {
+                $rows = $this->call('imopenlines.crm.chat.get', ['CRM_ENTITY_TYPE' => $entity, 'CRM_ENTITY' => (int) $id, 'ACTIVE_ONLY' => 'N']);
+                // A full page cannot prove completeness through this transport.
+                if (! is_array($rows) || ! array_is_list($rows) || count($rows) >= 50) {
+                    throw new RuntimeException('Message chat discovery is incomplete.');
+                }
+                foreach ($rows as $row) {
+                    if (! is_array($row) || ! $this->positiveId($row['CHAT_ID'] ?? null)
+                        || ! is_string($row['CONNECTOR_ID'] ?? null) || ! preg_match('/^[a-zA-Z0-9_-]{1,64}$/D', $row['CONNECTOR_ID'])) {
+                        throw new RuntimeException('Invalid message chat candidate.');
+                    }
+                    $chat = (string) $row['CHAT_ID'];
+                    if (isset($connectors[$chat]) && $connectors[$chat] !== $row['CONNECTOR_ID']) {
+                        throw new RuntimeException('Conflicting message chat candidates.');
+                    }
+                    $connectors[$chat] = $row['CONNECTOR_ID'];
+                    if ($row['CONNECTOR_ID'] === 'whatsappbyedna') {
+                        $chats[$chat] = (int) $chat;
+                    }
+                    if (count($chats) > 25) {
+                        throw new RuntimeException('Message chat window requires review.');
+                    }
+                }
+            }
+        }
+
+        $proofs = [];
+        foreach ($chats as $chatId) {
+            // Keep all proofs from each chat: a locally ambiguous chat must not
+            // disappear behind another chat that happens to have one match.
+            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
+                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
     /** The phone discovers candidates; only the exact native connector message proves a binding. */
     public function resolve(object $event, array $payload, ?int $knownChatId = null): ?array
     {
@@ -126,15 +226,22 @@ class EdnaMessageBinding
 
     private function knownChat(object $event, string $phoneHash, int $chatId): ?array
     {
+        $proofs = $this->currentChatProofs($event, $phoneHash, $chatId);
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    private function currentChatProofs(object $event, string $phoneHash, int $chatId): array
+    {
         $dialog = $this->call('imopenlines.dialog.get', ['CHAT_ID' => $chatId]);
         $code = is_array($dialog) ? (string) ($dialog['entity_id'] ?? '') : '';
         if (! $this->dialogMatches($dialog, (string) $chatId, $code, $phoneHash)) {
-            return null;
+            return [];
         }
         $parts = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
         $sessionId = $parts[5] ?? null;
         if (! $this->positiveId($sessionId)) {
-            return null;
+            return [];
         }
         $activities = [];
         foreach ($this->activities(['ASSOCIATED_ENTITY_ID' => (int) $sessionId]) as $activity) {
@@ -150,7 +257,7 @@ class EdnaMessageBinding
             }
         }
 
-        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+        return array_values($proofs);
     }
 
     private function activities(array $filter): array
@@ -278,7 +385,7 @@ class EdnaMessageBinding
     private function call(string $method, array $payload): mixed
     {
         if (! in_array($method, ['crm.duplicate.findbycomm', 'crm.lead.list', 'crm.contact.list', 'crm.activity.list',
-            'imopenlines.session.history.get', 'imopenlines.dialog.get'], true)) {
+            'imopenlines.session.history.get', 'imopenlines.dialog.get', 'imopenlines.crm.chat.get'], true)) {
             throw new RuntimeException('Unsupported message binding operation.');
         }
         $wait = max(0, $this->lastCall + 0.5 - microtime(true));

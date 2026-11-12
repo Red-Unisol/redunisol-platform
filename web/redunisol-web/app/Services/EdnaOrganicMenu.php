@@ -186,7 +186,7 @@ class EdnaOrganicMenu
             $proof = $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null;
             if (! $proof) {
                 $this->assertBudget(35);
-                $proof = $this->binding->resolve($event, $payload);
+                $proof = $this->binding->resolveCurrent($event, $payload);
                 if (! $proof) {
                     return $this->wait('native_message_pending');
                 }
@@ -255,7 +255,7 @@ class EdnaOrganicMenu
             $choiceProof = $proof['choice_proof'] ?? null;
             if (! $choiceProof) {
                 $this->assertBudget(35);
-                $choiceProof = $this->binding->resolve($choiceEvent, $choicePayload, (int) $proof['chat_id']);
+                $choiceProof = $this->binding->resolveCurrent($choiceEvent, $choicePayload, (int) $proof['chat_id']);
             }
             if (! $choiceProof) {
                 return $this->wait('native_choice_pending');
