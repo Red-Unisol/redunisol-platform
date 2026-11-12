@@ -180,7 +180,8 @@ class SecurityContractTests(unittest.TestCase):
 
     def file_verification_fixture(self):
         values = self.variables()
-        values["foundation_security_fail2ban_ignoreip"] += ["203.0.113.10"]
+        # File-mutation cases use synthetic addresses, independent of production.
+        values["foundation_security_fail2ban_ignoreip"] = ["127.0.0.1/8", "::1", "203.0.113.10"]
         role = ROOT / "roles/security"
         values["role_path"] = str(role)
         template = jinja2.Environment(keep_trailing_newline=True).from_string(

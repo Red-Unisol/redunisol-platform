@@ -40,6 +40,12 @@ foundation_backups_enabled: true
 foundation_backups_package: restic=0.18.0-1+b4
 foundation_proxy_package_version: "2.4.69-1~deb13u1"
 foundation_security_fail2ban_package: fail2ban=1.1.0-8
+# Current office IPv4 confirmed by two direct public-IP lookups and SSH peer,
+# 2026-11-12. Review this exact address if the office Internet connection changes.
+foundation_security_fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - ::1
+  - 190.210.65.43
 # Local filesystem and encrypted repository were initialized and verified.
 foundation_backups_repository_kind: local
 foundation_backups_local_mountpoint: /srv/redunisol-backups
