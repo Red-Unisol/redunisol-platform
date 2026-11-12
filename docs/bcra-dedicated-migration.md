@@ -223,6 +223,38 @@ correlacionar la latencia/flush del bloque de la VPS con sus escrituras y WAL,
 sin asumir que hay otro importador masivo ni modificar servicios por esta
 medicion breve.
 
+## Resultado del primer refresh y limite de alcance
+
+El job termino `failed` el 12/11/2026 a las 02:27:21 ART (05:27:21 UTC),
+despues de construir el padron y antes de publicar `active.json`. El ultimo
+progreso registrado fue 65.386.328 filas. Kestra registro `FAILED` a las
+02:28:22 ART, al recibir el HTTP 500 con que la API comunica el fallo del job;
+el inicio por HTTP habia sido exitoso. No quedo un refresh activo o en pausa.
+
+El error fue `Historical publication references an entity absent from its
+master`: el maestro de entidades financieras contiene 580 codigos; el
+historico contiene 587, con 10 ausentes del maestro, y las rectificativas
+contienen 241, con 7 ausentes. Una lectura inmutable de metadatos y codigos
+en el origen detenido y en el dedicado comprobo las mismas versiones,
+identidades y conjuntos ausentes. La condicion ya existia en la copia
+congelada anterior al traslado; no es perdida de datos por la migracion ni
+una falla del transporte de Kestra. Su causa funcional precisa requiere
+revisar la cobertura temporal del maestro y la validacion de entidades.
+
+Se conserva ese rechazo de consistencia: no se excluyen entidades ni se
+publica un historico incompleto para forzar un resultado verde. La API sigue
+saludable, `ready=true`, con su publicacion actual de 42.316.211 filas;
+`history_ready=false` conserva la limitacion previa. A las 02:33:52 ART,
+`quick_check(1)` de la base actualmente publicada dio `ok`, en modo
+`ro&immutable=1`, sin abrir pendientes ni cambiar archivos. Ese resultado
+no acredita integridad ni publicacion de todos los componentes historicos.
+
+El scheduler de las 21:00 ART permanece habilitado. Se preservan los
+componentes completos y sus checkpoints, sin lanzar otro refresh identico.
+El corte y el procesamiento remoto estan verificados; resolver el desajuste
+del maestro historico es una correccion funcional separada. Tambien queda
+separado el diagnostico de latencia del almacenamiento de la VPS.
+
 ## Alcance comprobable del respaldo
 
 El respaldo BCRA de este corte es una copia fria inicial, cifrada y local en el
