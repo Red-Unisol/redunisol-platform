@@ -38,6 +38,14 @@ class EdnaWorkQueue
             'job_class' => $class, 'work_id' => $id, 'command_sha256' => hash('sha256', $command)];
     }
 
+    /** Physical priority never changes the serialized command or its hold key. */
+    public function queueFor(object $job): string
+    {
+        $this->identity($job);
+
+        return $job::class === LinkWebFormChat::class ? 'edna-web-reconcile' : 'edna';
+    }
+
     /** Holds must be excluded before a bounded poll selects its next batch. */
     public function withoutPending(Builder $query, string $class, string $idColumn): Builder
     {
@@ -52,20 +60,21 @@ class EdnaWorkQueue
     public function push(object $job): bool
     {
         $identity = $this->identity($job);
+        $physicalQueue = $this->queueFor($job);
         [$queue, $observer] = $this->databaseQueue();
 
-        return DB::transaction(function () use ($job, $identity, $queue, $observer): bool {
+        return DB::transaction(function () use ($job, $identity, $physicalQueue, $queue, $observer): bool {
             $inserted = DB::table('edna_work_queue_keys')->insertOrIgnore($identity + [
                 'queue_job_id' => null, 'created_at' => now(),
             ]);
             if (! $inserted) {
                 return false;
             }
-            $id = $queue->push($job, '', 'edna');
+            $id = $queue->push($job, '', $physicalQueue);
             if ((! is_int($id) && ! (is_string($id) && ctype_digit($id))) || (int) $id < 1) {
                 throw new RuntimeException('Edna queue did not return a durable job.');
             }
-            $this->assertJob($job, (int) $id);
+            $this->assertJob($job, (int) $id, $physicalQueue);
             if (DB::table('edna_work_queue_keys')->where('key', $identity['key'])->whereNull('queue_job_id')
                 ->update(['queue_job_id' => (int) $id]) !== 1) {
                 throw new RuntimeException('Edna work hold could not be attached.');
@@ -73,7 +82,7 @@ class EdnaWorkQueue
             // Existing Queue::fake assertions can observe the real transactional
             // enqueue. They never replace its jobs row or its foreign-key hold.
             if ($observer && $observer->shouldFakeJob($job)) {
-                $observer->push($job, '', 'edna');
+                $observer->push($job, '', $physicalQueue);
             }
 
             return true;
@@ -100,7 +109,7 @@ class EdnaWorkQueue
         }
     }
 
-    private function assertJob(object $job, int $id): void
+    private function assertJob(object $job, int $id, ?string $expectedQueue = null): void
     {
         $row = DB::table('jobs')->where('id', $id)->lockForUpdate()->first(['queue', 'payload']);
         try {
@@ -108,7 +117,9 @@ class EdnaWorkQueue
         } catch (Throwable) {
             throw new RuntimeException('Edna work payload is unavailable.');
         }
-        if (! $row || $row->queue !== 'edna' || ! is_array($payload)
+        $allowedQueues = $job::class === LinkWebFormChat::class ? ['edna', 'edna-web-reconcile'] : ['edna'];
+        if (! $row || ! in_array($row->queue, $allowedQueues, true)
+            || ($expectedQueue !== null && $row->queue !== $expectedQueue) || ! is_array($payload)
             || ($payload['displayName'] ?? null) !== $job::class
             || ($payload['job'] ?? null) !== 'Illuminate\Queue\CallQueuedHandler@call'
             || ($payload['data']['commandName'] ?? null) !== $job::class
