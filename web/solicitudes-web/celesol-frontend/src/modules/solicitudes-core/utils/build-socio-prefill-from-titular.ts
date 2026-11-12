@@ -11,7 +11,10 @@ export function buildSocioPrefillFromTitular(
     celular: titular.celular ?? "",
     cuit: titular.cuit ?? "",
     domicilioCalle: titular.domicilioCalle ?? "",
-    domicilioLocalidad: titular.localidad ?? "",
+    // El alta del socio usa el ID de Vimarx. Las solicitudes anteriores al
+    // 12/11/2026 solo tienen el nombre: ahi el vendedor la elige de la lista
+    // (ver localidadSugerida).
+    domicilioLocalidad: titular.localidadId ?? "",
     domicilioNroPuerta: titular.nroPuerta ?? "",
     email: titular.email ?? "",
     fechaDeNacimiento: titular.fechaNacimiento ?? "",

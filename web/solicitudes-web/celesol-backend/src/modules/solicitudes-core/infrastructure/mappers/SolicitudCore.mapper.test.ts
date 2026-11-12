@@ -108,6 +108,7 @@ describe("SolicitudCoreMapper", () => {
         fechaNacimiento: null,
         estadoCivil: "Soltero",
         localidad: null,
+        localidadId: null,
         nacionalidad: "Argentina",
         nombre: "Juan",
         nroDocumento: "30111222",

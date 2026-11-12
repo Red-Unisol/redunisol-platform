@@ -178,6 +178,7 @@ import { useCreatePrestamoLegacyMutation } from "@/modules/solicitudes-core/hook
 import {
   socioCategoriaPorLinea,
   type CreateSocioRequest,
+  type Localidad,
   type UpdateSocioRequest,
 } from "@/modules/socios/types";
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
@@ -1174,9 +1175,10 @@ function EditableSelectInput({
 }
 
 // Localidad: siempre del buscador de localidades de Vimarx, el mismo del alta
-// de la solicitud y del alta de socio. No se puede escribir texto libre. Se
-// guarda el nombre, como en el alta: el finalizar y la revision documental
-// leen la localidad de la solicitud como texto.
+// de la solicitud y del alta de socio. No se puede escribir texto libre.
+// - Titular (`onPick`): se guarda el ID de Vimarx, que es lo que usa el alta
+//   del socio; el nombre lo pone el backend y es lo que se muestra.
+// - Localidad laboral (`onChange`): sigue guardando solo el nombre.
 function EditableLocalidadInput({
   appearanceStyle,
   disabled = false,
@@ -1184,6 +1186,7 @@ function EditableLocalidadInput({
   isEditing,
   label,
   onChange,
+  onPick,
   readOnlyValue,
   value,
 }: {
@@ -1192,7 +1195,8 @@ function EditableLocalidadInput({
   highlightReadOnly?: boolean;
   isEditing: boolean;
   label: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
+  onPick?: (localidad: Localidad | null) => void;
   readOnlyValue: ReactNode;
   value: string;
 }) {
@@ -1202,8 +1206,10 @@ function EditableLocalidadInput({
       editor={
         <LocalidadSelect
           disabled={disabled}
-          onClear={() => onChange("")}
-          onPick={(localidad) => onChange(localidad.nombre)}
+          onClear={() => (onPick ? onPick(null) : onChange?.(""))}
+          onPick={(localidad) =>
+            onPick ? onPick(localidad) : onChange?.(localidad.nombre)
+          }
           value=""
           valueLabel={value}
         />
@@ -2121,7 +2127,10 @@ function TitularFields({
           disabled={!isFieldEditableByKey("titular.localidad")}
           isEditing={isEditing}
           label="Localidad"
-          onChange={(value) => onChange("localidad", value)}
+          onPick={(localidad) => {
+            onChange("localidad", localidad?.nombre ?? "");
+            onChange("localidadId", localidad?.id ?? "");
+          }}
           readOnlyValue={formatText(titular.localidad)}
           value={values.localidad}
         />
@@ -2408,7 +2417,10 @@ function TitularFields({
         disabled={!isFieldEditableByKey("titular.localidad")}
         isEditing={isEditing}
         label="Localidad"
-        onChange={(value) => onChange("localidad", value)}
+        onPick={(localidad) => {
+          onChange("localidad", localidad?.nombre ?? "");
+          onChange("localidadId", localidad?.id ?? "");
+        }}
         readOnlyValue={formatText(titular.localidad)}
         value={values.localidad}
       />
@@ -5551,6 +5563,11 @@ export function SolicitudesActualDetallePage() {
             resolvedSolicitud.titular,
           )}
           isSaving={createSocioMutation.isPending}
+          localidadSugerida={
+            resolvedSolicitud.titular.localidadId
+              ? undefined
+              : (resolvedSolicitud.titular.localidad ?? undefined)
+          }
           onOpenChange={setIsCreateSocioModalOpen}
           onSubmit={handleCreateSocio}
           open={isCreateSocioModalOpen}

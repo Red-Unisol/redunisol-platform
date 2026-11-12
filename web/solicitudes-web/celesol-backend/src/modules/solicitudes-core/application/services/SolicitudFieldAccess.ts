@@ -409,6 +409,13 @@ export function extractSolicitudPatchAccessTargets(
   };
 }
 
+// Claves del pedido que se controlan con el permiso de otro campo. La
+// localidad se edita por su ID, pero la regla configurada es "Localidad".
+// Sin el alias, una clave desconocida pasaria sin control.
+const PATCH_FIELD_KEY_ALIASES: Record<string, SolicitudFieldKey> = {
+  "titular.localidadId": "titular.localidad",
+};
+
 function collectDefinedFieldKeys(
   prefix: "solicitud" | "titular" | "conyuge" | "datosLaborales",
   value: Record<string, unknown> | null | undefined,
@@ -420,7 +427,7 @@ function collectDefinedFieldKeys(
   }
 
   for (const key of Object.keys(value)) {
-    const fieldKey = `${prefix}.${key}`;
+    const fieldKey = PATCH_FIELD_KEY_ALIASES[`${prefix}.${key}`] ?? `${prefix}.${key}`;
 
     if (value[key] === undefined) {
       continue;

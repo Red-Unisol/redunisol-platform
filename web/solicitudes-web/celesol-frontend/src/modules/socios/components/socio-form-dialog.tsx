@@ -131,6 +131,8 @@ export type SocioCategoriaDesdeLinea = {
 type SocioFormDialogProps = {
   categoriaDesdeLinea?: SocioCategoriaDesdeLinea;
   initialValues?: Partial<SocioFormState>;
+  // Nombre de localidad sin ID (solicitud vieja): arranca la busqueda.
+  localidadSugerida?: string;
   isSaving: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: CreateSocioRequest | UpdateSocioRequest) => Promise<void>;
@@ -439,6 +441,7 @@ export function SocioFormDialog({
   categoriaDesdeLinea,
   initialValues,
   isSaving,
+  localidadSugerida,
   onOpenChange,
   onSubmit,
   open,
@@ -459,6 +462,7 @@ export function SocioFormDialog({
           initialValues={initialValues}
           isSaving={isSaving}
           key={socio?.id ?? "create"}
+          localidadSugerida={localidadSugerida}
           onSubmit={onSubmit}
           socio={socio}
         />
@@ -471,11 +475,17 @@ function SocioFormDialogContent({
   categoriaDesdeLinea,
   initialValues,
   isSaving,
+  localidadSugerida,
   onSubmit,
   socio,
 }: Pick<
   SocioFormDialogProps,
-  "categoriaDesdeLinea" | "initialValues" | "isSaving" | "onSubmit" | "socio"
+  | "categoriaDesdeLinea"
+  | "initialValues"
+  | "isSaving"
+  | "localidadSugerida"
+  | "onSubmit"
+  | "socio"
 >) {
   const [formState, setFormState] = useState<SocioFormState>(() =>
     buildInitialState(socio, initialValues, categoriaDesdeLinea),
@@ -1038,6 +1048,7 @@ function SocioFormDialogContent({
               <ModalField label="Localidad *">
                 <LocalidadSelect
                   disabled={isSaving}
+                  initialSearch={localidadSugerida}
                   invalid={Boolean(domicilioErrors.domicilioLocalidad)}
                   onBlur={() => markTouched("domicilioLocalidad")}
                   onChange={(id) =>

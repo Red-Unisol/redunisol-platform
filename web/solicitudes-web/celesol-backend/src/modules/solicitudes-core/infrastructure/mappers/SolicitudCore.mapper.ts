@@ -195,6 +195,7 @@ export class SolicitudCoreMapper {
         email: record.titular?.email ?? null,
         fechaNacimiento: formatDate(record.titular?.fechaNacimiento ?? null),
         localidad: record.titular?.localidad ?? null,
+        localidadId: record.titular?.localidadId ?? null,
         nombre: record.titular?.nombre ?? null,
         personaExpuestaPoliticamente:
           record.titular?.personaExpuestaPoliticamente ?? null,
