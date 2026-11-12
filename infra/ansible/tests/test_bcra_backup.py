@@ -23,6 +23,17 @@ RESTIC = Path(os.environ.get("FOUNDATION_TEST_RESTIC_BINARY", "/nonexistent-pinn
 
 
 class ColdBackupSafetyTests(unittest.TestCase):
+    def test_backup_and_full_check_share_one_timeout_budget(self):
+        clock = [0]
+        budget = BACKUP.TimeBudget(60, clock=lambda: clock[0])
+        self.assertEqual(budget.remaining(), 60)
+        clock[0] = 25
+        self.assertEqual(budget.remaining(), 35)
+        self.assertEqual(budget.remaining(10), 10)
+        clock[0] = 60
+        with self.assertRaisesRegex(BACKUP.BackupError, "time_budget_exhausted"):
+            budget.remaining()
+
     def test_app_and_any_writable_overlap_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             data = Path(directory).resolve() / "data"
@@ -88,10 +99,24 @@ class RealColdResticTests(unittest.TestCase):
         metadata = BACKUP.verify_snapshot(self.prefix, snapshot, self.sources, self.tags)
         self.assertEqual(set(metadata["paths"]), {str(path) for path in self.sources})
         self.assertRegex(BACKUP.repository_id(self.prefix), r"^[0-9a-f]{64}$")
+        integrity = BACKUP.verify_repository_integrity(self.prefix, 60)
+        self.assertIs(integrity["repository_integrity_verified"], True)
+        self.assertIs(integrity["read_data"], True)
+        self.assertIn("repository_integrity_verified_at", integrity)
         restored = BACKUP.restore_manifest(self.prefix, snapshot, self.manifest, self.path / "isolated-restore", self.manifest_sha)
         self.assertEqual(restored.read_bytes(), self.manifest.read_bytes())
         self.assertFalse((self.path / "isolated-restore" / str(self.data).lstrip("/")).exists())
         self.assertEqual((self.data / "synthetic.sqlite").read_bytes(), b"synthetic non-personal fixture bytes")
+
+    def test_real_damaged_pack_cannot_produce_repository_integrity_proof(self):
+        BACKUP.create_snapshot(self.prefix, self.sources, self.tags, 60)
+        pack = next((self.path / "fixture-repository/data").glob("*/*"))
+        contents = bytearray(pack.read_bytes())
+        contents[0] ^= 1
+        pack.chmod(0o600)
+        pack.write_bytes(contents)
+        with self.assertRaisesRegex(BACKUP.BackupError, "command_failed"):
+            BACKUP.verify_repository_integrity(self.prefix, 60)
 
     def test_wrong_snapshot_paths_or_tags_are_rejected(self):
         snapshot = BACKUP.create_snapshot(self.prefix, self.sources, self.tags, 60)
