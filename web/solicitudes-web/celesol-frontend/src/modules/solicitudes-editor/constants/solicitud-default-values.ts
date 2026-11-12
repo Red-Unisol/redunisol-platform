@@ -45,6 +45,7 @@ export const NUEVA_SOLICITUD_DEFAULT_VALUES: NuevaSolicitudFormValues = {
   linea: "",
   lineaPrestamoLegacyOid: "",
   localidad: "",
+  localidadId: "",
 
   localidadLaboral: "",
 

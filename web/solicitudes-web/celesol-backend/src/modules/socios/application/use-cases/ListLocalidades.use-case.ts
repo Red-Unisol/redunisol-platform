@@ -67,6 +67,13 @@ export class ListLocalidadesUseCase {
       .map(({ item }) => toLocalidad(item));
   }
 
+  // Para quien guarda la localidad por ID (la solicitud) y necesita su nombre.
+  async findById(id: string): Promise<LocalidadLegacy | null> {
+    const item = (await this.getAll()).find((localidad) => localidad.id === id);
+
+    return item ? toLocalidad(item) : null;
+  }
+
   private async getAll(): Promise<CachedLocalidad[]> {
     if (this.cache && this.cache.expiresAt > this.now()) {
       return this.cache.items;
