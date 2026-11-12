@@ -1,0 +1,10 @@
+---
+bcra_backup_apply_authorized: false
+bcra_backup_revision: ""
+bcra_backup_platform_dir: /srv/redunisol/platform/bcra-file-api
+bcra_backup_data_dir: /srv/redunisol/state/bcra-file-api
+bcra_backup_state_dir: /var/lib/redunisol-foundation/bcra-cold-backup
+bcra_backup_data_manifest_sha256: "{{ bcra_file_api_data_manifest_sha256 | default('') }}"
+bcra_backup_image: ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4
+bcra_backup_read_mib_per_second: 128
+bcra_backup_timeout_seconds: 14400

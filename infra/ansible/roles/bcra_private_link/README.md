@@ -50,9 +50,12 @@ esas restricciones. OpenSSH documenta que
 [MaxSessions 0 mantiene el forwarding y deshabilita sesiones](https://man.openbsd.org/sshd_config#MaxSessions)
 y que [AllowTcpForwarding y AllowStreamLocalForwarding son controles separados](https://man.openbsd.org/sshd_config#AllowTcpForwarding).
 El apply valida `sshd -t` y la politica efectiva del usuario, y exige que la
-politica efectiva de root sea identica antes y despues. Si cambia o falla la
-validacion, restaura el drop-in previo sin recargar SSH. No edita claves de root,
-puerto SSH, firewall ni configuracion global de login.
+politica efectiva de root sea identica antes y despues. Carga esa politica antes
+de instalar la clave nueva, incluso si el archivo ya coincidia tras una
+interrupcion. Un configtest fallido no deja la clave autorizada; un fallo
+posterior restaura la autorizacion y el drop-in previos, y recarga la politica
+anterior si corresponde. No edita claves de root, puerto SSH, firewall ni
+configuracion global de login.
 
 En la VPS, OpenSSH se ejecuta como `bcra-link` con host key pinneada,
 `ExitOnForwardFailure` y keepalives. Escucha unicamente en el gateway ya existente

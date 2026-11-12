@@ -26,6 +26,9 @@ def migration():
     return {
         "version": 1, "copy_verified": True, "sqlite_verified": True,
         "source_manifest_sha256": "1" * 64, "destination_manifest_sha256": "2" * 64,
+        "post_recovery_manifest_sha256": "6" * 64,
+        "copy_tree_sha256": "7" * 64, "transfer_revocation_receipt_sha256": "8" * 64,
+        "transfer_access_revoked": True, "receiver_alias_removed": True,
         "tree_sha256": "3" * 64, "source_container_id": "d9be0a209f53",
         "cutoff_at": "2026-11-12T01:59:26.637806Z", "image": IMAGE,
     }
@@ -66,7 +69,9 @@ class MigrationGateTests(unittest.TestCase):
         for changes in ({"copy_verified": False}, {"sqlite_verified": False}, {"copy_verified": 1},
                         {"image": "ghcr.io/red-unisol/bcra-file-api:latest"}, {"source_manifest_sha256": ""},
                         {"source_container_id": "unknown"}, {"cutoff_at": "2026-11-12T01:59:26"},
-                        {"cutoff_at": "2026-11-11T22:59:26-03:00"}, {"version": True}):
+                        {"cutoff_at": "2026-11-11T22:59:26-03:00"}, {"version": True},
+                        {"transfer_access_revoked": False}, {"receiver_alias_removed": False},
+                        {"transfer_revocation_receipt_sha256": ""}, {"copy_tree_sha256": ""}):
             with self.subTest(changes=changes), self.assertRaises(CONTRACT.ContractError):
                 self.validate({**migration(), **changes})
 
@@ -143,6 +148,7 @@ class ExecutableAnsibleContractTests(unittest.TestCase):
                 result = self.run_contract(**changes)
                 self.assertNotEqual(result.returncode, 0)
         result = self.run_contract(bcra_file_api_running=True, bcra_file_api_data_manifest_sha256="1" * 64,
+                                   bcra_file_api_cold_backup_receipt_sha256="2" * 64,
                                    bcra_file_api_terms_accepted=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -191,6 +197,46 @@ class ExecutableAnsibleContractTests(unittest.TestCase):
             self.assertEqual(service["image"], IMAGE)
             self.assertTrue(service["read_only"])
             self.assertNotIn("kestra_net", rendered)
+
+    def test_preexisting_copied_data_directory_keeps_its_metadata(self):
+        main = yaml.safe_load((ROLE / "tasks/main.yml").read_text())
+        prepare = next(task["block"] for task in main if "block" in task)
+        creation = next(task for task in prepare if "Create the data root" in task.get("name", ""))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            path.chmod(0o750)
+            before = path.stat()
+            result = self.run_tasks([creation], {
+                "bcra_file_api_data_dir": str(path),
+                "bcra_file_api_paths": {"results": [{"stat": {}}, {"stat": {"exists": True}}]},
+            })
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(path.stat().st_mode, before.st_mode)
+            self.assertEqual(path.stat().st_uid, before.st_uid)
+            self.assertIn("changed=0", result.stdout)
+
+
+class ColdBackupGateTests(unittest.TestCase):
+    def receipt(self):
+        return {"version": 1, "scope": "initial-cold-bcra-local", "status": "verified",
+                "snapshot_verified": True, "restored_manifest_verified": True,
+                "offsite": False, "continuous_backup": False,
+                "repository_id": "7" * 64, "snapshot_id": "8" * 64,
+                "migration_manifest_sha256": "9" * 64, "restored_manifest_sha256": "9" * 64,
+                "image": IMAGE, "tree_sha256": "3" * 64, "cutoff_at": migration()["cutoff_at"]}
+
+    def validate(self, receipt):
+        raw = json.dumps(receipt).encode()
+        return CONTRACT.cold_backup_document(raw, hashlib.sha256(raw).hexdigest(), migration(), "9" * 64)
+
+    def test_only_the_initial_restored_backup_of_the_same_cutoff_passes(self):
+        self.assertEqual(self.validate(self.receipt())["snapshot_id"], "8" * 64)
+        for changes in ({"snapshot_verified": False}, {"restored_manifest_verified": False},
+                        {"tree_sha256": "f" * 64}, {"migration_manifest_sha256": "a" * 64},
+                        {"restored_manifest_sha256": "a" * 64}, {"image": "wrong"},
+                        {"cutoff_at": "2026-11-12T02:00:00Z"}, {"offsite": True}):
+            with self.subTest(changes=changes), self.assertRaises(CONTRACT.ContractError):
+                self.validate({**self.receipt(), **changes})
 
 
 if __name__ == "__main__":

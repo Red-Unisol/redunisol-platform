@@ -227,9 +227,8 @@ def effective(user, address):
     return run(["/usr/sbin/sshd", "-T", "-C", "user=" + user + ",host=localhost,addr=" + address])
 
 
-def server_verify(config):
+def server_policy_verify(config):
     user = account(False)
-    require((HOME / ".ssh/authorized_keys").read_text() == authorized_key(config), "authorized_key_drift")
     require(DROPIN.read_text() == ssh_policy(), "sshd_dropin_drift")
     run(["/usr/sbin/sshd", "-t"])
     policy = effective(USER, config["client_source_ip"])
@@ -242,29 +241,62 @@ def server_verify(config):
     return {"changed": False, "restricted_user_policy_verified": True, "uid": user.pw_uid}
 
 
+def server_verify(config):
+    verification = server_policy_verify(config)
+    keys = HOME / ".ssh/authorized_keys"
+    no_symlink(keys)
+    require(keys.is_file(), "authorized_key_drift")
+    metadata = keys.stat()
+    user = account(False)
+    require(stat.S_IMODE(metadata.st_mode) == 0o600 and (metadata.st_uid, metadata.st_gid) == (user.pw_uid, user.pw_gid)
+            and keys.read_text() == authorized_key(config), "authorized_key_drift")
+    return verification
+
+
 def server_apply(config):
     root_before = effective("root", config["client_source_ip"])
     user = account(True)
     changed = directory(HOME, 0o700, user.pw_uid, user.pw_gid)
     changed = directory(HOME / ".ssh", 0o700, user.pw_uid, user.pw_gid) or changed
-    changed = write(HOME / ".ssh/authorized_keys", authorized_key(config), 0o600,
-                    user.pw_uid, user.pw_gid) or changed
+    keys = HOME / ".ssh/authorized_keys"
+    no_symlink(keys)
+    require(not keys.exists() or keys.is_file(), "authorized_key_file_conflict")
+    previous_keys = keys.read_bytes() if keys.is_file() else None
+    previous_key_stat = keys.stat() if keys.is_file() else None
+    wanted_key = authorized_key(config)
+    authorization_changed = (previous_keys != wanted_key.encode() or previous_key_stat is None
+                             or stat.S_IMODE(previous_key_stat.st_mode) != 0o600
+                             or (previous_key_stat.st_uid, previous_key_stat.st_gid) != (user.pw_uid, user.pw_gid))
     require(DROPIN.parent.is_dir(), "sshd_dropin_directory_missing")
     no_symlink(DROPIN)
     previous = DROPIN.read_bytes() if DROPIN.is_file() else None
     policy_changed = write(DROPIN, ssh_policy(), 0o644)
+    reloaded = False
     try:
-        verification = server_verify(config)
+        # Do not authorize a new key until the confined policy is valid and loaded.
+        verification = server_policy_verify(config)
         require(effective("root", config["client_source_ip"]) == root_before, "root_ssh_policy_would_change")
+        if policy_changed or authorization_changed:
+            run(["/bin/systemctl", "reload", "ssh"])
+            reloaded = True
+        changed = write(keys, wanted_key, 0o600, user.pw_uid, user.pw_gid) or changed
+        verification = server_verify(config)
     except Exception:
+        if previous_keys is None:
+            if keys.is_file():
+                keys.unlink()
+        else:
+            write(keys, previous_keys, stat.S_IMODE(previous_key_stat.st_mode),
+                  previous_key_stat.st_uid, previous_key_stat.st_gid)
         if policy_changed:
             if previous is None:
                 DROPIN.unlink()
             else:
                 write(DROPIN, previous, 0o644)
+        if reloaded:
+            run(["/usr/sbin/sshd", "-t"])
+            run(["/bin/systemctl", "reload", "ssh"])
         raise
-    if policy_changed:
-        run(["/bin/systemctl", "reload", "ssh"])
     verification.update(changed=changed or policy_changed, root_ssh_policy_preserved=True)
     return verification
 

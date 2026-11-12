@@ -43,6 +43,26 @@
   changed_when: false
   check_mode: false
 
+- name: Verify the initial cold backup still matches the migration cutoff
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+      - cold-backup
+      - --manifest
+      - "{{ bcra_file_api_platform_dir }}/data-migration.json"
+      - --expected-sha256
+      - "{{ bcra_file_api_data_manifest_sha256 }}"
+      - --receipt
+      - "{{ bcra_file_api_platform_dir }}/cold-backup.json"
+      - --receipt-sha256
+      - "{{ bcra_file_api_cold_backup_receipt_sha256 }}"
+      - --image
+      - "{{ bcra_file_api_image }}"
+  register: bcra_file_api_cold_backup
+  changed_when: false
+  check_mode: false
+
 - name: Verify the actual Docker image and confinement without reading container environment
   ansible.builtin.command:
     argv:

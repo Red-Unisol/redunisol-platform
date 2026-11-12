@@ -8,5 +8,6 @@ bcra_file_api_image: ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281
 bcra_file_api_api_token: ""
 bcra_file_api_terms_accepted: false
 bcra_file_api_data_manifest_sha256: ""
+bcra_file_api_cold_backup_receipt_sha256: ""
 bcra_file_api_registry_config_dir: ""
 bcra_file_api_require_current_ready: false

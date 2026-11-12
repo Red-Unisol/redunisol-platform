@@ -254,12 +254,65 @@ class PrivateLinkGuardTests(unittest.TestCase):
                     mock.patch.object(LINK, "directory", return_value=False), \
                     mock.patch.object(LINK.os, "chown", create=True), \
                     mock.patch.object(LINK, "effective", side_effect=["root original", "root changed"]), \
-                    mock.patch.object(LINK, "server_verify", return_value={"changed": False}), \
+                    mock.patch.object(LINK, "server_policy_verify", return_value={"changed": False}), \
                     mock.patch.object(LINK, "run") as commands:
                 with self.assertRaisesRegex(LINK.LinkError, "root_ssh_policy_would_change"):
                     LINK.server_apply(config("server"))
                 self.assertEqual(dropin.read_bytes(), previous)
+                self.assertFalse((home / ".ssh/authorized_keys").exists())
                 commands.assert_not_called()
+
+    def test_invalid_sshd_configuration_never_installs_a_new_authorized_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "home"
+            home.mkdir()
+            (home / ".ssh").mkdir()
+            dropin = Path(folder) / "dropin.conf"
+            user = SimpleNamespace(pw_uid=0, pw_gid=0)
+            with mock.patch.object(LINK, "HOME", home), mock.patch.object(LINK, "DROPIN", dropin), \
+                    mock.patch.object(LINK, "account", return_value=user), \
+                    mock.patch.object(LINK, "directory", return_value=False), \
+                    mock.patch.object(LINK.os, "chown", create=True), \
+                    mock.patch.object(LINK, "effective", return_value="root original"), \
+                    mock.patch.object(LINK, "server_policy_verify", side_effect=LINK.LinkError("invalid_sshd_config")), \
+                    mock.patch.object(LINK, "run") as commands:
+                with self.assertRaisesRegex(LINK.LinkError, "invalid_sshd_config"):
+                    LINK.server_apply(config("server"))
+                self.assertFalse((home / ".ssh/authorized_keys").exists())
+                self.assertFalse(dropin.exists())
+                commands.assert_not_called()
+
+    def test_a_new_key_forces_reload_before_authorization_even_when_policy_file_already_matches(self):
+        events = []
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "home"
+            home.mkdir()
+            (home / ".ssh").mkdir()
+            dropin = Path(folder) / "dropin.conf"
+            dropin.write_text(LINK.ssh_policy())
+            original_write = LINK.write
+
+            def write(path, *args, **kwargs):
+                if path.name == "authorized_keys":
+                    events.append("authorize")
+                return original_write(path, *args, **kwargs)
+
+            def command(args, **kwargs):
+                if args[1:] == ["reload", "ssh"]:
+                    events.append("reload")
+                return ""
+
+            with mock.patch.object(LINK, "HOME", home), mock.patch.object(LINK, "DROPIN", dropin), \
+                    mock.patch.object(LINK, "account", return_value=SimpleNamespace(pw_uid=0, pw_gid=0)), \
+                    mock.patch.object(LINK, "directory", return_value=False), \
+                    mock.patch.object(LINK.os, "chown", create=True), \
+                    mock.patch.object(LINK, "effective", return_value="root unchanged"), \
+                    mock.patch.object(LINK, "server_policy_verify", return_value={"changed": False}), \
+                    mock.patch.object(LINK, "server_verify", return_value={"changed": False}), \
+                    mock.patch.object(LINK, "write", side_effect=write), \
+                    mock.patch.object(LINK, "run", side_effect=command):
+                self.assertTrue(LINK.server_apply(config("server"))["changed"])
+            self.assertEqual(events, ["reload", "authorize"])
 
     def test_both_remote_helpers_parse_as_python36(self):
         for name in ("link.py", "proxy.py"):

@@ -17,6 +17,7 @@
   ansible.builtin.assert:
     that:
       - bcra_file_api_data_manifest_sha256 is match('^[0-9a-f]{64}$')
+      - bcra_file_api_cold_backup_receipt_sha256 is match('^[0-9a-f]{64}$')
       - bcra_file_api_terms_accepted | bool
-    fail_msg: "BCRA activation requires verified copied data and the existing acceptance of download terms."
+    fail_msg: "BCRA activation requires verified copied data, an initial cold backup and acceptance of download terms."
   when: bcra_file_api_running | bool

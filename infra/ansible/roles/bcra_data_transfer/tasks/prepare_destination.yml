@@ -25,7 +25,12 @@
 - name: Reject an existing unknown destination owner or link
   ansible.builtin.assert:
     that:
-      - not bcra_data_copy_destination_stat.stat.exists or (bcra_data_copy_destination_stat.stat.isdir and not bcra_data_copy_destination_stat.stat.islnk and bcra_data_copy_destination_stat.stat.uid == 10001 and bcra_data_copy_destination_stat.stat.gid == 10001)
+      - >-
+        not bcra_data_copy_destination_stat.stat.exists or
+        (bcra_data_copy_destination_stat.stat.isdir and
+         not bcra_data_copy_destination_stat.stat.islnk and
+         bcra_data_copy_destination_stat.stat.uid == 10001 and
+         bcra_data_copy_destination_stat.stat.gid == 10001)
     fail_msg: Existing BCRA data root must already have the reviewed numeric owner and be a real directory.
 
 - name: Create only the dedicated data root if absent
@@ -52,7 +57,10 @@
 - name: Reject an unrelated numeric UID owner
   ansible.builtin.assert:
     that:
-      - ansible_facts.getent_passwd | default({}) | dict2items | selectattr('value', 'ne', none) | map(attribute='key') | list | difference(['bcra-transfer']) | length == 0
+      - >-
+        ansible_facts.getent_passwd | default({}) | dict2items |
+        selectattr('value', 'ne', none) | map(attribute='key') | list |
+        difference(['bcra-transfer']) | length == 0
     fail_msg: UID10001 must be unused or already belong to this restricted transfer account.
 
 - name: Inspect any group already using the service numeric GID
@@ -64,7 +72,10 @@
 - name: Reject an unrelated numeric GID owner
   ansible.builtin.assert:
     that:
-      - ansible_facts.getent_group | default({}) | dict2items | selectattr('value', 'ne', none) | map(attribute='key') | list | difference(['bcra-transfer']) | length == 0
+      - >-
+        ansible_facts.getent_group | default({}) | dict2items |
+        selectattr('value', 'ne', none) | map(attribute='key') | list |
+        difference(['bcra-transfer']) | length == 0
     fail_msg: GID10001 must be unused or already belong to this restricted transfer group.
 
 - name: Create the transfer numeric group

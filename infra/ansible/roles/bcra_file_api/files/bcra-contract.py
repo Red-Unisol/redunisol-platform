@@ -30,7 +30,10 @@ def migration_document(raw, expected_sha256, image):
             "manifest_version_invalid")
     require(document.get("copy_verified") is True and document.get("sqlite_verified") is True,
             "copy_and_sqlite_validation_required")
-    for name in ("source_manifest_sha256", "destination_manifest_sha256", "tree_sha256"):
+    require(document.get("transfer_access_revoked") is True and document.get("receiver_alias_removed") is True,
+            "temporary_transfer_access_must_be_revoked")
+    for name in ("source_manifest_sha256", "destination_manifest_sha256", "post_recovery_manifest_sha256",
+                 "copy_tree_sha256", "tree_sha256", "transfer_revocation_receipt_sha256"):
         require(isinstance(document.get(name), str) and re.fullmatch(r"[0-9a-f]{64}", document[name]),
                 "migration_evidence_checksum_required")
     require(document.get("image") == image, "migration_image_mismatch")
@@ -44,11 +47,13 @@ def migration_document(raw, expected_sha256, image):
         raise ContractError("migration_cutoff_invalid") from error
     require(moment.tzinfo is not None and moment.utcoffset() == timedelta(0), "migration_cutoff_must_be_utc")
     return {name: document[name] for name in (
-        "source_manifest_sha256", "destination_manifest_sha256", "tree_sha256", "source_container_id", "cutoff_at", "image",
+        "source_manifest_sha256", "destination_manifest_sha256", "post_recovery_manifest_sha256",
+        "copy_tree_sha256", "tree_sha256", "transfer_revocation_receipt_sha256",
+        "source_container_id", "cutoff_at", "image",
     )}
 
 
-def read_migration(path, expected_sha256, image):
+def private_bytes(path):
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, flags), "rb") as stream:
         metadata = os.fstat(stream.fileno())
@@ -56,7 +61,44 @@ def read_migration(path, expected_sha256, image):
         require(metadata.st_uid == 0 and metadata.st_gid == 0 and stat.S_IMODE(metadata.st_mode) == 0o600,
                 "migration_report_must_be_private_root_owned")
         raw = stream.read(65537)
-    return migration_document(raw, expected_sha256, image)
+    return raw
+
+
+def read_migration(path, expected_sha256, image):
+    return migration_document(private_bytes(path), expected_sha256, image)
+
+
+def cold_backup_document(raw, expected_sha256, migration, manifest_sha256):
+    require(re.fullmatch(r"[0-9a-f]{64}", expected_sha256 or ""), "cold_backup_checksum_required")
+    require(hashlib.sha256(raw).hexdigest() == expected_sha256, "cold_backup_checksum_mismatch")
+    require(len(raw) <= 65536, "cold_backup_receipt_too_large")
+    document = json.loads(raw)
+    require(isinstance(document, dict), "cold_backup_receipt_invalid")
+    require(type(document.get("version")) is int and document["version"] == 1
+            and document.get("scope") == "initial-cold-bcra-local"
+            and document.get("status") == "verified", "cold_backup_scope_invalid")
+    require(document.get("snapshot_verified") is True and document.get("restored_manifest_verified") is True
+            and document.get("offsite") is False and document.get("continuous_backup") is False,
+            "cold_backup_restore_proof_required")
+    for name in ("repository_id", "snapshot_id"):
+        require(isinstance(document.get(name), str) and re.fullmatch(r"[0-9a-f]{64}", document[name]),
+                "cold_backup_repository_or_snapshot_invalid")
+    require(document.get("migration_manifest_sha256") == manifest_sha256
+            and document.get("restored_manifest_sha256") == manifest_sha256
+            and document.get("image") == migration["image"]
+            and document.get("tree_sha256") == migration["tree_sha256"]
+            and document.get("cutoff_at") == migration["cutoff_at"], "cold_backup_migration_mismatch")
+    return document
+
+
+def read_cold_backup(path, receipt_sha256, migration, manifest_sha256):
+    document = cold_backup_document(private_bytes(path), receipt_sha256, migration, manifest_sha256)
+    restored = Path(document.get("restored_manifest_path", ""))
+    base = Path("/var/lib/redunisol-foundation/bcra-cold-backup/restore")
+    require(restored.is_absolute() and restored.resolve().is_relative_to(base), "cold_backup_restore_path_invalid")
+    require(hashlib.sha256(private_bytes(restored)).hexdigest() == manifest_sha256, "restored_manifest_changed")
+    return {"snapshot_id": document["snapshot_id"], "repository_id": document["repository_id"],
+            "tree_sha256": document["tree_sha256"], "restored_manifest_verified": True}
 
 
 CONTAINER_FORMAT = r'''{"image_ref":{{json .Config.Image}},"image_id":{{json .Image}},"running":{{json .State.Running}},"user":{{json .Config.User}},"readonly":{{json .HostConfig.ReadonlyRootfs}},"privileged":{{json .HostConfig.Privileged}},"caps":{{json .HostConfig.CapDrop}},"security":{{json .HostConfig.SecurityOpt}},"pids":{{json .HostConfig.PidsLimit}},"memory":{{json .HostConfig.Memory}},"cpus":{{json .HostConfig.NanoCpus}},"ports":{{json .HostConfig.PortBindings}},"mounts":{{json .Mounts}},"tmpfs":{{json .HostConfig.Tmpfs}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"revision":{{json (index .Config.Labels "io.redunisol.applied-revision")}}}'''
@@ -100,6 +142,12 @@ def main():
     migration.add_argument("--manifest", type=Path, required=True)
     migration.add_argument("--expected-sha256", required=True)
     migration.add_argument("--image", required=True)
+    cold = commands.add_parser("cold-backup")
+    cold.add_argument("--manifest", type=Path, required=True)
+    cold.add_argument("--expected-sha256", required=True)
+    cold.add_argument("--image", required=True)
+    cold.add_argument("--receipt", type=Path, required=True)
+    cold.add_argument("--receipt-sha256", required=True)
     runtime = commands.add_parser("runtime")
     runtime.add_argument("--image", required=True)
     runtime.add_argument("--data-dir", required=True)
@@ -108,6 +156,9 @@ def main():
     try:
         if arguments.operation == "migration":
             result = read_migration(arguments.manifest, arguments.expected_sha256, arguments.image)
+        elif arguments.operation == "cold-backup":
+            migration = read_migration(arguments.manifest, arguments.expected_sha256, arguments.image)
+            result = read_cold_backup(arguments.receipt, arguments.receipt_sha256, migration, arguments.expected_sha256)
         else:
             container = docker_json(["container", "inspect", "--format", CONTAINER_FORMAT, "redunisol-bcra-file-api"])
             image = docker_json(["image", "inspect", "--format", IMAGE_FORMAT, arguments.image])
