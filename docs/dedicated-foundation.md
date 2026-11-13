@@ -101,9 +101,9 @@ habilitada la reconciliacion del filesystem preparado.
 El catalogo deseado del backup de esta etapa se limita a diez archivos de
 configuracion base: los ocho originales, la jail de fail2ban y su override del
 filtro SSH. El repositorio cifrado local esta inicializado y verificado; el
-inventario de produccion habilita el mecanismo de backup. La evidencia historica
-de mas abajo corresponde a los ocho archivos originales; tras aplicar `security`
-debe comprobarse una nueva copia y restauracion de los diez. Los snapshots
+inventario de produccion habilita el mecanismo de backup. La evidencia del 5 de
+noviembre corresponde a los ocho archivos originales; el checkpoint del 12 y 13
+de noviembre acredita una copia y restauracion de los diez. Los snapshots
 historicos conservan su catalogo y siguen siendo recuperables.
 Las copias consistentes de PostgreSQL, SQLite, adjuntos, tracking o colas se
 definiran cuando se incorpore cada servicio. Copiar directorios vivos sin revisar
@@ -139,6 +139,8 @@ restauracion siguen desactivadas por defecto y se otorgan para cada intervencion
 
 ## Evidencia de aplicacion y recuperacion local
 
+### Base y recuperacion del 5 de noviembre
+
 El 5 de noviembre de 2026 se verificaron las siguientes operaciones autorizadas.
 Es evidencia historica: para conocer el estado presente hay que ejecutar
 `verify.yml` contra el inventario y la revision correspondientes.
@@ -167,6 +169,51 @@ El estado deseado versionado habilita la programacion de copias diarias a las
 evidencia registra la copia y la comprobacion manuales, no un disparo observado
 del timer. Monitoreo externo y copia recuperable fuera del dedicado siguen
 pendientes.
+
+### Seguridad y recuperacion del 12 y 13 de noviembre
+
+El 12 de noviembre de 2026 se aplico, con autorizacion expresa, la revision
+`6ddeab3310e83517f89fea4592302ca38d3db67a`. El 13 de noviembre se realizaron las
+comprobaciones posteriores de solo lectura. Este checkpoint complementa la
+evidencia del 5 de noviembre; no reemplaza su snapshot ni amplia su alcance.
+
+| Operacion | Resultado observado |
+| --- | --- |
+| Aplicacion acotada de `security`, `monitoring`, `backups` y `evidence`, 12 de noviembre | `ok=57 changed=8 failed=0`; repeticion `ok=57 changed=0 failed=0`. |
+| Verificacion completa, 13 de noviembre | `ok=100 changed=0 failed=0`. Fail2ban activo y habilitado, prueba de configuracion aprobada y probe de politica activa con `matches=true`. Salud local reciente y servicios esperados activos. |
+| Politica SSH | Debian `fail2ban=1.1.0-8` y backport de CVE-2026-109786 activos; puertos `22` y `2241`, `maxretry=5`, `findtime=600` segundos y `bantime=3600` segundos. |
+| Exenciones activas | IP de oficina autorizada el 12 de noviembre: `190.210.65.43`; loopbacks `127.0.0.0/8` y `::1`. |
+| Origen del journal | Selector efectivo de Debian: `_SYSTEMD_UNIT=ssh.service` **o** `_COMM=sshd`. El 12 de noviembre se comprobaron 300 registros de `sshd-session` dentro de `ssh.service`, cubiertos por el selector de unidad. El filtro reconoce ese nombre de daemon. |
+| Prueba de la accion nftables, 12 de noviembre | Ban de la IP documental `192.0.2.254` observado en la jail y el set de `inet f2b-table`, con regla para TCP `22` y `2241`; retirado al finalizar. Su ausencia se reconfirmo el 13 de noviembre. |
+| Copia y comprobacion manuales, 12 de noviembre | Backup consistente de diez archivos y comprobacion completa del repositorio, ambos con `exit_code=0` y `stage=complete`. |
+| Restauracion y contraste independiente | Restauracion aislada con `exit_code=0`, diez archivos; el 13 de noviembre se compararon de forma independiente por SFTP SHA-256, tamano, modo, UID y GID de los diez contra el catalogo del snapshot. Directorio de ejecucion propiedad de root y modo `0700`. |
+
+El snapshot manual restaurado es
+`bae1eed15c0afe62140f59f668880b914eb9d969b1875393c1f939ca5eb8ac3f`.
+La evidencia permanece en
+`/var/lib/redunisol-foundation/restore-local-config/run.QJKFRQ/evidence.json`, y
+los archivos en el subdirectorio `files` de esa ejecucion. El catalogo tiene
+SHA-256 `83304023f16892400e358d033b6dd174968ddb7b6520032d015212d50afffd98` y
+revision de origen y controlador `6ddeab3310e83517f89fea4592302ca38d3db67a`.
+El alcance comprobado es `real-local-foundation-config`, repositorio `local` y
+`offsite=false`; incluye la jail y el override del filtro. No acredita una
+restauracion de datos de aplicaciones ni una copia fuera del dedicado. La prueba
+del ban confirma la ejecucion de la accion y sus reglas, no un ensayo de trafico
+de extremo a extremo.
+
+El origen de la sesion SSH observada el 13 de noviembre fue `200.61.165.132`,
+distinto de la IP de oficina autorizada y ausente de `ignoreip`. Queda pendiente
+confirmar si corresponde a otra red o a un cambio de IP dinamica antes de revisar
+esa declaracion. La comprobacion de solo lectura no agrego ese origen ni cambio
+la politica del host.
+
+Los reportes locales de soporte estan en
+`.local/operations/fail2ban-20261112/restored-independent-20261113.json`,
+`verify.json` y `remote_inspect_readonly_20261113-result.json`; son evidencia
+operativa local, no archivos versionados ni una fuente de credenciales. Los
+reportes corrientes de backup pueden referir a snapshots posteriores al manual
+identificado aqui. La entrega de alertas externas y la recuperacion fuera del
+host siguen pendientes.
 
 ## Puertas de salida
 
