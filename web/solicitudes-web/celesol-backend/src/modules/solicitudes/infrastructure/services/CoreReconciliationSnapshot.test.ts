@@ -4,7 +4,7 @@ import { EvaluateListSolicitudesGateway } from "./EvaluateListSolicitudesGateway
 
 it("Core reconciliation uses read-only queries, resolves historical IDs and verifies the associated socio", async () => {
   const calls: { tipo: string; cmd: string }[] = [];
-  const responses = [[[90]], [777, 600000, 12, 55, "2026-11-01", 0, 0], [777, 600000, 12, 55, "2026-11-01", 0, 0]];
+  const responses = [[[90, 12345678, null, "DNI"]], [777, 600000, 12, 55, "2026-11-01", 0, 0], [777, 600000, 12, 55, "2026-11-01", 0, 0]];
   const gateway = new EvaluateListSolicitudesGateway({ baseUrl: "https://example.test", timeoutMs: 1000 }, async (url, init) => {
     assert.match(String(url), /Evaluate(List|Obj)/);
     calls.push(JSON.parse(String(init?.body)));
@@ -17,7 +17,7 @@ it("Core reconciliation uses read-only queries, resolves historical IDs and veri
 });
 
 it("a historical loan with the wrong socio cannot fall back to a colliding direct loan ID", async () => {
-  const responses = [[[90]], [777, 600000, 12, 55, "2026-11-01", 0, 0], []];
+  const responses = [[[90, 12345678, null, "DNI"]], [777, 600000, 12, 55, "2026-11-01", 0, 0], []];
   let calls = 0;
   const gateway = new EvaluateListSolicitudesGateway({ baseUrl: "https://example.test", timeoutMs: 1000 }, async () => {
     calls++;
@@ -51,7 +51,7 @@ it("a historical request without a loan never falls back to a colliding direct I
 
 it("a replacement ID is queried directly, without confusing it with the historical ID space", async () => {
   const calls: {tipo: string; cmd: string}[] = [];
-  const responses = [[[90]], [777, 600000, 12, 55, "2026-11-01", 0, 0]];
+  const responses = [[[90, 12345678, null, "DNI"]], [777, 600000, 12, 55, "2026-11-01", 0, 0]];
   const gateway = new EvaluateListSolicitudesGateway({ baseUrl: "https://example.test", timeoutMs: 1000 }, async (_url, init) => {
     calls.push(JSON.parse(String(init?.body))); return { ok: true, json: async () => responses.shift() };
   });

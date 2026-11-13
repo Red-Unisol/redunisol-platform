@@ -1,16 +1,22 @@
 type Solicitud = {
   lineaPrestamoLegacyOid: string | null;
-  titular: { nroDocumento: string | null; tipoDocumento: string | null };
+  titular: {
+    cuit?: string | null;
+    nroDocumento: string | null;
+    tipoDocumento: string | null;
+  };
 };
 
 export type DatosRapidosGateway = {
   lookupCbuHabitual(
     documento: string,
     tipoDocumento?: string,
+    cuit?: string,
   ): Promise<{ id: string; cbu: string | null }[]>;
   lookupSocioRapido(
     documento: string,
     tipoDocumento?: string,
+    cuit?: string,
   ): Promise<{ id: string }[]>;
   getConvenioRapido(lineaOid: string): Promise<string | null>;
   getMoraRapido(socioId: string): Promise<boolean | null>;
@@ -19,7 +25,10 @@ export type DatosRapidosGateway = {
 
 export type CbuHabitualResult =
   | { status: "available"; cbu: string }
-  | { status: "missing" | "not_member" | "ambiguous" | "unavailable"; cbu: null };
+  | {
+      status: "missing" | "not_member" | "ambiguous" | "unavailable";
+      cbu: null;
+    };
 
 export class GetDatosRapidosUseCase {
   private readonly gateway: DatosRapidosGateway;
@@ -31,10 +40,15 @@ export class GetDatosRapidosUseCase {
   private async resolveSocio(solicitud: Solicitud) {
     const documento =
       solicitud.titular.nroDocumento?.replace(/[.\s-]/g, "") ?? "";
-    if (!/^\d+$/.test(documento)) return { condicion: "unknown" as const };
+    if (
+      (!documento && !solicitud.titular.cuit) ||
+      (documento && !/^\d{1,12}$/.test(documento))
+    )
+      return { condicion: "unknown" as const };
     const matches = await this.gateway.lookupSocioRapido(
       documento,
       solicitud.titular.tipoDocumento?.trim().toUpperCase() || undefined,
+      solicitud.titular.cuit ?? undefined,
     );
     if (matches.length === 0) return { condicion: "none" as const };
     if (matches.length !== 1) return { condicion: "unknown" as const };
@@ -51,19 +65,26 @@ export class GetDatosRapidosUseCase {
   }
 
   async cbu(solicitud: Solicitud): Promise<CbuHabitualResult> {
-    const documento = solicitud.titular.nroDocumento?.replace(/[.\s-]/g, "") ?? "";
-    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+    const documento =
+      solicitud.titular.nroDocumento?.replace(/[.\s-]/g, "") ?? "";
+    if (
+      (!documento && !solicitud.titular.cuit) ||
+      (documento && (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)))
+    ) {
       return { status: "unavailable", cbu: null };
     }
     try {
       const matches = await this.gateway.lookupCbuHabitual(
         documento,
         solicitud.titular.tipoDocumento?.trim().toUpperCase() || undefined,
+        solicitud.titular.cuit ?? undefined,
       );
       if (matches.length === 0) return { status: "not_member", cbu: null };
       if (matches.length !== 1) return { status: "ambiguous", cbu: null };
       const cbu = matches[0]!.cbu?.trim() || null;
-      return cbu ? { status: "available", cbu } : { status: "missing", cbu: null };
+      return cbu
+        ? { status: "available", cbu }
+        : { status: "missing", cbu: null };
     } catch {
       return { status: "unavailable", cbu: null };
     }

@@ -21,7 +21,13 @@ function createRoutingFetcher(
     requests.push({ body });
 
     return {
-      json: async () => responsesByTipo[body.tipo] ?? [],
+      json: async () =>
+        body.campos === "ID;NroDoc;CUIT;TipoDoc.Descripcion"
+          ? Array.isArray(responsesByTipo[body.tipo]) &&
+            (responsesByTipo[body.tipo] as unknown[]).length
+            ? [[143471, 20409126, 27204091264, "DNI"]]
+            : []
+          : (responsesByTipo[body.tipo] ?? []),
       ok,
     };
   };
@@ -29,10 +35,7 @@ function createRoutingFetcher(
   return { fetcher, requests };
 }
 
-function createGateway(
-  responsesByTipo: Record<string, unknown>,
-  ok = true,
-) {
+function createGateway(responsesByTipo: Record<string, unknown>, ok = true) {
   const { fetcher, requests } = createRoutingFetcher(responsesByTipo, ok);
   const gateway = new CalculadoraMutualLegacyGateway(
     { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
@@ -63,6 +66,29 @@ const SOLICITUD_ROW: (string | number | null)[] = [
 ];
 
 describe("CalculadoraMutualLegacyGateway", () => {
+  it("suma más de 200 préstamos y no presenta totales truncados o incompletos", async () => {
+    for (const [rows, expected] of [
+      [Array.from({ length: 245 }, () => [10]), 2450],
+      [Array.from({ length: 2001 }, () => [10]), null],
+      [[[10], [null]], null],
+    ] as const) {
+      const { gateway, requests } = createGateway({
+        "F.Module.SocioMutual": [[143471, 27204091264, "Al dia", 0]],
+        "F.Module.Cuentas.Prestamos.Prestamo": rows,
+        "F.Module.Cuentas.Prestamos.CuotaPrestamo": [],
+        "PreSolicitud.Module.Solicitud": [SOLICITUD_ROW],
+      });
+      assert.equal(
+        (await gateway.getDatos("220844")).saldoPrestamosVigentes,
+        expected,
+      );
+      assert.equal(
+        requests.find((request) => request.body.campos === "DeudaTotal")!.body
+          .max,
+        2001,
+      );
+    }
+  });
   it("hydrates all fields for a solicitud with an existing titular", async () => {
     const { gateway, requests } = createGateway({
       "F.Module.Cuentas.Prestamos.CuotaPrestamo": [[15000], [5000]],
@@ -107,17 +133,13 @@ describe("CalculadoraMutualLegacyGateway", () => {
     );
     assert.equal(
       titularNuevoRequest?.body.cmd,
-      "[CUIT]=27204091264 AND [FechaAlta]<=#2026-06-01#",
+      "[ID]=143471 AND [FechaAlta]<=#2026-06-01#",
     );
 
     const saldoRequest = requests.find(
-      (request) =>
-        request.body.tipo === "F.Module.Cuentas.Prestamos.Prestamo",
+      (request) => request.body.tipo === "F.Module.Cuentas.Prestamos.Prestamo",
     );
-    assert.equal(
-      saldoRequest?.body.cmd,
-      "[SocioTitular.Socio.CUIT]=27204091264",
-    );
+    assert.equal(saldoRequest?.body.cmd, "[SocioTitular.Socio.ID]=143471");
   });
 
   it("marks titular as nuevo when no prior socio record exists before the fecha", async () => {
@@ -137,9 +159,10 @@ describe("CalculadoraMutualLegacyGateway", () => {
     assert.equal(datos.rechazosDelMes, null);
   });
 
-  it("returns snapshot-only data when the solicitud has no CUIT loaded yet", async () => {
+  it("returns snapshot-only data when the solicitud has no identity loaded yet", async () => {
     const rowWithoutCuit = [...SOLICITUD_ROW];
     rowWithoutCuit[5] = null;
+    rowWithoutCuit[4] = null;
 
     const { gateway, requests } = createGateway({
       "PreSolicitud.Module.Solicitud": [rowWithoutCuit],
@@ -183,7 +206,16 @@ describe("CalculadoraMutualLegacyGateway", () => {
         "PreSolicitud.Module.Solicitud": [SOLICITUD_ROW],
       };
 
-      return { json: async () => responsesByTipo[body.tipo] ?? [], ok: true };
+      return {
+        json: async () =>
+          body.campos === "ID;NroDoc;CUIT;TipoDoc.Descripcion"
+            ? Array.isArray(responsesByTipo[body.tipo]) &&
+              (responsesByTipo[body.tipo] as unknown[]).length
+              ? [[143471, 20409126, 27204091264, "DNI"]]
+              : []
+            : (responsesByTipo[body.tipo] ?? []),
+        ok: true,
+      };
     };
     const gateway = new CalculadoraMutualLegacyGateway(
       { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },

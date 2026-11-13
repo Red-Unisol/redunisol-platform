@@ -7,11 +7,13 @@ sobrescribe ninguno de esos valores ni mantiene una copia en el padrón local.
 ## Fuente y contrato
 
 `POST /api/Empresa/EvaluateList`, con `tipo: F.Module.SocioMutual`,
-`campos: ID;CuentaBancariaHabitual.CBU` y `max: 2`. El criterio usa el documento
-guardado en la solicitud y, cuando existe, `TipoDoc.Descripcion`. Se normalizan
-puntos, espacios y guiones del documento; el tipo se pasa en mayúsculas y con
-comillas escapadas. No se toma la primera cuenta de la colección: se lee la
-relación que Vimarx marca como habitual.
+primero con `campos: ID;NroDoc;CUIT;TipoDoc.Descripcion` y `max: 21` para resolver
+la identidad por documento y CUIT. Después lee
+`ID;CuentaBancariaHabitual.CBU`, `max: 2`, por el ID resuelto. El criterio se
+comparte con préstamos, evaluación e indicadores; los desempates y conflictos
+están documentados en [Identidad de socios](../../../web/solicitudes-web/celesol-backend/docs/socios-identidad-vimarx.md).
+No se toma la primera cuenta de la colección: se lee la relación que Vimarx marca
+como habitual.
 
 Prueba de sólo lectura del **11/11/2026** en **FapiTest**,
 `http://192.168.88.200:83`: [peticiones y resultados](evidence/2026-11-11/cbu-read.json).
@@ -30,12 +32,12 @@ parámetros. Responde sólo `{status, cbu}`, con `Cache-Control: no-store`.
 | --- | --- | --- |
 | `available` | Un único socio con CBU habitual informado | Valor del proveedor |
 | `missing` | Un único socio sin CBU habitual | `null` |
-| `not_member` | Ningún socio coincide con documento y tipo | `null` |
-| `ambiguous` | Más de un socio coincide | `null` |
-| `unavailable` | Documento inválido, error, timeout o respuesta mal formada | `null` |
+| `not_member` | Ningún socio coincide con la identidad guardada | `null` |
+| `ambiguous` | Más de un socio sigue siendo compatible | `null` |
+| `unavailable` | Identidad inválida, conflicto, error, timeout o respuesta mal formada | `null` |
 
-La búsqueda pide dos filas para detectar ambigüedad; nunca elige un socio por
-orden de respuesta. `available` significa dato encontrado, no titularidad
+La búsqueda de identidad nunca elige un socio por orden de respuesta y no lee
+CBUs de candidatos ambiguos. `available` significa dato encontrado, no titularidad
 bancaria verificada ni formato correcto.
 
 ## Comparación en pantalla
@@ -45,7 +47,7 @@ bancaria verificada ni formato correcto.
   longitud, dígitos y ambos verificadores antes de mostrar una coincidencia.
 - Si hay `cbuNoHabitual`, lo presenta y compara por separado, identificado como
   destino de transferencia de esa solicitud.
-- Al editar el CBU compara el borrador. Si cambia documento o tipo, suspende la
+- Al editar el CBU compara el borrador. Si cambia documento, tipo o CUIT, suspende la
   consulta y pide guardar la identidad antes de consultar al titular actualizado.
 - Permite actualizar la lectura. Mientras consulta, o si falla una actualización,
   retira el resultado anterior para evitar una coincidencia desactualizada.

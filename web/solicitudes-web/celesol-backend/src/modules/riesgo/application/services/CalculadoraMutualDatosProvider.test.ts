@@ -35,8 +35,11 @@ describe("CalculadoraMutualDatosProvider", () => {
           legacyGetDatosCalled = true;
           throw new Error("should not call full legacy snapshot");
         },
-        getHistorialByCuit: async (cuit: string | null, fecha: string | null) => {
-          historialCalledWith = { cuit, fecha };
+        getHistorialDelTitular: async (
+          titular: unknown,
+          fecha: string | null,
+        ) => {
+          historialCalledWith = { titular, fecha };
           return {
             compromisoMensualVigente: 5000,
             rechazosDelMes: 0,
@@ -55,7 +58,11 @@ describe("CalculadoraMutualDatosProvider", () => {
 
     assert.equal(legacyGetDatosCalled, false);
     assert.deepEqual(historialCalledWith, {
-      cuit: "27204091264",
+      titular: {
+        cuit: "27204091264",
+        nroDocumento: "20409126",
+        tipoDocumento: undefined,
+      },
       fecha: "2026-07-01",
     });
     assert.equal(datos.nroSolicitud, "9000001");
@@ -76,7 +83,7 @@ describe("CalculadoraMutualDatosProvider", () => {
             situacionSocio: "Lista Negra",
           } as never;
         },
-        getHistorialByCuit: async () => {
+        getHistorialDelTitular: async () => {
           throw new Error("should not be called on the fallback path");
         },
       } as never,
@@ -98,11 +105,11 @@ describe("CalculadoraMutualDatosProvider", () => {
 
     const provider = new CalculadoraMutualDatosProvider({
       legacyGateway: {
-        getHistorialByCuit: async (
-          cuit: string | null,
+        getHistorialDelTitular: async (
+          titular: unknown,
           fecha: string | null,
         ) => {
-          historialCalledWith = { cuit, fecha };
+          historialCalledWith = { titular, fecha };
           return {
             compromisoMensualVigente: 1000,
             rechazosDelMes: 0,
@@ -124,7 +131,11 @@ describe("CalculadoraMutualDatosProvider", () => {
 
     assert.equal(findByIdCalledWith, "solicitud-uuid-1");
     assert.deepEqual(historialCalledWith, {
-      cuit: "27204091264",
+      titular: {
+        cuit: "27204091264",
+        nroDocumento: "20409126",
+        tipoDocumento: undefined,
+      },
       fecha: "2026-07-01",
     });
     assert.equal(datos.nroSolicitud, "9000001");
@@ -134,7 +145,7 @@ describe("CalculadoraMutualDatosProvider", () => {
   it("getDatosByCoreId throws SolicitudNotFoundError when the id does not exist in the core", async () => {
     const provider = new CalculadoraMutualDatosProvider({
       legacyGateway: {
-        getHistorialByCuit: async () => {
+        getHistorialDelTitular: async () => {
           throw new Error("should not be called");
         },
       } as never,

@@ -30,3 +30,20 @@ it("suspende la comparación al editar la identidad, sin confundir cambios de fo
     true,
   );
 });
+
+it("el CUIT también forma parte de la identidad consultada", () => {
+  const saved = {
+    nroDocumento: "30111222",
+    tipoDocumento: "DNI",
+    cuit: "20-30111222-3",
+  };
+  assert.equal(
+    cbuIdentityChanged(saved, { ...saved, cuit: "20301112223" }),
+    false,
+  );
+  assert.equal(
+    cbuIdentityChanged(saved, { ...saved, cuit: "27301112224" }),
+    true,
+  );
+  assert.equal(cbuIdentityChanged(saved, { ...saved, cuit: null }), true);
+});

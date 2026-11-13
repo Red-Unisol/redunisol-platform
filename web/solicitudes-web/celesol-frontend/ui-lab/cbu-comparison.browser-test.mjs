@@ -128,7 +128,7 @@ try {
     .first()
     .fill("99111124");
   await contains(
-    "Guardá el documento para consultar el CBU habitual del titular actualizado.",
+    "Guardá el documento y el CUIT para consultar el CBU habitual del titular actualizado.",
   );
   await contains("Sin dato confirmado");
   assert.equal(
@@ -138,6 +138,25 @@ try {
   await page.getByRole("button", { name: "Cancelar", exact: true }).click();
   await contains("Coincide con el habitual de Vimarx");
   console.log("PASS draft CBU and changed identity without writes");
+  await page.getByRole("button", { name: "Editar", exact: true }).click();
+  await page
+    .getByLabel(/^CUIT/)
+    .filter({ visible: true })
+    .first()
+    .fill("20301112223");
+  await contains(
+    "Guardá el documento y el CUIT para consultar el CBU habitual del titular actualizado.",
+  );
+  await contains("Sin dato confirmado");
+  assert.equal(
+    await panel.getByRole("button", { name: "Actualizar CBU" }).isDisabled(),
+    true,
+  );
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await contains("Coincide con el habitual de Vimarx");
+  console.log(
+    "PASS changed CUIT suspends the previous bank identity without writes",
+  );
   await mkdir(output, { recursive: true });
   for (const [name, viewport] of [
     ["desktop", { width: 1365, height: 900 }],

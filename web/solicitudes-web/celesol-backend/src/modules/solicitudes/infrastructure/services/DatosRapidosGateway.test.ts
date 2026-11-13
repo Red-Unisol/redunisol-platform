@@ -33,10 +33,10 @@ describe("Consultas legacy de datos rápidos", () => {
       );
     }
   });
-  it("busca hasta dos socios para detectar ambigüedad y escapa tipo documento", async () => {
-    const { gateway, calls } = setup([[[1], [2]]]);
+  it("busca candidatos para detectar ambigüedad y escapa tipo documento", async () => {
+    const { gateway, calls } = setup([[[1, 123, null, "D'NI"], [2, 123, null, "D'NI"]]]);
     assert.equal((await gateway.lookupSocioRapido("123", "D'NI")).length, 2);
-    assert.equal(calls[0].max, 2);
+    assert.equal(calls[0].max, 21);
     assert.match(calls[0].cmd, /D''NI/);
   });
   it("consulta existencia activa sin límite del listado ni filtro de convenio", async () => {
@@ -69,6 +69,16 @@ describe("Consultas legacy de datos rápidos", () => {
     await assert.rejects(() => gateway.getCreditosActivosRapido("1 OR 1=1"));
     assert.equal(calls.length, 0);
   });
+});
+
+it("el listado incluye préstamos posteriores a los primeros 100 y rechaza truncamiento", async () => {
+  const row = (i: number) => [i + 1, 900000 + i, false, "LINEA", "2026-01-01", 100, 100, 100, 0, null, null, 1];
+  const { gateway, calls } = setup([Array.from({ length: 245 }, (_, i) => row(i))]);
+  const loans = await gateway.listPrestamosDelSocio("71");
+  assert.equal(loans.length, 245);
+  assert.equal(loans[244]!.nroCuenta, "900244");
+  assert.equal(calls[0]!.max, 2001);
+  await assert.rejects(setup([Array.from({ length: 2001 }, (_, i) => row(i))]).gateway.listPrestamosDelSocio("71"));
 });
 
 describe("Mora independiente de la vigencia del préstamo", () => {

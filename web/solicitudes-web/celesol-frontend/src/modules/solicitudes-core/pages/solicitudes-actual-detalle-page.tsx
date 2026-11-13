@@ -364,6 +364,7 @@ const PRESTAMOS_TABLE_COLUMNS = [
 type PrestamosDelSocioSectionProps = {
   isActive: boolean;
   solicitudId: string;
+  identityRevision: string;
 };
 
 // Los prestamos que el socio ya tiene con la mutual. Salen de Vimarx en vivo,
@@ -371,10 +372,12 @@ type PrestamosDelSocioSectionProps = {
 function PrestamosDelSocioSection({
   isActive,
   solicitudId,
+  identityRevision,
 }: PrestamosDelSocioSectionProps) {
   const { data, error, isLoading } = usePrestamosDelSocioQuery(
     solicitudId,
     isActive,
+    identityRevision,
   );
   const prestamos = data?.prestamos ?? [];
   const [filtro, setFiltro] = useState<
@@ -3234,14 +3237,17 @@ function SolicitanteSection({
         />
       ) : activeContentTab === "refinanciacion" && canViewPrestamos ? (
         <RefinanciacionSection
+          key={JSON.stringify([titular.nroDocumento, titular.tipoDocumento, titular.cuit])}
           canEdit={canCreateCancelaciones || canManageCancelaciones}
           isActive={activeContentTab === "refinanciacion"}
           solicitudId={solicitudId}
+          identityRevision={JSON.stringify([titular.nroDocumento, titular.tipoDocumento, titular.cuit])}
         />
       ) : activeContentTab === "prestamos" ? (
         <PrestamosDelSocioSection
           isActive={activeContentTab === "prestamos"}
           solicitudId={solicitudId}
+          identityRevision={JSON.stringify([titular.nroDocumento, titular.tipoDocumento, titular.cuit])}
         />
       ) : activeContentTab === "cancelaciones" ? (
         <CancelacionesSection
@@ -3943,6 +3949,7 @@ export function SolicitudesActualDetallePage() {
       JSON.stringify([
         solicitud?.titular.nroDocumento,
         solicitud?.titular.tipoDocumento,
+        solicitud?.titular.cuit,
         solicitud?.lineaPrestamoLegacyOid,
       ]),
       "persona",
@@ -5185,6 +5192,7 @@ export function SolicitudesActualDetallePage() {
                   solicitudId={solicitudId}
                   documento={resolvedSolicitud.titular.nroDocumento}
                   tipoDocumento={resolvedSolicitud.titular.tipoDocumento}
+                  cuit={resolvedSolicitud.titular.cuit}
                   cbuSolicitud={currentValues.titular.cbu}
                   cbuNoHabitual={currentValues.titular.cbuNoHabitual}
                   identityChanged={
@@ -5286,6 +5294,7 @@ export function SolicitudesActualDetallePage() {
                   revision={JSON.stringify([
                     resolvedSolicitud.titular.nroDocumento,
                     resolvedSolicitud.titular.tipoDocumento,
+                    resolvedSolicitud.titular.cuit,
                     resolvedSolicitud.lineaPrestamoLegacyOid,
                   ])}
                   solicitudId={resolvedSolicitud.id}

@@ -15,13 +15,18 @@ export function compareCbu(
   return value === source ? "match" : "different";
 }
 
-type Identity = { nroDocumento: string | null; tipoDocumento: string | null };
+type Identity = {
+  cuit?: string | null;
+  nroDocumento: string | null;
+  tipoDocumento: string | null;
+};
 export function cbuIdentityChanged(saved: Identity, draft: Identity) {
-  const documento = (value: string | null) =>
+  const documento = (value: string | null | undefined) =>
     (value ?? "").replace(/[.\s-]/g, "");
   const tipo = (value: string | null) => (value ?? "").trim().toUpperCase();
   return (
     documento(saved.nroDocumento) !== documento(draft.nroDocumento) ||
-    tipo(saved.tipoDocumento) !== tipo(draft.tipoDocumento)
+    tipo(saved.tipoDocumento) !== tipo(draft.tipoDocumento) ||
+    documento(saved.cuit) !== documento(draft.cuit)
   );
 }

@@ -62,6 +62,7 @@ type RefinanciacionSectionProps = {
   canEdit: boolean;
   isActive: boolean;
   solicitudId: string;
+  identityRevision: string;
 };
 
 // Cuotas de los prestamos del socio que se cancelan con el prestamo nuevo.
@@ -73,8 +74,9 @@ export function RefinanciacionSection({
   canEdit,
   isActive,
   solicitudId,
+  identityRevision,
 }: RefinanciacionSectionProps) {
-  const prestamosQuery = usePrestamosDelSocioQuery(solicitudId, isActive);
+  const prestamosQuery = usePrestamosDelSocioQuery(solicitudId, isActive, identityRevision);
   const guardadaQuery = useSolicitudRefinanciacionQuery(solicitudId, isActive);
   const generarMutation =
     useGenerarComprobanteRefinanciacionMutation(solicitudId);

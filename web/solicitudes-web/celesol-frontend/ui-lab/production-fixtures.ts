@@ -392,7 +392,7 @@ export function productionFixture(
             fieldAccess: {
               defaultMode: "readonly",
               editableFields: options.cbuScenario
-                ? ["solicitud.observaciones", "titular.cbu", "titular.cbuNoHabitual", "titular.nroDocumento"]
+                ? ["solicitud.observaciones", "titular.cbu", "titular.cbuNoHabitual", "titular.nroDocumento", "titular.cuit"]
                 : ["solicitud.observaciones"],
               editableGroups: [],
             },
