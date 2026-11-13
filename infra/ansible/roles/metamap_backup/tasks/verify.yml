@@ -1,0 +1,76 @@
+---
+- name: Require the reviewed separate MetaMap recovery contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Inspect filesystem identity without applying preparation
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Inspect the installed recovery file metadata
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop:
+    - path: "{{ metamap_backup_tool }}"
+      mode: "0755"
+    - path: "{{ metamap_backup_state_dir }}/retention-policy.json"
+      mode: "0600"
+  register: metamap_backup_file_metadata
+
+- name: Require root-owned regular reviewed files
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.mode | default('') == item.item.mode
+  loop: "{{ metamap_backup_file_metadata.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Inspect the installed recovery coordinator and policy
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ metamap_backup_tool }}"
+    - "{{ metamap_backup_state_dir }}/retention-policy.json"
+  register: metamap_backup_installed_files
+
+- name: Require exact reviewed helper and deferred retention policy
+  ansible.builtin.assert:
+    that:
+      - >-
+        metamap_backup_installed_files.results[0].content | b64decode ==
+        lookup('ansible.builtin.file', role_path ~ '/files/metamap-backup.py', rstrip=false)
+      - >-
+        metamap_backup_installed_files.results[1].content | b64decode ==
+        lookup('ansible.builtin.file', role_path ~ '/files/retention-policy.json', rstrip=false)
+
+- name: Verify existing repository and isolated proof without creating locks or restoring again
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ metamap_backup_tool }}"
+      - verify
+      - --revision
+      - "{{ metamap_backup_revision }}"
+      - --mountpoint
+      - "{{ metamap_backup_mountpoint }}"
+      - --mount-uuid
+      - "{{ metamap_backup_mount_uuid }}"
+      - --repository
+      - "{{ metamap_backup_repository }}"
+      - --password-file
+      - "{{ metamap_backup_password_file }}"
+      - --state-dir
+      - "{{ metamap_backup_state_dir }}"
+      - --restore-dir
+      - "{{ metamap_backup_restore_dir }}"
+      - --timeout-seconds
+      - "{{ metamap_backup_timeout_seconds | string }}"
+  register: metamap_backup_verification
+  changed_when: false
+  check_mode: false
+
+- name: Report the limited existing recovery proof
+  ansible.builtin.debug:
+    msg: "{{ metamap_backup_verification.stdout | from_json }}"

@@ -1,0 +1,22 @@
+---
+metamap_origin_enabled: false
+metamap_origin_apply_authorized: false
+metamap_origin_public_listen_authorized: false
+metamap_origin_backend_enabled: false
+metamap_origin_revision: ""
+metamap_origin_hostname: metamap-origin.redunisol.com.ar
+metamap_origin_listen_address: 127.0.0.1
+metamap_origin_listen_port: 18443
+metamap_origin_backend_port: 18083
+metamap_origin_apache_package_version: ""
+metamap_origin_tls_mode: private-ca-test
+# Paths on the controller, never PEM content or values committed to inventory.
+metamap_origin_certificate_file: ""
+metamap_origin_private_key_file: ""
+metamap_origin_ca_file: ""
+metamap_origin_config_dir: /etc/redunisol-metamap-origin
+metamap_origin_document_root: /var/www/redunisol-metamap-origin
+metamap_origin_log_dir: /var/log/metamap-origin
+metamap_origin_runtime_dir: /run/metamap-origin
+metamap_origin_module_dir: /usr/lib/apache2/modules
+metamap_origin_service_unit: metamap-origin.service

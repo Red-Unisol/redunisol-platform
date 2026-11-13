@@ -1,0 +1,310 @@
+---
+- name: Validate the isolated origin contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require origin authorization and immutable inputs before applying
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or not metamap_origin_enabled or metamap_origin_apply_authorized
+      - ansible_check_mode or not metamap_origin_enabled or metamap_origin_revision is match('^[0-9a-f]{40}$')
+      - >-
+        ansible_check_mode or not metamap_origin_enabled or
+        metamap_origin_apache_package_version is match('^[0-9][0-9A-Za-z.+:~_-]+$')
+      - ansible_check_mode or not metamap_origin_enabled or metamap_origin_certificate_file | length > 0
+      - ansible_check_mode or not metamap_origin_enabled or metamap_origin_private_key_file | length > 0
+      - ansible_check_mode or not metamap_origin_enabled or metamap_origin_ca_file | length > 0
+    fail_msg: Active origin preparation needs its own authorization, SHA40, existing Apache version and private TLS file paths.
+
+- name: Explain inactive or contract-only origin preparation
+  ansible.builtin.debug:
+    msg: >-
+      HTTPS origin enabled={{ metamap_origin_enabled }}, bind={{ metamap_origin_listen_address }}:{{ metamap_origin_listen_port }},
+      trust={{ metamap_origin_tls_mode }}. Application backend remains forbidden.
+      No TLS issuance, package installation, DNS or production routing is performed by this role.
+      Check mode validates contracts only and does not install files, read private TLS sources or start services.
+  when: ansible_check_mode or not metamap_origin_enabled
+
+- name: Prepare only the separately enabled origin outside check mode
+  when:
+    - metamap_origin_enabled
+    - not ansible_check_mode
+  block:
+    - name: Read the existing Apache package version without installing anything
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Require the reviewed already installed Apache package
+      ansible.builtin.assert:
+        that:
+          - "'apache2' in ansible_facts.packages"
+          - ansible_facts.packages['apache2'][0].version == metamap_origin_apache_package_version
+        fail_msg: Origin preparation does not install or upgrade Apache; review the existing package first.
+
+    - name: Inspect the modules needed by the independent Apache configuration
+      ansible.builtin.stat:
+        path: "{{ metamap_origin_module_dir }}/mod_{{ item }}.so"
+      loop: [mpm_event, authz_core, alias, headers, socache_shmcb, ssl, proxy, proxy_http]
+      register: metamap_origin_modules
+
+    - name: Require every isolated origin module
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false)
+      loop: "{{ metamap_origin_modules.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read the independent origin main process without changing any service
+      ansible.builtin.command:
+        argv: [systemctl, show, "{{ metamap_origin_service_unit }}", --property=MainPID, --value]
+      register: metamap_origin_previous_pid
+      changed_when: false
+      failed_when: false
+
+    - name: Read existing listeners on the proposed origin port
+      ansible.builtin.command:
+        argv: [ss, -H, -ltnp, "sport = :{{ metamap_origin_listen_port }}"]
+      register: metamap_origin_previous_listeners
+      changed_when: false
+
+    - name: Refuse to replace another service on the proposed origin port
+      ansible.builtin.assert:
+        that:
+          - >-
+            metamap_origin_previous_listeners.stdout | trim == '' or
+            (metamap_origin_previous_pid.stdout | trim is match('^[1-9][0-9]*$') and
+             ('pid=' ~ (metamap_origin_previous_pid.stdout | trim) ~ ',') in metamap_origin_previous_listeners.stdout)
+        fail_msg: Another process occupies the origin port; this role does not stop or replace it.
+
+    - name: Inspect independent origin paths before writing private material
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /etc
+        - /var
+        - /var/log
+        - /var/www
+        - "{{ metamap_origin_config_dir }}"
+        - "{{ metamap_origin_config_dir }}/tls"
+        - "{{ metamap_origin_document_root }}"
+        - "{{ metamap_origin_log_dir }}"
+        - "{{ metamap_origin_runtime_dir }}"
+      register: metamap_origin_paths
+
+    - name: Refuse symlinked or untrusted origin directories
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or (item.stat.isdir and not item.stat.islnk and item.stat.uid == 0)
+          - not item.stat.exists or item.stat.mode is match('^0[0-7][0145][0145]$')
+      loop: "{{ metamap_origin_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Create only independent origin directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "{{ metamap_origin_config_dir }}", mode: "0750"}
+        - {path: "{{ metamap_origin_config_dir }}/tls", mode: "0700"}
+        - {path: "{{ metamap_origin_document_root }}", mode: "0755"}
+        - {path: "{{ metamap_origin_log_dir }}", mode: "0750"}
+        - {path: "{{ metamap_origin_runtime_dir }}", mode: "0755"}
+
+    - name: Validate TLS privately before installing the certificate pair
+      block:
+        - name: Create a private transient TLS validation directory
+          ansible.builtin.tempfile:
+            state: directory
+            path: "{{ metamap_origin_runtime_dir }}"
+            prefix: .tls-validation-
+          register: metamap_origin_tls_stage
+          changed_when: false
+          no_log: true
+
+        - name: Stage operator-provided TLS files without displaying their content
+          ansible.builtin.copy:
+            src: "{{ item.source }}"
+            dest: "{{ metamap_origin_tls_stage.path }}/{{ item.name }}"
+            owner: root
+            group: root
+            mode: "0600"
+          loop:
+            - {source: "{{ metamap_origin_certificate_file }}", name: certificate.pem}
+            - {source: "{{ metamap_origin_private_key_file }}", name: private-key.pem}
+            - {source: "{{ metamap_origin_ca_file }}", name: ca.pem}
+          changed_when: false
+          no_log: true
+          diff: false
+
+        - name: Validate certificate chain purpose and exact origin hostname
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/openssl
+              - verify
+              - -CAfile
+              - "{{ metamap_origin_tls_stage.path }}/ca.pem"
+              - -untrusted
+              - "{{ metamap_origin_tls_stage.path }}/certificate.pem"
+              - -verify_hostname
+              - "{{ metamap_origin_hostname }}"
+              - -purpose
+              - sslserver
+              - "{{ metamap_origin_tls_stage.path }}/certificate.pem"
+          changed_when: false
+          no_log: true
+
+        - name: Require a certificate valid beyond this operation
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/openssl
+              - x509
+              - -in
+              - "{{ metamap_origin_tls_stage.path }}/certificate.pem"
+              - -checkend
+              - "300"
+              - -noout
+          changed_when: false
+          no_log: true
+
+        - name: Read the certificate public key without logging TLS material
+          ansible.builtin.command:
+            argv: [/usr/bin/openssl, x509, -in, "{{ metamap_origin_tls_stage.path }}/certificate.pem", -pubkey, -noout]
+          register: metamap_origin_certificate_public_key
+          changed_when: false
+          no_log: true
+
+        - name: Read the corresponding key public component without logging private material
+          ansible.builtin.command:
+            argv: [/usr/bin/openssl, pkey, -in, "{{ metamap_origin_tls_stage.path }}/private-key.pem", -passin, "pass:", -pubout]
+          register: metamap_origin_key_public_component
+          changed_when: false
+          no_log: true
+
+        - name: Require the TLS certificate and private key to match
+          ansible.builtin.assert:
+            that:
+              - metamap_origin_certificate_public_key.stdout == metamap_origin_key_public_component.stdout
+          no_log: true
+
+        - name: Install only the validated TLS files with private key permissions
+          ansible.builtin.copy:
+            src: "{{ metamap_origin_tls_stage.path }}/{{ item.name }}"
+            dest: "{{ metamap_origin_config_dir }}/tls/{{ item.name }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+          loop:
+            - {name: certificate.pem, mode: "0644"}
+            - {name: private-key.pem, mode: "0600"}
+            - {name: ca.pem, mode: "0644"}
+          register: metamap_origin_tls_installation
+          no_log: true
+          diff: false
+      always:
+        - name: Remove transient TLS validation material
+          ansible.builtin.file:
+            path: "{{ metamap_origin_tls_stage.path }}"
+            state: absent
+          changed_when: false
+          no_log: true
+          when:
+            - metamap_origin_tls_stage is defined
+            - metamap_origin_tls_stage.path is defined
+
+    - name: Derive the expected public runtime configuration marker
+      ansible.builtin.import_tasks: fingerprint.yml
+
+    - name: Inspect the existing foundation textfile collector directory
+      ansible.builtin.stat:
+        path: /var/lib/prometheus/node-exporter
+        follow: false
+      register: metamap_origin_metrics_parent
+
+    - name: Require the existing root-owned metrics directory
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_metrics_parent.stat.isdir | default(false)
+          - not metamap_origin_metrics_parent.stat.islnk | default(false)
+          - metamap_origin_metrics_parent.stat.uid == 0
+          - metamap_origin_metrics_parent.stat.mode == '0755'
+
+    - name: Inspect the origin metric file before publishing static TLS metadata
+      ansible.builtin.stat:
+        path: /var/lib/prometheus/node-exporter/metamap-origin.prom
+        follow: false
+      register: metamap_origin_metrics_existing
+
+    - name: Reject a nonregular or symlinked origin metric file
+      ansible.builtin.assert:
+        that:
+          - >-
+            not metamap_origin_metrics_existing.stat.exists or
+            (metamap_origin_metrics_existing.stat.isreg and not metamap_origin_metrics_existing.stat.islnk and
+             metamap_origin_metrics_existing.stat.uid == 0)
+
+    - name: Publish only static public certificate expiry and preparation metadata
+      ansible.builtin.template:
+        src: origin.prom.j2
+        dest: /var/lib/prometheus/node-exporter/metamap-origin.prom
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install transport-only origin health metadata
+      ansible.builtin.template:
+        src: health.json.j2
+        dest: "{{ metamap_origin_document_root }}/health.json"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install and validate only the independent Apache origin configuration
+      ansible.builtin.template:
+        src: apache.conf.j2
+        dest: "{{ metamap_origin_config_dir }}/apache.conf"
+        owner: root
+        group: root
+        mode: "0640"
+        validate: /usr/sbin/apache2 -t -f %s
+      register: metamap_origin_configuration
+
+    - name: Install the isolated origin unit without touching the foundation service
+      ansible.builtin.template:
+        src: metamap-origin.service.j2
+        dest: "/etc/systemd/system/{{ metamap_origin_service_unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: metamap_origin_unit
+
+    - name: Install bounded rotation only for the isolated origin logs
+      ansible.builtin.template:
+        src: logrotate.j2
+        dest: /etc/logrotate.d/redunisol-metamap-origin
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Inspect the loaded origin before deciding whether to restart its own unit
+      ansible.builtin.import_tasks: probe.yml
+
+    - name: Reconcile only the dedicated HTTPS origin using the loaded configuration marker
+      ansible.builtin.systemd_service:
+        name: "{{ metamap_origin_service_unit }}"
+        enabled: true
+        daemon_reload: "{{ metamap_origin_unit.changed }}"
+        state: >-
+          {{ 'restarted' if metamap_origin_configuration.changed or metamap_origin_unit.changed or
+             metamap_origin_tls_installation.changed or metamap_origin_loaded_probe.rc != 0 or
+             (metamap_origin_loaded_probe.stdout_lines | last | default('')) != '200' or
+             ('x-redunisol-origin-config: ' ~ metamap_origin_configuration_sha256)
+             not in (metamap_origin_loaded_probe.stdout | lower) else 'started' }}
+
+    - name: Verify the independent HTTPS origin and blocked application route
+      ansible.builtin.import_tasks: verify.yml

@@ -1,0 +1,9 @@
+# HELP metamap_origin_tls_not_after_timestamp_seconds Static certificate expiry; evaluate against the scraper clock.
+# TYPE metamap_origin_tls_not_after_timestamp_seconds gauge
+metamap_origin_tls_not_after_timestamp_seconds {{ metamap_origin_certificate_not_after | int }}
+# HELP metamap_origin_backend_enabled Desired backend configuration, not a live application health measurement.
+# TYPE metamap_origin_backend_enabled gauge
+metamap_origin_backend_enabled 0
+# HELP metamap_origin_preparation_info Reviewed static origin configuration and public certificate identity.
+# TYPE metamap_origin_preparation_info gauge
+metamap_origin_preparation_info{revision="{{ metamap_origin_revision }}",source="{{ metamap_origin_tls_mode }}",certificate_sha256="{{ metamap_origin_certificate_fingerprint_sha256 }}"} 1

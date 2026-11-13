@@ -1,0 +1,28 @@
+---
+metamap_prepare_authorized: false
+metamap_backup_authorized: false
+metamap_restore_authorized: false
+metamap_writers_stopped_confirmed: false
+metamap_revision: ""
+metamap_running: false
+metamap_image: ""
+metamap_prefetch_image: false
+metamap_registry_auth_file: ""
+metamap_stage_runtime_env: false
+metamap_runtime_env_source_file: ""
+metamap_pending_runtime_env_path: /etc/redunisol-metamap/runtime.env.pending
+metamap_compose_project: metamap-server
+metamap_platform_dir: /srv/redunisol/platform/metamap-server
+metamap_state_dir: /srv/redunisol/state/metamap-server
+metamap_data_dir: "{{ metamap_state_dir }}/data"
+metamap_updates_dir: "{{ metamap_state_dir }}/updates"
+metamap_source_container: ""
+metamap_source_image_id: ""
+metamap_source_data_dir: ""
+metamap_source_updates_dir: ""
+metamap_source_expected_hostname: ""
+metamap_source_expected_machine_id: ""
+metamap_backup_bundle_dir: ""
+metamap_restore_bundle_dir: ""
+metamap_bundle_manifest_sha256: ""
+metamap_restore_directory: ""

@@ -1,0 +1,99 @@
+---
+- name: Inspect every existing container in the proposed MetaMap project
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --host
+      - unix:///var/run/docker.sock
+      - container
+      - ls
+      - --all
+      - --filter
+      - "label=com.docker.compose.project={{ metamap_compose_project }}"
+      - --quiet
+  register: metamap_existing_containers
+  changed_when: false
+  check_mode: false
+
+- name: Refuse preparation over any existing MetaMap container including stopped ones
+  ansible.builtin.assert:
+    that:
+      - metamap_existing_containers.stdout | trim == ''
+    fail_msg: This preparation cannot replace or manage an existing project; activation needs its own reviewed operation.
+
+- name: Inspect the reserved private MetaMap port without opening it
+  ansible.builtin.command:
+    argv: [ss, -H, -ltn, "sport = :18083"]
+  register: metamap_reserved_listener
+  changed_when: false
+  check_mode: false
+
+- name: Require no active API on the preparation port
+  ansible.builtin.assert:
+    that:
+      - metamap_reserved_listener.stdout | trim == ''
+    fail_msg: Port 18083 is occupied; preparation does not stop services or change listeners.
+
+- name: Inspect canonical preparation paths and their ancestors
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /srv
+    - /srv/redunisol
+    - /srv/redunisol/platform
+    - /srv/redunisol/state
+    - "{{ metamap_platform_dir }}"
+    - "{{ metamap_state_dir }}"
+    - "{{ metamap_data_dir }}"
+    - "{{ metamap_updates_dir }}"
+    - "{{ metamap_state_dir }}/restores"
+  register: metamap_path_inspections
+
+- name: Reject unsafe existing preparation directories
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk and item.stat.uid == 0)
+      - not item.stat.exists or item.stat.mode is match('^0[0-7][0145][0145]$')
+    fail_msg: Preparation paths must be root-owned canonical directories without group or world write access.
+  loop: "{{ metamap_path_inspections.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect existing runtime directories without changing their contents
+  ansible.builtin.find:
+    paths: "{{ item.item }}"
+    file_type: any
+    recurse: false
+    hidden: true
+    follow: false
+  loop: >-
+    {{ metamap_path_inspections.results |
+       selectattr('item', 'in', [metamap_data_dir, metamap_updates_dir]) | list }}
+  when: item.stat.exists
+  register: metamap_existing_state
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Refuse to prepare over existing application or update data
+  ansible.builtin.assert:
+    that:
+      - item.matched == 0
+      - item.skipped_paths | default({}) | length == 0
+    fail_msg: Runtime data already exists; preparation cannot adopt or change a previous operational copy.
+  loop: "{{ metamap_existing_state.results }}"
+  when: not item.skipped | default(false)
+  loop_control:
+    label: "{{ item.item.item }}"
+
+- name: Inspect the future private runtime environment without reading it
+  ansible.builtin.stat:
+    path: "{{ metamap_platform_dir }}/runtime.env"
+    follow: false
+  register: metamap_runtime_environment
+
+- name: Refuse to prepare over operational credentials
+  ansible.builtin.assert:
+    that:
+      - not metamap_runtime_environment.stat.exists
+    fail_msg: runtime.env already exists; this preparation neither installs credentials nor overwrites operational state.

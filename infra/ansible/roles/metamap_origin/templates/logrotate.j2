@@ -1,0 +1,15 @@
+{{ metamap_origin_log_dir }}/*.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 root root
+    sharedscripts
+    postrotate
+        if /usr/bin/systemctl --quiet is-active {{ metamap_origin_service_unit }}; then
+            /usr/bin/systemctl reload {{ metamap_origin_service_unit }}
+        fi
+    endscript
+}

@@ -1,0 +1,17 @@
+---
+- name: Verify the inactive MetaMap preparation using read-only inspections
+  hosts: metamap_server_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify preparation files without modifying any container or image
+      ansible.builtin.import_role:
+        name: metamap_server
+        tasks_from: verify
+      tags: [metamap]

@@ -1,0 +1,12 @@
+---
+- name: Prepare a separate fail-closed HTTPS origin without application cutover
+  hosts: metamap_origin_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: metamap_origin
+      tags: [metamap_origin]

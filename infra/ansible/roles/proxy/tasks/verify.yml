@@ -46,10 +46,31 @@
   changed_when: false
   check_mode: false
 
+- name: Read only the foundation Apache service main process identity
+  ansible.builtin.command:
+    argv: [systemctl, show, apache2.service, --property=MainPID, --value]
+  register: foundation_proxy_main_pid
+  changed_when: false
+  check_mode: false
+
+- name: Require a live foundation Apache main process
+  ansible.builtin.assert:
+    that:
+      - foundation_proxy_main_pid.stdout | trim is match('^[1-9][0-9]*$')
+    fail_msg: Foundation Apache has no positive MainPID; another origin process cannot stand in for it.
+
+- name: Select sockets owned by the foundation Apache main process
+  ansible.builtin.set_fact:
+    foundation_proxy_owned_sockets: >-
+      {{ foundation_proxy_sockets.stdout_lines | select('search', 'apache2') |
+         select('search', 'pid=' ~ (foundation_proxy_main_pid.stdout | trim) ~ ',') | list }}
+
 - name: Verify Apache is actually listening only on the private address
   ansible.builtin.assert:
     that:
-      - foundation_proxy_sockets.stdout_lines | select('search', 'apache2') | list | length > 0
-      - >-
-        foundation_proxy_sockets.stdout_lines | select('search', 'apache2') |
-        reject('search', '127[.]0[.]0[.]1:8088') | list | length == 0
+      - foundation_proxy_owned_sockets | length > 0
+      - foundation_proxy_owned_addresses | length == foundation_proxy_owned_sockets | length
+      - foundation_proxy_owned_addresses | unique | list == ['127.0.0.1:8088']
+  vars:
+    foundation_proxy_owned_addresses: >-
+      {{ foundation_proxy_owned_sockets | map('split', none) | map(attribute=3) | list }}

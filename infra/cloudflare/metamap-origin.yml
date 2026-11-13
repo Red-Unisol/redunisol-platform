@@ -1,0 +1,27 @@
+---
+# Desired bootstrap resources only. No production Worker/Origin Rule is enabled.
+schema_version: 1
+apply_status: applied_and_verified
+zone: redunisol.com.ar
+dns_record:
+  type: A
+  name: metamap-origin.redunisol.com.ar
+  content: 168.197.51.104
+  proxied: true
+  ttl: auto
+origin_tls:
+  authority: cloudflare-origin-ca
+  hostnames:
+    - metamap-origin.redunisol.com.ar
+  certificate_sha256: ede4ed4be287451778cbfbc190b2ac60a974dcd6f3910606c8a8586d0503e8f7
+  expires_at: "2027-11-13T15:59:00Z"
+  key_custody: operator-private-files-and-dedicated-root-only
+application_backend_enabled: false
+production_routes_changed: false
+configuration_rule:
+  id: 0efd598abedc4c1ebd963f528c0479c7
+  name: MetaMap origin - strict TLS
+  expression: '(http.host eq "metamap-origin.redunisol.com.ar")'
+  ssl: strict
+  enabled: true
+global_ssl_mode_changed: false

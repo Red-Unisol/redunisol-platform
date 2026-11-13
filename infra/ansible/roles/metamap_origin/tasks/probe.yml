@@ -1,0 +1,27 @@
+---
+- name: Define verified origin HTTPS arguments without DNS or redirects
+  ansible.builtin.set_fact:
+    metamap_origin_https_base_arguments:
+      - /usr/bin/curl
+      - --silent
+      - --show-error
+      - --max-time
+      - "5"
+      - --noproxy
+      - "*"
+      - --cacert
+      - "{{ metamap_origin_config_dir }}/tls/ca.pem"
+      - --resolve
+      - >-
+        {{ metamap_origin_hostname }}:{{ metamap_origin_listen_port }}:{{
+        '127.0.0.1' if metamap_origin_listen_address == '0.0.0.0' else metamap_origin_listen_address }}
+
+- name: Read the loaded HTTPS origin marker with verified TLS and SNI without DNS or redirects
+  ansible.builtin.command:
+    argv: >-
+      {{ metamap_origin_https_base_arguments + ['--head', '--write-out', '\n%{http_code}\n',
+         'https://' ~ metamap_origin_hostname ~ ':' ~ metamap_origin_listen_port ~ '/health'] }}
+  register: metamap_origin_loaded_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
