@@ -5,6 +5,8 @@
       - metamap_running | type_debug == 'bool'
       - not metamap_running
       - metamap_prefetch_image | type_debug == 'bool'
+      - metamap_registry_auth_file is string
+      - metamap_registry_auth_file == '' or metamap_registry_auth_file is match('^/')
       - metamap_prepare_authorized | type_debug == 'bool'
       - metamap_stage_runtime_env | type_debug == 'bool'
       - metamap_pending_runtime_env_path == '/etc/redunisol-metamap/runtime.env.pending'

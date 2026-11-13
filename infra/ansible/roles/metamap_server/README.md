@@ -14,8 +14,26 @@ mode accepts an empty digest, reports it as pending and performs contracts only.
 Verification requires the concrete revision and digest used to prepare.
 
 `metamap_prefetch_image` is a separate opt-in, false by default. The role inspects
-before pulling from GHCR, using the target Docker client's existing credentials;
-it does not log in or obtain images from the VPS. Verify never pulls images.
+before pulling from GHCR. With the default empty `metamap_registry_auth_file`, it
+uses the target Docker client's existing authentication. Verify never pulls.
+
+An optional `metamap_registry_auth_file` points to a private absolute controller
+path containing only `{"auths":{"ghcr.io":{"auth":"<base64 user:token>"}}}`.
+The role reads it only when prefetch is enabled and the reviewed image is absent.
+It rejects unrelated registries, helper stores, extra fields and invalid basic
+auth. No new credential is created and registry permissions are not broadened.
+The caller must supply an existing credential authorized to pull that package.
+
+For that pull, the role creates an independent `0700` directory under `/run`,
+copies the validated configuration as `0600` with `no_log`/diff disabled, and runs
+only the digest-pinned image pull with explicit `docker --config` and the local
+daemon socket. It does not log in, invoke a credential helper or alter
+`/root/.docker`. The temporary directory is removed in `always`, including when
+validation/copy/pull fails; the transient fact is cleared and is not cached.
+An existing local image causes no credential read or copy. Secrets and their
+controller path are absent from `preparation.json`. Secret values never enter
+command arguments, tracked templates or Git. Image inspection and verify need
+no registry credentials.
 
 Optional private staging copies the existing operator-reviewed environment to
 `/etc/redunisol-metamap/runtime.env.pending` with mode `0600`, outside the project.

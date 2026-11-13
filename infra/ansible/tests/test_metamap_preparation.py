@@ -1,10 +1,12 @@
 """Exercise the original preparation contracts locally without SSH or Docker."""
 import copy
+import base64
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -45,6 +47,7 @@ class PreparationWiringTests(unittest.TestCase):
     def test_defaults_have_no_image_activation_or_write_approval(self):
         defaults = read_yaml("roles/metamap_server/defaults/main.yml")
         self.assertEqual(defaults["metamap_image"], "")
+        self.assertEqual(defaults["metamap_registry_auth_file"], "")
         for flag in ("running", "prepare_authorized", "backup_authorized", "restore_authorized",
                      "prefetch_image", "writers_stopped_confirmed", "stage_runtime_env"):
             self.assertIs(defaults["metamap_" + flag], False)
@@ -83,6 +86,7 @@ class PreparationWiringTests(unittest.TestCase):
         self.assertFalse(record["production_data_transferred"])
         self.assertFalse(record["runtime_settings_staged"])
         self.assertFalse(record["runtime_settings_loaded"])
+        self.assertNotIn("registry_auth", json.dumps(record))
 
     def test_private_staging_cannot_supply_the_compose_runtime_environment(self):
         values = variables()
@@ -243,6 +247,111 @@ class ExecutablePreparationTests(unittest.TestCase):
         guard = task("roles/metamap_server/tasks/backup.yml",
                      "Require an independently authorized cold capture of a concrete reviewed source")
         self.assert_rejected(dict(metamap_prepare_authorized=True), tasks=[guard])
+
+
+@unittest.skipUnless(os.name == "posix" and shutil.which("ansible-playbook"), "Linux Ansible controller required")
+class TransientRegistryAuthenticationTests(unittest.TestCase):
+    AUTH = base64.b64encode(b"synthetic-user:synthetic-registry-secret").decode()
+
+    def exercise(self, *, auth=True, config=None, missing=False, present=False, prefetch=True, fail=False):
+        with tempfile.TemporaryDirectory(prefix="metamap-registry-fixture-") as directory:
+            root = Path(directory)
+            staging_parent = root / "temporary-configs"
+            staging_parent.mkdir(mode=0o700)
+            values = variables()
+            values.update(metamap_prefetch_image=prefetch, metamap_image_inspection={"rc": 0 if present else 1},
+                          metamap_registry_auth_file=str(root / "registry.json") if auth else "")
+            if auth and not missing:
+                source = root / "registry.json"
+                source.write_text(json.dumps(config if config is not None else {"auths": {"ghcr.io": {"auth": self.AUTH}}}))
+                source.chmod(0o600)
+            tasks = read_yaml("roles/metamap_server/tasks/prefetch.yml")
+            credential_block = next(item for item in tasks if "block" in item)
+            create = next(item for item in credential_block["block"] if "ansible.builtin.tempfile" in item)
+            self.assertEqual(create["ansible.builtin.tempfile"]["path"], "/run")
+            create["ansible.builtin.tempfile"]["path"] = str(staging_parent)
+            prefetch_tasks = root / "prefetch.yml"
+            prefetch_tasks.write_text(yaml.safe_dump(tasks, sort_keys=False))
+            include = next(item for item in read_yaml("roles/metamap_server/tasks/main.yml")
+                           if "block" in item)["block"]
+            include = copy.deepcopy(next(item for item in include
+                                         if item["name"] == "Prefetch only the reviewed immutable image directly from GHCR"))
+            include["ansible.builtin.import_tasks"] = str(prefetch_tasks)
+            binaries = root / "bin"
+            binaries.mkdir()
+            stub = binaries / "docker"
+            log = root / "docker.json"
+            stub.write_text(
+                "#!" + sys.executable + "\n"
+                "import json,os,pathlib,stat,sys\n"
+                "args=sys.argv[1:];record={'argv':args}\n"
+                "if '--config' in args:\n"
+                " directory=pathlib.Path(args[args.index('--config')+1]);p=directory/'config.json'\n"
+                " record['directory_mode']=format(stat.S_IMODE(directory.stat().st_mode),'04o')\n"
+                " record['file_mode']=format(stat.S_IMODE(p.stat().st_mode),'04o')\n"
+                " record['exact_auth']=json.loads(p.read_text())=={'auths':{'ghcr.io':{'auth':"
+                + repr(self.AUTH) + "}}}\n"
+                "pathlib.Path(" + repr(str(log)) + ").write_text(json.dumps(record))\n"
+                "sys.exit(" + ("71" if fail else "0") + ")\n",
+                encoding="utf-8")
+            stub.chmod(0o700)
+            playbook = root / "exercise.yml"
+            playbook.write_text(yaml.safe_dump([dict(hosts="localhost", connection="local", become=False,
+                                                     gather_facts=False, vars=values, tasks=[include])], sort_keys=False))
+            environment = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / "ansible.cfg"),
+                               ANSIBLE_LOCAL_TEMP=str(root / "ansible-tmp"), ANSIBLE_NOCOLOR="1")
+            environment["PATH"] = str(binaries) + os.pathsep + os.environ["PATH"]
+            result = subprocess.run(["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+                                    capture_output=True, text=True, env=environment, timeout=45, check=False)
+            output = result.stdout + result.stderr
+            self.assertNotIn(self.AUTH, output)
+            self.assertNotIn("synthetic-registry-secret", output)
+            self.assertEqual(list(staging_parent.iterdir()), [], output)
+            record = json.loads(log.read_text()) if log.exists() else None
+            return result.returncode, output, record
+
+    def test_transient_auth_has_private_modes_exact_digest_and_cleanup(self):
+        code, output, record = self.exercise()
+        self.assertEqual(code, 0, output)
+        self.assertEqual(record["directory_mode"], "0700")
+        self.assertEqual(record["file_mode"], "0600")
+        self.assertTrue(record["exact_auth"])
+        self.assertEqual(record["argv"][-3:], ["image", "pull", IMAGE])
+        self.assertEqual(record["argv"][2:4], ["--host", "unix:///var/run/docker.sock"])
+        self.assertNotIn(self.AUTH, json.dumps(record["argv"]))
+        self.assertNotIn("synthetic-registry-secret", json.dumps(record["argv"]))
+
+    def test_failed_pull_still_removes_the_only_temporary_config(self):
+        code, unused, record = self.exercise(fail=True)
+        self.assertNotEqual(code, 0)
+        self.assertTrue(record["exact_auth"])
+
+    def test_present_image_or_disabled_prefetch_never_reads_a_missing_credential_file(self):
+        for overrides in ({"present": True}, {"prefetch": False}):
+            with self.subTest(overrides=overrides):
+                code, output, record = self.exercise(missing=True, **overrides)
+                self.assertEqual(code, 0, output)
+                self.assertIsNone(record)
+                self.assertIn("changed=0", output)
+
+    def test_empty_auth_path_preserves_existing_target_authentication(self):
+        code, output, record = self.exercise(auth=False)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("--config", record["argv"])
+        self.assertEqual(record["argv"], ["--host", "unix:///var/run/docker.sock", "image", "pull", IMAGE])
+
+    def test_other_registries_helpers_and_invalid_basic_auth_fail_before_copy_or_pull(self):
+        cases = [
+            {"auths": {"ghcr.io": {"auth": self.AUTH}}, "credsStore": "synthetic-helper"},
+            {"auths": {"example.test": {"auth": self.AUTH}}},
+            {"auths": {"ghcr.io": {"auth": base64.b64encode(b"no-colon").decode()}}},
+            {"auths": {"ghcr.io": {"auth": base64.b64encode(b"user:token\n").decode()}}},
+        ]
+        for value in cases:
+            with self.subTest(shape=list(value)):
+                code, unused, record = self.exercise(config=value)
+                self.assertNotEqual(code, 0)
+                self.assertIsNone(record)
 
 
 if __name__ == "__main__":

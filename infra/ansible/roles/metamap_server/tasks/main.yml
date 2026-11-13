@@ -64,9 +64,7 @@
       when: metamap_prefetch_image
 
     - name: Prefetch only the reviewed immutable image directly from GHCR
-      ansible.builtin.command:
-        argv: [docker, --host, "unix:///var/run/docker.sock", image, pull, "{{ metamap_image }}"]
-      changed_when: true
+      ansible.builtin.import_tasks: prefetch.yml
       when:
         - metamap_prefetch_image
         - metamap_image_inspection.rc != 0
