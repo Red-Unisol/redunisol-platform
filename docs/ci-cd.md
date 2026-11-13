@@ -124,6 +124,26 @@ server `0.7.0`, commit `1e47df0`, y se verificaron el healthcheck publico y la p
 autenticada del endpoint de trazabilidad. Para conocer el estado actual, volver a consultar
 el runtime.
 
+### Preparacion de MetaMap en el dedicado
+
+La [preparacion de migracion](metamap-dedicated-migration.md) vive en
+`infra/ansible/roles/metamap_server` y sus playbooks por servicio. Se valida con
+`Validate Ansible foundation` y las pruebas existentes de `Validate MetaMap
+Server`. Estos workflows de validacion no conectan con los hosts operativos.
+
+El inventario del destino mantiene la imagen sin asignar hasta relevar el
+digest efectivo y conserva todas las autorizaciones desactivadas. Preparar
+archivos o precargar una imagen no arranca la aplicacion. Capturar el estado y
+restaurarlo en un destino aislado son operaciones distintas, con autorizaciones
+propias. La activacion y el cambio de trafico requieren el corte posterior.
+
+El deploy operativo anterior y el publicador de actualizaciones conservan sus
+destinos. Este trabajo no cambia el cliente, su URL ni su protocolo firmado;
+su actualizacion queda para despues de la migracion. El corte del servidor debe
+coordinar el proxy y el destino del publicador, y mantener los bytes de las
+versiones ya firmadas. Servir a traves de la VPS conserva su consumo de ancho de
+banda: la preparacion no acredita haberlo reducido.
+
 ### `deploy-zipline-dev.yml`
 
 Despliega `platform/zipline/` en `/opt/zipline-dev`.

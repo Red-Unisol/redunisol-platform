@@ -1,0 +1,17 @@
+---
+- name: Require preparation-only MetaMap settings
+  ansible.builtin.assert:
+    that:
+      - metamap_running | type_debug == 'bool'
+      - not metamap_running
+      - metamap_prefetch_image | type_debug == 'bool'
+      - metamap_prepare_authorized | type_debug == 'bool'
+      - metamap_compose_project == 'metamap-server'
+      - metamap_platform_dir == '/srv/redunisol/platform/metamap-server'
+      - metamap_state_dir == '/srv/redunisol/state/metamap-server'
+      - metamap_data_dir == metamap_state_dir ~ '/data'
+      - metamap_updates_dir == metamap_state_dir ~ '/updates'
+      - >-
+        metamap_image == '' or
+        metamap_image is match('^ghcr\.io/red-unisol/metamap-platform-server@sha256:[0-9a-f]{64}$')
+    fail_msg: MetaMap preparation never activates a service; fixed private paths and a reviewed image digest are required.

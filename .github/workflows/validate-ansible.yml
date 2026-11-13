@@ -5,6 +5,7 @@ name: Validate Ansible foundation
     paths:
       - infra/ansible/**
       - docs/dedicated-foundation.md
+      - docs/metamap-dedicated-migration.md
       - docs/README.md
       - .github/workflows/validate-ansible.yml
   push:
@@ -12,6 +13,7 @@ name: Validate Ansible foundation
     paths:
       - infra/ansible/**
       - docs/dedicated-foundation.md
+      - docs/metamap-dedicated-migration.md
       - docs/README.md
       - .github/workflows/validate-ansible.yml
   workflow_dispatch:

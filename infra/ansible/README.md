@@ -371,3 +371,19 @@ perdida del host. No se inventan endpoints ni credenciales para cerrar pendiente
 Esta base no contiene restauraciones genericas de bases de aplicaciones. Cada
 servicio tendra despues su procedimiento de consistencia y recuperacion.
 Ver [las puertas de salida de la etapa](../../docs/dedicated-foundation.md).
+
+## Preparacion de MetaMap por servicio
+
+El rol `metamap_server` y los playbooks `metamap-server-*.yml` preparan un
+destino inactivo, verifican su preparacion y separan la captura fria del estado
+de su restauracion aislada. No forman parte de `provision.yml`: preparar
+MetaMap no vuelve a provisionar la base ni activa la aplicacion.
+
+El grupo `metamap_server_hosts` selecciona solamente el dedicado; el grupo
+`metamap_migration_origins` queda vacio hasta el inventario de origen revisado.
+La imagen por digest y las autorizaciones deben declararse expresamente antes
+de cualquier escritura. El inventario de integracion no contiene hosts.
+
+Consultar el [contrato y procedimiento de migracion](../../docs/metamap-dedicated-migration.md)
+y el [rol](roles/metamap_server/README.md). La ruta operativa actual y los
+clientes se conservan durante esta preparacion.

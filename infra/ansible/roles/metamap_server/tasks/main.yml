@@ -1,0 +1,70 @@
+---
+- name: Validate the preparation contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require a separate prepare authorization and immutable inputs outside check mode
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or metamap_prepare_authorized
+      - ansible_check_mode or metamap_revision is match('^[0-9a-f]{40}$')
+      - ansible_check_mode or metamap_image | length > 0
+    fail_msg: Prepare requires metamap_prepare_authorized=true, a reviewed Git SHA40 and an exact GHCR digest.
+
+- name: Explain the contract-only preparation plan
+  ansible.builtin.debug:
+    msg:
+      image: "{{ metamap_image if metamap_image | length > 0 else 'PENDING: reviewed image digest' }}"
+      prefetch_requested: "{{ metamap_prefetch_image }}"
+      activation: forbidden
+      check_mode_scope: Contracts only; no Docker calls, downloads, file creation or application health is simulated.
+  when: ansible_check_mode
+
+- name: Prepare only outside check mode without changing container state
+  when: not ansible_check_mode
+  block:
+    - name: Inspect the target before preparing any files
+      ansible.builtin.import_tasks: target-guard.yml
+
+    - name: Create private MetaMap preparation directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - "{{ metamap_platform_dir }}"
+        - "{{ metamap_state_dir }}"
+        - "{{ metamap_data_dir }}"
+        - "{{ metamap_updates_dir }}"
+        - "{{ metamap_state_dir }}/restores"
+
+    - name: Render the closed Compose specification and nonsecret preparation references
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ metamap_platform_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0640"
+      loop:
+        - compose.yml
+        - runtime.env.example
+        - preparation.json
+
+    - name: Validate Compose without loading runtime credentials or activating containers
+      ansible.builtin.import_tasks: compose-check.yml
+
+    - name: Inspect the image before an explicitly requested prefetch
+      ansible.builtin.import_tasks: image-inspect.yml
+      when: metamap_prefetch_image
+
+    - name: Prefetch only the reviewed immutable image directly from GHCR
+      ansible.builtin.command:
+        argv: [docker, --host, "unix:///var/run/docker.sock", image, pull, "{{ metamap_image }}"]
+      changed_when: true
+      when:
+        - metamap_prefetch_image
+        - metamap_image_inspection.rc != 0
+
+    - name: Verify the prepared files and optional prefetched image
+      ansible.builtin.import_tasks: verify.yml

@@ -1,0 +1,30 @@
+name: {{ metamap_compose_project }}
+services:
+  server:
+    profiles: [activation]
+    image: {{ metamap_image }}
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18083:8000"
+    env_file:
+      - path: ./runtime.env
+        required: true
+    volumes:
+      - type: bind
+        source: {{ metamap_data_dir }}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: {{ metamap_updates_dir }}
+        target: /updates
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+    stop_grace_period: 60s

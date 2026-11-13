@@ -1,0 +1,9 @@
+---
+# Preparation only. Fill the exact running server image digest after the small
+# read-only service inventory; do not invent a version or reuse a floating tag.
+metamap_image: ""
+metamap_running: false
+metamap_prepare_authorized: false
+metamap_prefetch_image: false
+metamap_backup_authorized: false
+metamap_restore_authorized: false

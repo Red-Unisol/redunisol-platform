@@ -1,0 +1,16 @@
+---
+- name: Restore a trusted MetaMap bundle only into a new isolated dedicated directory
+  hosts: metamap_server_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Restore and verify data without installing or activating it
+      ansible.builtin.import_role:
+        name: metamap_server
+        tasks_from: restore

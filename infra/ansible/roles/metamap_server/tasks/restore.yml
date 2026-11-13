@@ -1,0 +1,57 @@
+---
+- name: Require an independently authorized isolated restore and a trusted bundle fingerprint
+  ansible.builtin.assert:
+    that:
+      - metamap_restore_authorized | type_debug == 'bool'
+      - ansible_check_mode or metamap_restore_authorized
+      - metamap_revision is match('^[0-9a-f]{40}$')
+      - metamap_running | type_debug == 'bool'
+      - not metamap_running
+      - metamap_state_dir == '/srv/redunisol/state/metamap-server'
+      - metamap_restore_directory is match('^/srv/redunisol/state/metamap-server/restores/[A-Za-z0-9][A-Za-z0-9_-]*$')
+      - metamap_restore_bundle_dir is match('^/[A-Za-z0-9_./-]+$')
+      - metamap_restore_bundle_dir != '/'
+      - "'..' not in metamap_restore_bundle_dir.split('/')"
+      - metamap_bundle_manifest_sha256 is match('^[0-9a-f]{64}$')
+    fail_msg: Restore needs its own approval, Git SHA40 and trusted manifest SHA256; only a new isolated restore directory is allowed.
+
+- name: Verify a previously transferred bundle without altering it
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "-"
+      - verify
+      - --bundle
+      - "{{ metamap_restore_bundle_dir }}"
+      - --expected-manifest-sha256
+      - "{{ metamap_bundle_manifest_sha256 }}"
+    stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/metamap-state.py') }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Restore only into the new isolated directory without installing runtime data
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "-"
+      - restore
+      - --bundle
+      - "{{ metamap_restore_bundle_dir }}"
+      - --expected-manifest-sha256
+      - "{{ metamap_bundle_manifest_sha256 }}"
+      - --destination
+      - "{{ metamap_restore_directory }}"
+      - --revision
+      - "{{ metamap_revision }}"
+    stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/metamap-state.py') }}"
+  register: metamap_isolated_restore
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Report the isolated restore boundary
+  ansible.builtin.debug:
+    msg: >-
+      {{ metamap_isolated_restore.stdout if not ansible_check_mode else
+         'Check mode validated the restore contract only; no bundle validation or restore ran.' }}
+      A successful isolated restore does not install application data, activate MetaMap,
+      initialize backups, modify the VPS or prove offsite recovery.

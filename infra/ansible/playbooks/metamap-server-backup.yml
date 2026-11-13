@@ -1,0 +1,12 @@
+---
+- name: Capture only an explicitly inventoried stopped MetaMap migration origin
+  hosts: metamap_migration_origins
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Capture a cold private transfer bundle without stopping the source
+      ansible.builtin.import_role:
+        name: metamap_server
+        tasks_from: backup
