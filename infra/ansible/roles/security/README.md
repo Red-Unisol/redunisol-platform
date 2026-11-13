@@ -27,8 +27,9 @@ The production inventory declares the exact package
 `/etc/fail2ban/jail.d/redunisol-security.local` and
 `/etc/fail2ban/filter.d/sshd.local` in `foundation_backups_source_paths`, extending
 the foundation configuration catalog to ten files. Historical eight-file
-snapshots remain valid subsets of the approved catalog. A new backup and isolated
-restore must establish evidence for the expanded catalog after application.
+snapshots remain valid subsets of the approved catalog. The applied checkpoint
+below records recovery of all ten files after application; future changes need
+their own backup and isolated restore evidence.
 
 Installation uses APT `policy_rc_d: 101` to prevent package auto-start. The role
 copies the managed jail and filter override, runs `fail2ban-client --test`, and
@@ -53,8 +54,14 @@ describes the plan; it does not simulate an installation on an empty host.
 
 ## Debian 13 log source and temporary security backport
 
-The jail reads the systemd journal. The pinned package's `sshd` filter recognizes
-`_SYSTEMD_UNIT=ssh.service`, `_COMM=sshd` and `_COMM=sshd-session`.
+The jail reads the systemd journal. The pinned package's `sshd` filter supports
+the daemon names `sshd` and `sshd-session`, but Debian's
+`jail.d/defaults-debian.conf` overrides the effective journal selector to
+`_SYSTEMD_UNIT=ssh.service` **or** `_COMM=sshd`. The active selector has no separate
+`_COMM=sshd-session` branch. On 12 November 2026, all 300 inspected
+`sshd-session` records belonged to `ssh.service` and were covered by the unit
+selector. The active policy probe checks that the loaded selector matches the
+resolved Debian configuration.
 
 Debian identifies `1.1.0-8` as affected by
 [CVE-2026-109786](https://security-tracker.debian.org/tracker/CVE-2026-109786): a
@@ -70,6 +77,40 @@ This is a temporary backport tied to the reviewed package pin. Remove it only
 when a reviewed Debian package pin contains that fix and the same regression
 tests pass against the updated package. A version increase alone is insufficient
 evidence. Update the installer pin and checksum with the tests and package pin.
+
+## Applied checkpoint: 12-13 November 2026
+
+Revision `6ddeab3310e83517f89fea4592302ca38d3db67a` was applied with authorization
+on 12 November: `ok=57 changed=8 failed=0`; the repeated apply returned
+`ok=57 changed=0 failed=0`. Full read-only verification on 13 November returned
+`ok=100 changed=0 failed=0`, with the service active and enabled, the configuration
+test passing, and the active policy probe reporting `matches=true`.
+
+The observed policy used Debian `1.1.0-8` plus the managed backport, SSH ports
+`22` and `2241`, five failures within `600` seconds and a `3600`-second ban.
+The active ignore list contained the office address authorized on 12 November,
+`190.210.65.43`, and loopbacks `127.0.0.0/8` and `::1`. The SSH peer observed on
+13 November was `200.61.165.132`, which was not ignored. Whether this is another
+network or a dynamic address change remains to be confirmed; the read-only
+verification did not add that address or alter host policy.
+
+On 12 November, a temporary ban of documentation address `192.0.2.254` was
+confirmed in the jail and nftables set, with a rule covering TCP `22` and `2241`,
+then removed. Its absence was confirmed again on 13 November. This tested action
+execution and rule creation without failed logins from real users; it did not
+test end-to-end packet filtering.
+
+A consistent manual backup and full repository check succeeded on 12 November.
+The isolated restore of snapshot
+`bae1eed15c0afe62140f59f668880b914eb9d969b1875393c1f939ca5eb8ac3f` recovered ten
+files, including the jail and filter override. Independent SFTP verification on
+13 November matched SHA-256, size, mode, UID and GID for all ten files. The
+root-owned run directory had mode `0700`; the evidence remains at
+`/var/lib/redunisol-foundation/restore-local-config/run.QJKFRQ/evidence.json`.
+The scope is `real-local-foundation-config`, `local`, `offsite=false`.
+See the [foundation checkpoint](../../../../docs/dedicated-foundation.md#seguridad-y-recuperacion-del-12-y-13-de-noviembre)
+for the complete evidence and remaining external protection work. This does not
+replace the historical eight-file restore evidence from 5 November.
 
 ## Before the first apply
 
