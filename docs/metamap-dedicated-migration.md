@@ -317,6 +317,36 @@ prueba y egreso controlado; la preparacion actual no inicia ese clon.
    reconciliar SQL, archivos y publicaciones antes de una vuelta atras.
 
 La preparacion, migracion de datos, copia cifrada, activacion y sus recibos son
-etapas diferentes. En este PR quedan pendientes las operaciones sobre hosts,
-el inventario efectivo, los recibos de datos reales y el corte. El rediseño
-historico de MetaMap no se toma como evidencia de una arquitectura ya desplegada.
+etapas diferentes. En este PR quedan pendientes aplicar la preparacion a los
+hosts, completar el inventario de escritores, los recibos de datos reales y el
+corte. El rediseño historico de MetaMap no se toma como evidencia de una
+arquitectura ya desplegada.
+
+## Checkpoint de preparacion: 13 de noviembre de 2026
+
+Este registro es evidencia fechada, no un indicador de salud actual.
+
+| Componente | Evidencia y estado |
+| --- | --- |
+| VPS operativa | Se observaron imagen, mounts, SQLite y Python indicados arriba. MetaMap sigue atendido por el contenedor existente; esta preparacion no lo detuvo ni recreo. |
+| Dedicado | Debian 13, Python 3.13.5, Docker 29.9.3, Compose 5.7.0, Apache 2.4.69 y Restic 0.18.0. Puertos 443/18443 disponibles; repositorio foundation y BCRA existentes conservados. |
+| Compatibilidad del origen | Compilacion/importacion del helper y ayuda de captura ejecutadas en Python 3.6.8/SQLite 3.26.0 reales; no se capturaron datos ni instalaron herramientas en la VPS. |
+| Contratos Ansible | Check mode de preparacion de servicio, origen HTTPS y backup en el dedicado, y de captura en la VPS: sin errores ni cambios. Las tareas de escritura y las verificaciones de recursos aun ausentes se omiten en este modo; no acredita preparacion aplicada. |
+| Certificado nuevo | Origin CA emitido para `metamap-origin.redunisol.com.ar`, con vencimiento `2027-11-13T15:59:00Z`; SAN, correspondencia con clave e issuer verificados. Clave y certificado custodiados en archivos privados del operador, aun sin instalar en el dedicado. |
+| Secretos preparados | Copia privada de configuracion actual, nueva clave Restic independiente y variables operativas en el controlador. No se cargaron en un contenedor ni se entregaron al dedicado. |
+| Cloudflare | Registro A proxied nuevo y regla Strict limitada a ese hostname descritos en Git; creacion pendiente de autorizacion explicita. Ningun registro o ruta productiva existente cambiado. |
+| Pruebas locales | 314 pruebas de infraestructura aprobadas sin omisiones, con fixtures reales de Apache HTTPS y Restic. YAML estricto, ambos inventarios, sintaxis de 24 playbooks y Ansible lint sin fallos ni avisos. Compose validado sin daemon, con valores sinteticos para verificar dolares/comillas. |
+
+La siguiente intervencion propuesta aplica los playbooks al dedicado, primero
+en loopback y luego en el listener publico, verifica repeticion y lectura
+independiente, ensaya recuperacion **sintetica** en el repositorio nuevo y agrega
+el origen a la salud local. La creacion del DNS nuevo y su regla TLS tambien
+requiere autorizacion explicita. Aun no hay recibos de aplicacion en el host,
+descarga confirmada de imagen, ensayo Restic en el SATA, certificado servido ni
+verificacion HTTPS publica del origen nuevo.
+
+Siguen pendientes la conexion al monitoreo externo y una copia fuera del
+dedicado. Antes del corte tambien faltan la captura y recuperacion del dataset
+real, asegurar ingreso durable/reintentos y quietud de escritores, definir el
+enrutamiento conservando URLs y adaptar el destino del publisher. Ninguno de
+los ensayos sinteticos acredita proteccion de los datos productivos.
