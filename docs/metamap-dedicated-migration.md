@@ -367,6 +367,14 @@ la revision de aplicacion `a86be2de266029cd1ec4479b8bdfb7f74378e943`.
 La lectura de preservacion en el dedicado confirmo BCRA healthy, sin reinicios,
 con su revision aplicada anterior y `/health=200`; `/root/.docker/config.json`
 continua ausente y no quedan directorios `/run/metamap-ghcr-*`.
+En la ultima lectura del origen se localizaron el mismo contenedor `bae9aaa...`
+y salud directa `3031=200`. La inspeccion final de nombre, imagen, reinicios y
+bindings no se completo: dos conexiones SSH acotadas agotaron el tiempo antes
+de ejecutar comandos. No se atribuyo causa ni se intervino. A las 14:10 ART,
+la comprobacion publica posterior mantuvo salud/API/updater `200` y rechazo
+sin credenciales `401`. Antes de la captura volver a comprobar el acceso SSH
+y los campos del inventario en el origen; este checkpoint no los da por
+reconfirmados por esa ultima inspeccion parcial.
 
 Siguen pendientes la conexion al monitoreo externo y una copia fuera del
 dedicado. Antes del corte tambien faltan la captura y recuperacion del dataset
