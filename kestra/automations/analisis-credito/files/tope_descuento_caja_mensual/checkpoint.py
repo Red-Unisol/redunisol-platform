@@ -18,6 +18,7 @@ class ResultRow:
     disponible: float | None = None
     tope_descuento: float | None = None
     error: str = ""
+    error_details: dict[str, Any] | None = None
 
     @property
     def resolved(self) -> bool:

@@ -209,6 +209,29 @@ publicar archivos.
   checkpoint y en el Excel, sin enviarlos a Caja
 - una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
 
+### Diagnostico de CIDI y Caja
+
+Los eventos `caja_session_open_started/completed/failed` registran si el login es
+inicial, por antiguedad (`max_age`) o por `401/403`, la edad de la sesion y el
+numero de intento. Los eventos `caja_http_error` y `caja_network_error` conservan
+etapa, metodo, path sin query, duracion, estado HTTP o tipo de excepcion y un
+`diagnostic_id` para correlacionar el fallo con los reintentos.
+
+La respuesta de error incluye `error`, `error_description` y el `resultado`
+anidado de CIDI, o el texto si no es JSON. Se conservan los headers de tipo de
+contenido, fecha, `Retry-After` e identificadores de request/correlacion. Se
+redactan credenciales, tokens, cookies, payloads cifrados conocidos y campos
+personales reconocidos antes de emitir o persistir. Nunca se vuelcan los
+headers ni los cuerpos de las solicitudes. El cuerpo de error sanitizado tiene
+un limite de 32.768 caracteres serializados, con marca explicita de truncado.
+
+Cada intento fallido queda en los logs de Kestra (`caja_query_retry/failed`),
+incluso si el siguiente intento funciona. El fallo definitivo conserva
+`error_details` en el checkpoint, junto al error legible que aparece en el Excel.
+Los checkpoints anteriores sin ese campo siguen siendo compatibles. El resumen
+de una tanda cortada por errores consecutivos incluye el ultimo motivo.
+Estos eventos no cambian la renovacion, los reintentos ni el calendario.
+
 Inputs manuales opcionales:
 
 - `run_date`: fecha de checkpoint e historico, `YYYY-MM-DD`; por defecto fecha
