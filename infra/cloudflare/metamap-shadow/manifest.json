@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "prepared-not-applied",
+  "worker": "metamap-webhook-shadow",
+  "queue": "metamap-webhook-shadow",
+  "dead_letter_queue": "metamap-webhook-shadow-dlq",
+  "dead_letter_consumer": null,
+  "workers_dev": false,
+  "capture_enabled": false,
+  "route": {
+    "enabled": false,
+    "zone_name": "redunisol.com.ar",
+    "pattern": "https://kestra.redunisol.com.ar/metamap-platform/api/v1/metamap/webhooks*",
+    "required_request_limit_failure_mode": "open",
+    "activation_requires_observed_fail_open_setting": true
+  },
+  "source": {
+    "hostname": "kestra.redunisol.com.ar",
+    "method": "POST",
+    "exact_pathname": "/metamap-platform/api/v1/metamap/webhooks",
+    "query": "preserved-on-primary-omitted-from-copy",
+    "trailing_slash": "primary-only"
+  },
+  "delivery_url": "https://metamap-origin.redunisol.com.ar/metamap-shadow/deliveries",
+  "raw_body_limit_bytes": 40000,
+  "delivery_timeout_ms": 8000,
+  "max_retries": 3,
+  "free_plan_retention_hours": 24,
+  "required_secrets": ["METAMAP_WEBHOOK_SECRET", "SHADOW_DELIVERY_TOKEN"],
+  "production_backend_enabled": false,
+  "production_cutover": false
+}

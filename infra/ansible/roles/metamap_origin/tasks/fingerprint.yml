@@ -24,6 +24,8 @@
       port: "{{ metamap_origin_listen_port | int }}"
       tls_mode: "{{ metamap_origin_tls_mode }}"
       backend_enabled: false
+      shadow_enabled: "{{ metamap_origin_shadow_enabled }}"
+      shadow_port: "{{ metamap_origin_shadow_port | int }}"
 
 - name: Read the public certificate expiry and standard SHA256 fingerprint
   ansible.builtin.command:

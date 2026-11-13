@@ -1,0 +1,12 @@
+---
+- name: Prepare and optionally run only the isolated MetaMap webhook shadow
+  hosts: metamap_shadow_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: metamap_shadow
+      tags: [metamap_shadow]

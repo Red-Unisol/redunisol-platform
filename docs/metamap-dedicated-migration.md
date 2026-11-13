@@ -263,6 +263,65 @@ Registrar revision, imagen, hash del manifiesto, resultado SQLite, archivos
 comparados y recibos de captura/restauracion sin incluir secretos o payloads.
 El ensayo no arranca el backend ni acredita una activacion.
 
+## Ensayo paralelo de webhooks
+
+El ensayo usa el [Worker y su configuracion](../infra/cloudflare/metamap-shadow/README.md)
+y el rol `metamap_shadow`, separados de la preparacion del backend productivo.
+La VPS sigue siendo la autoridad y conserva su respuesta HTTP original. Solo
+los POST firmados al pathname exacto `/metamap-platform/api/v1/metamap/webhooks`
+se copian; las consultas del cliente y el updater mantienen su recorrido.
+
+El Worker inicia `fetch(request)` del original antes de procesar la copia.
+Conserva URL, query, bytes, cabeceras y respuesta del principal. El trabajo de
+copia usa `ctx.waitUntil`: valida HMAC sobre los bytes originales, calcula su
+SHA256 y envia a Queues un sobre con UUID, cuerpo base64 y status del principal.
+La query y las cabeceras arbitrarias no se guardan en la cola. Un fallo de
+copia no sustituye ni cambia la respuesta de la VPS.
+
+El receptor corre la imagen ya fijada, con el handler MetaMap original y una
+base **nueva y aislada**. El adaptador acepta exclusivamente sobres autenticados;
+no publica las APIs de clientes. No tiene OAuth, API token de MetaMap, bootstrap
+de clientes ni recuperacion de enriquecimientos. Su red Docker interna bloquea
+egreso; el puerto publicado es solo `127.0.0.1:18084`. Apache permite unicamente
+POST a `/metamap-shadow/deliveries`, manteniendo `/metamap-platform` en 503.
+
+La proyeccion SQL original, el receipt y el ledger de entregas se confirman en
+una sola transaccion. Un reintento de Queues conserva el UUID y no incrementa
+otra vez el contador de eventos. Dos llamados originales distintos conservan
+sus dos entregas aunque el contenido coincida; no se deduplican por hash.
+Si el handler rechaza un payload firmado con 4xx, el rechazo queda registrado
+y el ACK del transporte incluye ese status. Un fallo 5xx revierte la transaccion
+completa y admite retry. La respuesta de ACK no contiene payloads ni credenciales.
+
+Workers y ambas colas usan el plan Free. El sobre admite hasta 40.000 bytes de
+cuerpo, acotados por debajo de un bloque facturable de Queues con su envoltorio.
+El consumidor usa timeout de ocho segundos, tres reintentos y una DLQ separada.
+La retencion de las colas gratuitas es de **24 horas**. La copia anterior al
+acuse de Queues sigue siendo de mejor esfuerzo; no se promete ausencia de
+perdidas ni orden global. Hay logs sanitizados de encolado, entregas y fallos.
+
+El estado inicial de despliegue tiene captura apagada, sin rutas y sin dominio
+`workers.dev`. Antes de activar la ruta se exige: pruebas locales, prepare y
+verify del dedicado, ensayo sintetico por la cola sin escribir en la VPS,
+observacion del modo fail-open de la ruta y lecturas de salud de produccion.
+El modo fail-open evita depender del Worker al agotar su cupo diario; no es
+una garantia contra cualquier falla del programa o de Cloudflare.
+
+La comparacion operativa cuenta entregas y hashes de los bytes por una cohorte
+nueva. No compara bases completas, marcas de revision hechas por clientes,
+IDs SQL locales ni timestamps de recepcion. El enriquecimiento externo sigue
+deshabilitado en el ensayo, por lo que sus campos derivados no acreditan paridad.
+Los controles `/health` y `/stats` se leen solo por loopback; comprueban SQLite
+y exponen contadores agregados sin payloads. La recomendacion de ensayo de siete
+dias es operativa: **no hay limpieza automatica de la base sombra**. El backup
+Restic sintetico de la preparacion anterior no protege esta base.
+
+El rollback retira solamente la ruta del Worker y detiene el proyecto sombra
+mediante su playbook autorizado, conservando los datos. No exige cambiar URLs,
+configuracion de MetaMap ni datos de la VPS. El estado efectivo y las pruebas de
+aplicacion se registran despues del despliegue; este procedimiento por si solo
+no demuestra que la duplicacion este activa.
+
 ## Corte posterior conservando los clientes
 
 El [actualizador desktop](../apps/metamap-platform/client/transferencias-celesol/src/update.rs)

@@ -1,0 +1,15 @@
+---
+- name: Stop only the MetaMap webhook shadow and preserve its data
+  hosts: metamap_shadow_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+  tasks:
+    - name: Stop only the separately authorized shadow container
+      ansible.builtin.import_role:
+        name: metamap_shadow
+        tasks_from: stop

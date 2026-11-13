@@ -1,0 +1,15 @@
+# Isolated MetaMap webhook shadow
+
+This role runs only the shadow receiver over the already cached reviewed MetaMap image. It does not manage the production project, copy its data, enable enrichment, change the VPS or create Cloudflare routes.
+
+The defaults keep preparation unauthorized and the receiver stopped. A real prepare needs `metamap_shadow_apply_authorized=true`, `metamap_shadow_revision=<reviewed SHA40>`, and `metamap_shadow_runtime_env_source_file=<private absolute controller path>`. Starting additionally needs `metamap_shadow_running=true`. Check mode checks contracts only, without Docker calls, secret reads or simulated runtime success.
+
+The controller file must be a private regular file owned by the operator. It must contain exactly four raw `KEY=value` entries: `METAMAP_SHADOW_WEBHOOK_SECRET`, `METAMAP_SHADOW_DELIVERY_TOKEN`, `METAMAP_SHADOW_DATABASE_URL=sqlite+pysqlite:////data/shadow.sqlite`, and `METAMAP_SHADOW_REVISION=<the reviewed SHA40>`. No operational MetaMap environment file is accepted. The original signing secret needs at least 16 UTF-8 bytes; the independent delivery token needs at least 32. Values are never logged. The target copy is root-owned mode 0600 under `/etc/redunisol-metamap-shadow`.
+
+The only container is `metamap-webhook-shadow`: numeric user 10090, read-only root, dropped capabilities, no new privileges, bounded resources, an internal Docker network and `127.0.0.1:18084`. It can write only its new `/srv/redunisol/state/metamap-shadow/data` bind and bounded temporary memory. No production database, updates, Docker socket or client/OAuth credentials are mounted. Unknown containers, networks or unmarked existing state are rejected instead of adopted.
+
+Use `playbooks/metamap-shadow-prepare.yml`, `metamap-shadow-verify.yml`, and `metamap-shadow-stop.yml` against `metamap_shadow_hosts`. Verify compares complete nonsecret files, checks private-file metadata, checks effective Docker configuration against the private environment without returning its values, and reads only GET `/health` and `/stats` with aggregate SQLite counts. Docker health is checked every 30 seconds; this role does not publish a static up metric or claim external monitoring. Changes to effective environment/configuration cause reconciliation on every apply, including retry after files were copied but a previous start failed.
+
+Stop needs its independent `metamap_shadow_stop_authorized=true` plus SHA40. It stops only the ownership-verified shadow container and deletes no data, environment or network. Stopping does not disable a Cloudflare producer or origin route; disable those independently before abandoning a rehearsal to avoid queue retries. There is no application cutover, production activation or production-data restore in these playbooks.
+
+The separate origin role can opt into `metamap_origin_shadow_enabled=true` to proxy only POST `/metamap-shadow/deliveries`; every other shadow path/method stays denied. The production `/metamap-platform` route remains 503. Origin verify never submits a delivery POST. Controlled delivery tests are a separate operation.

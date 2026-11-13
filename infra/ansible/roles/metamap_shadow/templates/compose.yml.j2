@@ -1,0 +1,67 @@
+# Managed shadow receiver; never activates the production MetaMap project.
+name: {{ metamap_shadow_project }}
+services:
+  receiver:
+    image: {{ metamap_shadow_image }}
+    pull_policy: never
+    container_name: {{ metamap_shadow_project }}
+    user: "{{ metamap_shadow_uid }}:{{ metamap_shadow_gid }}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 0.5
+    restart: unless-stopped
+    init: true
+    command: [python, -m, uvicorn, "shadow_app:app", --host, "0.0.0.0", --port, "8000"]
+    environment:
+      PYTHONPATH: /shadow:/app
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    env_file:
+      - path: {{ metamap_shadow_private_dir }}/runtime.env
+        format: raw
+        required: true
+    ports:
+      - "127.0.0.1:{{ metamap_shadow_port }}:8000"
+    volumes:
+      - type: bind
+        source: {{ metamap_shadow_platform_dir }}/code/shadow_app.py
+        target: /shadow/shadow_app.py
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: {{ metamap_shadow_state_dir }}/data
+        target: /data
+        bind:
+          create_host_path: false
+    tmpfs: [/tmp:rw,noexec,nosuid,size=16777216]
+    networks: [isolated]
+    labels:
+      redunisol.shadow.scope: webhook-replay-only
+      redunisol.shadow.revision: "{{ metamap_shadow_revision }}"
+      redunisol.shadow.adapter-sha256: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-app.py', rstrip=false) | hash('sha256') }}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request;
+          d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2));
+          assert d['status']=='ok' and d['shadow_only'] is True and d['enrichment_enabled'] is False
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+networks:
+  isolated:
+    name: metamap-webhook-shadow-internal
+    internal: true

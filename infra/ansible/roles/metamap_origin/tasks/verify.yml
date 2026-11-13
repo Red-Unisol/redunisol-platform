@@ -178,8 +178,34 @@
       loop_control:
         label: "{{ item.item }}"
 
+    - name: Probe only blocked shadow methods and paths without sending delivery POSTs
+      ansible.builtin.command:
+        argv: >-
+          {{ metamap_origin_https_base_arguments + ['--head', '--write-out', '\n%{http_code}\n',
+             'https://' ~ metamap_origin_hostname ~ ':' ~ metamap_origin_listen_port ~ item] }}
+      loop:
+        - /metamap-shadow/deliveries
+        - /metamap-shadow/deliveries/
+        - /metamap-shadow/health
+        - /metamap-shadow/stats
+        - /metamap-shadow/api/v1/metamap/webhooks
+      register: metamap_origin_blocked_shadow_paths
+      changed_when: false
+      check_mode: false
+
+    - name: Require shadow health stats other paths and non-POST methods to stay private
+      ansible.builtin.assert:
+        that:
+          - item.stdout_lines | last | default('') == '403'
+          - "'\nlocation:' not in (item.stdout | lower)"
+      loop: "{{ metamap_origin_blocked_shadow_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
     - name: Report the origin trust and application boundary
       ansible.builtin.debug:
         msg: >-
           Verified HTTPS origin using {{ metamap_origin_tls_mode }}. /health proves transport configuration only;
-          application paths return 503, no backend is enabled, and no production route or client was changed.
+          production application paths return 503 and no production backend is enabled.
+          Shadow delivery POST proxy enabled={{ metamap_origin_shadow_enabled }}; its health/stats and other methods stay private.
+          Verify sends no delivery POST and changes no production route or client.

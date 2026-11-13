@@ -1,0 +1,14 @@
+---
+- name: Verify the isolated MetaMap webhook shadow without modifying it
+  hosts: metamap_shadow_hosts
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+  tasks:
+    - name: Verify the reviewed shadow files and runtime
+      ansible.builtin.import_role:
+        name: metamap_shadow
+        tasks_from: verify

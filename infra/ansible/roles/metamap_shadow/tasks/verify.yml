@@ -1,0 +1,103 @@
+---
+- name: Verify the isolated shadow contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require the revision whose isolated shadow files are being verified
+  ansible.builtin.assert:
+    that:
+      - metamap_shadow_revision is match('^[0-9a-f]{40}$')
+
+- name: Verify canonical shadow paths ownership and existing data marker without changing them
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -, preflight]
+    stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-control.py', rstrip=false) }}"
+  changed_when: false
+  check_mode: false
+
+- name: Read complete nonsecret managed shadow files
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop:
+    - {path: "{{ metamap_shadow_platform_dir }}/compose.yml", source: template}
+    - {path: "{{ metamap_shadow_platform_dir }}/shadow-control.py", source: shadow-control.py}
+    - {path: "{{ metamap_shadow_platform_dir }}/code/shadow_app.py", source: shadow-app.py}
+  register: metamap_shadow_verified_files
+
+- name: Require complete shadow files to match Git without applying repairs
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.content | b64decode ==
+        (lookup('ansible.builtin.template', role_path ~ '/templates/compose.yml.j2') if item.item.source == 'template' else
+         lookup('ansible.builtin.file', role_path ~ '/files/' ~ item.item.source, rstrip=false))
+  loop: "{{ metamap_shadow_verified_files.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Inspect shadow file permissions without reading the private environment
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - {path: "{{ metamap_shadow_platform_dir }}/compose.yml", mode: "0644"}
+    - {path: "{{ metamap_shadow_platform_dir }}/shadow-control.py", mode: "0755"}
+    - {path: "{{ metamap_shadow_platform_dir }}/code/shadow_app.py", mode: "0444"}
+    - {path: "{{ metamap_shadow_private_dir }}/runtime.env", mode: "0600"}
+  register: metamap_shadow_file_metadata
+
+- name: Require regular root-owned shadow files and a private environment
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid == 0
+      - item.stat.mode == item.item.mode
+  loop: "{{ metamap_shadow_file_metadata.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Validate only the four private shadow settings without exposing values
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ metamap_shadow_platform_dir }}/shadow-control.py"
+      - environment
+      - --file
+      - "{{ metamap_shadow_private_dir }}/runtime.env"
+      - --revision
+      - "{{ metamap_shadow_revision }}"
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read effective shadow runtime state without changing it
+  ansible.builtin.import_tasks: inspect.yml
+
+- name: Require the effective shadow state to match its explicit desired state
+  ansible.builtin.assert:
+    that:
+      - (metamap_shadow_runtime | from_json).running == metamap_shadow_running
+      - not metamap_shadow_running or (metamap_shadow_runtime | from_json).matches
+      - not (metamap_shadow_runtime | from_json).exists or not (metamap_shadow_runtime | from_json).needs_recreate
+
+- name: Read Docker health and only aggregate SQLite-backed shadow counters
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ metamap_shadow_platform_dir }}/shadow-control.py"
+      - inspect
+      - --revision
+      - "{{ metamap_shadow_revision }}"
+      - --adapter-sha256
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-app.py', rstrip=false) | hash('sha256') }}"
+      - --health
+  register: metamap_shadow_health
+  changed_when: false
+  check_mode: false
+  when: metamap_shadow_running
+
+- name: Report only the isolated shadow aggregate health and counts
+  ansible.builtin.debug:
+    msg: "{{ metamap_shadow_health.stdout | from_json }}"
+  when: metamap_shadow_running

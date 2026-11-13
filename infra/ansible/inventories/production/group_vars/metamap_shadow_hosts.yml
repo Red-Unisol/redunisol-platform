@@ -1,0 +1,5 @@
+---
+# Desired state is deliberately inactive until a separately approved rehearsal.
+metamap_shadow_running: false
+metamap_shadow_apply_authorized: false
+metamap_shadow_stop_authorized: false
