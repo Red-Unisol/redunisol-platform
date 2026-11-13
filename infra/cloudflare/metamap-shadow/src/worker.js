@@ -164,7 +164,9 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
     let response;
     try {
       response = await fetchImpl(DELIVERY_URL, {
-        method: "POST", redirect: "error", signal: controller.signal,
+        // Workers supports manual/follow only. Manual keeps credentials at this
+        // fixed origin; a 3xx fails response.ok and is retried without following.
+        method: "POST", redirect: "manual", signal: controller.signal,
         headers: { "Authorization": "Bearer " + env.SHADOW_DELIVERY_TOKEN,
           "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify(envelope),

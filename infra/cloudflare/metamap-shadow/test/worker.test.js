@@ -221,7 +221,7 @@ test("consumer uses only delivery auth and acknowledges the matching durable rec
   const body = await envelope();
   const item = message(body);
   await worker({ fetchImpl: async (url, options) => {
-    assert.equal(url, DELIVERY_URL); assert.equal(options.method, "POST"); assert.equal(options.redirect, "error");
+    assert.equal(url, DELIVERY_URL); assert.equal(options.method, "POST"); assert.equal(options.redirect, "manual");
     assert.equal(options.headers.Authorization, "Bearer " + TOKEN);
     assert.deepEqual(Object.keys(options.headers).sort(), ["Accept", "Authorization", "Content-Type"]);
     assert.deepEqual(JSON.parse(options.body), body);
@@ -254,12 +254,19 @@ test("pending, wrong receipt, non-2xx, redirect, malformed and oversized ACKs re
     () => Response.json(acknowledgement(body, { ingest_status: "200" })),
     () => Response.json(acknowledgement(body, { shadow_only: false })),
     () => new Response("failed", { status: 503 }),
-    () => new Response("redirect", { status: 307, headers: { Location: "/unsafe" } }),
+    () => new Response("redirect", { status: 307, headers: { Location: "https://never-follow.invalid/unsafe" } }),
     () => new Response("not-json"), () => new Response("x".repeat(2049)),
   ]) {
     const item = message(body, 2);
-    await worker({ fetchImpl: async () => response() }).queue({ messages: [item] }, environment());
+    let fetches = 0;
+    await worker({ fetchImpl: async (url, options) => {
+      fetches += 1;
+      assert.equal(url, DELIVERY_URL);
+      assert.equal(options.redirect, "manual");
+      return response();
+    } }).queue({ messages: [item] }, environment());
     assert.equal(item.acknowledgements, 0); assert.deepEqual(item.retries, [{ delaySeconds: 30 }]);
+    assert.equal(fetches, 1, "A redirect must not trigger a second fetch or send credentials to Location");
   }
 });
 
@@ -291,16 +298,65 @@ test("one failed message cannot retry a successful neighbour; malformed envelope
   assert.equal(valid.acknowledgements, 1); assert.equal(valid.retries.length, 0);
 });
 
-test("committed configuration is dormant, bounded and has an independent dead-letter queue", async () => {
+test("committed prepared or active configuration agrees with its manifest and keeps the route bounded", async () => {
   const root = new URL("../", import.meta.url);
   const config = JSON.parse(await readFile(new URL("wrangler.jsonc", root), "utf8"));
   const manifest = JSON.parse(await readFile(new URL("manifest.json", root), "utf8"));
-  assert.equal(config.workers_dev, false); assert.equal(config.preview_urls, false); assert.deepEqual(config.routes, []);
-  assert.equal(config.vars.SHADOW_CAPTURE_ENABLED, "false"); assert.equal(config.observability.logs.invocation_logs, false);
-  assert.equal(config.queues.producers[0].binding, "SHADOW_QUEUE");
-  assert.equal(config.queues.consumers.length, 1);
-  assert.equal(config.queues.consumers[0].dead_letter_queue, "metamap-webhook-shadow-dlq");
-  assert.equal(config.queues.consumers[0].max_retries, 3); assert.equal(config.queues.consumers[0].max_batch_size, 1);
-  assert.equal(manifest.route.enabled, false); assert.equal(manifest.route.required_request_limit_failure_mode, "open");
-  assert.equal(manifest.raw_body_limit_bytes, MAX_RAW_BYTES);
+  const pattern = "https://" + SOURCE_HOST + SOURCE_PATH + "*";
+  function validate(actual, desired) {
+    assert.ok(["prepared-not-applied", "active"].includes(desired.status));
+    const active = desired.status === "active";
+    assert.equal(actual.name, "metamap-webhook-shadow"); assert.equal(desired.worker, actual.name);
+    assert.equal(actual.workers_dev, false); assert.equal(actual.preview_urls, false); assert.equal(desired.workers_dev, false);
+    assert.equal(Object.hasOwn(actual, "route"), false, "Only the reviewed routes array may configure routing");
+    assert.equal(actual.vars.SHADOW_CAPTURE_ENABLED, String(active)); assert.equal(desired.capture_enabled, active);
+    assert.equal(desired.route.enabled, active); assert.equal(desired.route.pattern, pattern);
+    assert.equal(desired.route.zone_name, "redunisol.com.ar");
+    assert.equal(desired.route.required_request_limit_failure_mode, "open");
+    assert.equal(desired.route.activation_requires_observed_fail_open_setting, true);
+    if (active) {
+      assert.equal(desired.route.request_limit_fail_open, true, "Active state requires observed fail-open confirmation");
+      const route = { pattern };
+      if (desired.route.zone_id !== undefined) {
+        assert.match(desired.route.zone_id, /^[0-9a-f]{32}$/);
+        route.zone_id = desired.route.zone_id;
+      } else { route.zone_name = "redunisol.com.ar"; }
+      assert.deepEqual(actual.routes, [route], "Active routing must contain exactly the agreed route");
+    } else { assert.deepEqual(actual.routes, []); }
+    assert.equal(actual.observability.logs.invocation_logs, false);
+    assert.deepEqual(actual.queues.producers, [{ binding: "SHADOW_QUEUE", queue: "metamap-webhook-shadow" }]);
+    assert.equal(desired.queue, "metamap-webhook-shadow");
+    assert.deepEqual(actual.queues.consumers, [{ queue: "metamap-webhook-shadow", max_batch_size: 1,
+      max_batch_timeout: 1, max_concurrency: 1, max_retries: 3, retry_delay: 15,
+      dead_letter_queue: "metamap-webhook-shadow-dlq" }]);
+    assert.equal(desired.dead_letter_queue, "metamap-webhook-shadow-dlq"); assert.equal(desired.dead_letter_consumer, null);
+    assert.equal(desired.raw_body_limit_bytes, MAX_RAW_BYTES);
+    assert.equal(desired.production_backend_enabled, false); assert.equal(desired.production_cutover, false);
+  }
+  validate(config, manifest);
+
+  // Exercise both supported states without editing or activating the committed configuration.
+  const preparedConfig = structuredClone(config);
+  const preparedManifest = structuredClone(manifest);
+  preparedConfig.routes = []; preparedConfig.vars.SHADOW_CAPTURE_ENABLED = "false";
+  preparedManifest.status = "prepared-not-applied"; preparedManifest.capture_enabled = false; preparedManifest.route.enabled = false;
+  validate(preparedConfig, preparedManifest);
+  const activeConfig = structuredClone(preparedConfig);
+  const activeManifest = structuredClone(preparedManifest);
+  activeManifest.status = "active"; activeManifest.capture_enabled = true; activeManifest.route.enabled = true;
+  activeManifest.route.request_limit_fail_open = true;
+  delete activeManifest.route.zone_id;
+  activeConfig.routes = [{ pattern, zone_name: "redunisol.com.ar" }]; activeConfig.vars.SHADOW_CAPTURE_ENABLED = "true";
+  validate(activeConfig, activeManifest);
+  for (const mutate of [
+    (candidate) => { candidate.config.routes.push({ pattern: "https://" + SOURCE_HOST + "/*", zone_name: "redunisol.com.ar" }); },
+    (candidate) => { candidate.config.routes[0].pattern = "https://" + SOURCE_HOST + "/*"; },
+    (candidate) => { candidate.config.vars.SHADOW_CAPTURE_ENABLED = "false"; },
+    (candidate) => { candidate.manifest.route.request_limit_fail_open = false; },
+    (candidate) => { candidate.manifest.route.enabled = false; },
+  ]) {
+    const candidate = { config: structuredClone(activeConfig), manifest: structuredClone(activeManifest) };
+    mutate(candidate);
+    assert.throws(() => validate(candidate.config, candidate.manifest));
+  }
 });
