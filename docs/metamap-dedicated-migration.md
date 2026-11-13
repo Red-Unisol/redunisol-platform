@@ -325,6 +325,31 @@ configuracion de MetaMap ni datos de la VPS. El estado efectivo y las pruebas de
 aplicacion se registran despues del despliegue; este procedimiento por si solo
 no demuestra que la duplicacion este activa.
 
+### Estado verificado del receptor, 2026-11-13
+
+Se aplico el receptor y el proxy HTTPS del dedicado desde la revision
+`5cae35a674cd63a41051cbbd81691388605b4a2a`, con los flags operativos privados
+`metamap_shadow_running=true` y `metamap_origin_shadow_enabled=true`.
+Los defaults Git permanecen deshabilitados para evitar un arranque accidental
+sin la autorizacion y los inputs privados correspondientes.
+
+| Control observado | Resultado |
+| --- | --- |
+| Receptor | Healthy, cero reinicios, imagen fijada por digest, `network_mode: none`, sin IP ni TCP publicado. |
+| Persistencia y aislamiento | Base propia; socket `10090:www-data` con directorio `0750` y regla tmpfiles instalada. Sin credenciales de clientes ni enriquecimiento. |
+| HTTPS y deduplicacion | Un fixture sintetico dirigido solo al dedicado respondio 200; repetir su UUID/hash respondio 200 con `duplicate=true`. Estadisticas: una entrega, un receipt, una validacion y un duplicado. |
+| Reconciliacion | Repetir prepare de receptor y origen termino con `changed=0`; ambos verificaron configuracion activa y salud. |
+| Operativa existente | Salud y lectura autenticada de la VPS 200; lectura anonima 401; manifiesto del actualizador 200. BCRA conserva su contenedor healthy y cero reinicios. |
+| Backend productivo del dedicado | Deshabilitado; rutas `/metamap-platform*` devuelven 503 sin redirect. |
+| Cloudflare | Worker, colas y ruta de duplicacion **pendientes de desplegar**; falta la credencial API del operador. No hay captura de webhooks reales acreditada. |
+
+El fixture no escribio en la VPS. La prueba directa HTTPS todavia no acredita
+el transporte por Queues ni la paridad de una cohorte real. Antes de activar,
+completar esa prueba, verificar fail-open y guardar en Git la configuracion
+activa del Worker, su version y la evidencia de entrega. La base shadow no tiene
+backup configurado ni limpieza automatica; la recomendacion de ensayo sigue
+siendo de siete dias.
+
 ## Corte posterior conservando los clientes
 
 El [actualizador desktop](../apps/metamap-platform/client/transferencias-celesol/src/update.rs)

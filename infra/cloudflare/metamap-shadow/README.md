@@ -114,22 +114,35 @@ consume additional operations. DLQ is also finite retention, not an archive.
 
 Activation is a separate, explicitly reviewed operation:
 
-1. Verify the isolated receiver, TLS, persistence, backup and duplicate handling
-   with synthetic signed fixtures; production MetaMap remains disabled.
+1. Verify the isolated receiver, TLS, persistence and duplicate handling with
+   synthetic signed fixtures; production MetaMap remains disabled. Record the
+   backup boundary explicitly: the earlier synthetic Restic test does not back
+   up this new shadow dataset.
 2. Create the named source queue and DLQ, provision secrets privately and deploy
    the Worker **without routes and with capture disabled**. Confirm bindings,
    retries, DLQ and sanitized logs. The config disables automatic invocation
    logs, which could otherwise record URL/query metadata.
 3. Check actual payload distribution, expected Free-plan operations and measured
    Worker CPU. Exercise queue/sink failure and DLQ recovery with synthetic data.
-4. Only after approval, attach the narrow route proposed in `manifest.json`,
-   explicitly set its request-limit failure mode to **Fail open**, and read that
-   setting back before enabling capture. Route failure mode is a platform setting;
-   application try/catch does not protect against quota/CPU/memory exhaustion.
+4. In the activation commit, update this config, manifest and their coherence
+   test with the one agreed route and capture enabled. Upload that version with
+   `wrangler versions upload --config <config> --secrets-file <private.json>`
+   without activating it. Reconcile the narrow route separately, explicitly set
+   its request-limit failure mode to **Fail open**, and read that setting back
+   before activating the uploaded version at 100% with `wrangler versions deploy`.
+   Route failure mode is a platform setting; application try/catch does not
+   protect against quota/CPU/memory exhaustion.
    Cloudflare documents [the fail-open bypass for daily request limits](https://developers.cloudflare.com/workers/platform/limits/#daily-requests).
 5. Verify a real primary response and a separate matching shadow receipt. Turning
    capture off or removing only this Worker route leaves primary service on its
    existing path. Retain/inspect outstanding queue and DLQ messages separately.
+
+For subsequent code changes, use version upload and version deploy. Reserve
+`triggers deploy` for intentional route changes and recheck fail-open after each
+such change. Never redeploy this initial inactive config over an active trial:
+Wrangler reconciles declared vars and routes, so `routes=[]` would remove the
+route and the false flag would disable capture. Keep the actual active config
+in Git; a dashboard-only activation is not reproducible.
 
 This directory has no production deployment workflow. Commands that create,
 deploy, attach routes or upload secrets require the separate operational scope;
