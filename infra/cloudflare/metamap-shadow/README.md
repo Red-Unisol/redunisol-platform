@@ -1,12 +1,13 @@
-# MetaMap webhook shadow: prepared, inactive
+# MetaMap webhook shadow trial
 
 This Worker makes an asynchronous, signed copy of the existing webhook. It never
 selects a new primary backend or activates the MetaMap application on the dedicated
-server. No Cloudflare resources, secrets or routes have been applied by these files.
+server. The desired active trial is declared here; deployment evidence and the
+receiver revision are recorded in `docs/metamap-dedicated-migration.md`.
 
-`wrangler.jsonc` has `workers_dev=false`, `preview_urls=false`, `routes=[]` and
-`SHADOW_CAPTURE_ENABLED="false"`. `manifest.json` describes the separate activation
-contract; it is not an executable Cloudflare API payload. In particular, its
+`wrangler.jsonc` has `workers_dev=false`, `preview_urls=false`, one narrow route and
+`SHADOW_CAPTURE_ENABLED="true"`. `manifest.json` records the resource identities
+and observed route fail-open setting; it is not an executable API payload. Its
 `required_request_limit_failure_mode` is a review requirement, not a Wrangler key.
 
 ## Primary request and eligible copies
@@ -118,8 +119,11 @@ Activation is a separate, explicitly reviewed operation:
    synthetic signed fixtures; production MetaMap remains disabled. Record the
    backup boundary explicitly: the earlier synthetic Restic test does not back
    up this new shadow dataset.
-2. Create the named source queue and DLQ, provision secrets privately and deploy
-   the Worker **without routes and with capture disabled**. Confirm bindings,
+2. For a first bootstrap, create the named source queue and DLQ, provision secrets
+   privately and deploy a reviewed inactive config **without routes and with
+   capture disabled**. The current active config must not be used for this step.
+   The corrected inactive revision for this trial was `5e1b03514da28927d99571e9e0d7119a001c5c96`.
+   Confirm bindings,
    retries, DLQ and sanitized logs. The config disables automatic invocation
    logs, which could otherwise record URL/query metadata.
 3. Check actual payload distribution, expected Free-plan operations and measured
@@ -139,7 +143,7 @@ Activation is a separate, explicitly reviewed operation:
 
 For subsequent code changes, use version upload and version deploy. Reserve
 `triggers deploy` for intentional route changes and recheck fail-open after each
-such change. Never redeploy this initial inactive config over an active trial:
+such change. Never redeploy a historical inactive config over an active trial:
 Wrangler reconciles declared vars and routes, so `routes=[]` would remove the
 route and the false flag would disable capture. Keep the actual active config
 in Git; a dashboard-only activation is not reproducible.
@@ -163,4 +167,4 @@ npm test
 is needed. Tests use actual Request streams and HMAC operations, with mocked
 fetch/queue boundaries. They check unchanged primary bytes/URL/status/headers,
 signature failures, limits, async queue failure, sink timeout, duplicate identity,
-ACK matching, individual retries and the committed inactive configuration.
+ACK matching, individual retries and coherence of the committed active or prepared configuration.

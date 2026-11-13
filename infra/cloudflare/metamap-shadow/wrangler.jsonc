@@ -5,8 +5,13 @@
   "compatibility_date": "2026-11-13",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [],
-  "vars": { "SHADOW_CAPTURE_ENABLED": "false" },
+  "routes": [
+    {
+      "pattern": "https://kestra.redunisol.com.ar/metamap-platform/api/v1/metamap/webhooks*",
+      "zone_id": "98afdd42871695e66af52cec137d2be7"
+    }
+  ],
+  "vars": { "SHADOW_CAPTURE_ENABLED": "true" },
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "invocation_logs": false }
