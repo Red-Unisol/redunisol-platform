@@ -92,10 +92,16 @@ El futuro `runtime.env` sigue siendo requerido y ausente. Compose usa `format: r
 para conservar literalmente dolares y comillas de los valores existentes;
 la preparacion no los carga ni arranca la aplicacion.
 
-La descarga opcional usa la autenticacion existente del Docker client en el
-dedicado. Este cambio no hace `docker login` ni copia credenciales GHCR. Si esa
-autenticacion falta, se resuelve por un procedimiento separado con archivos
-privados; nunca se pegan tokens en inventarios, argumentos o logs.
+La descarga opcional usa por defecto la autenticacion existente del Docker
+client en el dedicado. Si falta, `metamap_registry_auth_file` admite un JSON
+privado del controlador con exclusivamente `auths.ghcr.io.auth`, sin otros
+registries ni credential helpers. Solo se lee cuando falta la imagen: se copia
+a un directorio transitorio `0700` bajo `/run`, con archivo `0600`, y Docker usa
+`--config` para ese pull por digest. La limpieza `always` elimina esa copia aun
+si falla la descarga; no se hace `docker login` ni se modifica `/root/.docker`.
+El acceso se obtiene del indice canonico privado y nunca se incluye en Git,
+argumentos, recibos o logs. Eliminar tambien la copia transitoria del controlador
+tras la descarga; repetir con la imagen presente no necesita leerla.
 
 Los siguientes comandos se reservan para una preparacion posterior autorizada,
 desde el controlador Linux/WSL descrito en la [guia Ansible](../infra/ansible/README.md).
@@ -317,10 +323,9 @@ prueba y egreso controlado; la preparacion actual no inicia ese clon.
    reconciliar SQL, archivos y publicaciones antes de una vuelta atras.
 
 La preparacion, migracion de datos, copia cifrada, activacion y sus recibos son
-etapas diferentes. En este PR quedan pendientes aplicar la preparacion a los
-hosts, completar el inventario de escritores, los recibos de datos reales y el
-corte. El rediseño historico de MetaMap no se toma como evidencia de una
-arquitectura ya desplegada.
+etapas diferentes. Quedan pendientes completar el inventario de escritores,
+los recibos de datos reales y el corte. El rediseño historico de MetaMap no se
+toma como evidencia de una arquitectura ya desplegada.
 
 ## Checkpoint de preparacion: 13 de noviembre de 2026
 
@@ -329,21 +334,39 @@ Este registro es evidencia fechada, no un indicador de salud actual.
 | Componente | Evidencia y estado |
 | --- | --- |
 | VPS operativa | Se observaron imagen, mounts, SQLite y Python indicados arriba. MetaMap sigue atendido por el contenedor existente; esta preparacion no lo detuvo ni recreo. |
-| Dedicado | Debian 13, Python 3.13.5, Docker 29.9.3, Compose 5.7.0, Apache 2.4.69 y Restic 0.18.0. Puertos 443/18443 disponibles; repositorio foundation y BCRA existentes conservados. |
+| Dedicado | Debian 13, Python 3.13.5, Docker 29.9.3, Compose 5.7.0, Apache 2.4.69 y Restic 0.18.0. Origen independiente aplicado primero en loopback `18443` y luego en `168.197.51.104:443`; repositorio foundation y BCRA existentes conservados. |
 | Compatibilidad del origen | Compilacion/importacion del helper y ayuda de captura ejecutadas en Python 3.6.8/SQLite 3.26.0 reales; no se capturaron datos ni instalaron herramientas en la VPS. |
-| Contratos Ansible | Check mode de preparacion de servicio, origen HTTPS y backup en el dedicado, y de captura en la VPS: sin errores ni cambios. Las tareas de escritura y las verificaciones de recursos aun ausentes se omiten en este modo; no acredita preparacion aplicada. |
-| Certificado nuevo | Origin CA emitido para `metamap-origin.redunisol.com.ar`, con vencimiento `2027-11-13T15:59:00Z`; SAN, correspondencia con clave e issuer verificados. Clave y certificado custodiados en archivos privados del operador, aun sin instalar en el dedicado. |
-| Secretos preparados | Copia privada de configuracion actual, nueva clave Restic independiente y variables operativas en el controlador. No se cargaron en un contenedor ni se entregaron al dedicado. |
-| Cloudflare | Registro A proxied nuevo y regla Strict limitada a ese hostname descritos en Git; creacion pendiente de autorizacion explicita. Ningun registro o ruta productiva existente cambiado. |
-| Pruebas locales | 314 pruebas de infraestructura aprobadas sin omisiones, con fixtures reales de Apache HTTPS y Restic. YAML estricto, ambos inventarios, sintaxis de 24 playbooks y Ansible lint sin fallos ni avisos. Compose validado sin daemon, con valores sinteticos para verificar dolares/comillas. |
+| Servicio preparado | Directorios, Compose cerrado y `runtime.env.pending` instalados; imagen por digest descargada directamente desde GHCR. No hay contenedor MetaMap ni listener `18083`; `runtime.env` sigue ausente y los directorios productivos siguen vacios. |
+| Autenticacion de descarga | La credencial existente de la VPS fue rechazada por GHCR; se valido un acceso nuevo con solo `read:packages`. Se uso configuracion transitoria y se elimino tambien su copia del controlador. No se guardo el token en Docker. |
+| Contratos Ansible | Check mode de servicio/origen/backup en el dedicado y captura en la VPS sin cambios ni errores. Posteriormente se aplicaron las preparaciones autorizadas; no se ejecuto captura, transferencia o restore de datos productivos. |
+| Certificado nuevo | Origin CA instalado para `metamap-origin.redunisol.com.ar`, con vencimiento `2027-11-13T15:59:00Z`; SAN, correspondencia con clave e issuer verificados. Clave root `0600` en el dedicado y bajo custodia privada del operador. |
+| Secretos preparados | Configuracion actual custodiada en `runtime.env.pending` root `0600`, fuera del proyecto Compose; nueva clave Restic independiente instalada. Ninguna configuracion operativa cargada en un contenedor MetaMap. |
+| HTTPS y Cloudflare | A proxied al dedicado y regla Strict limitada al hostname nuevo aplicados. Lectura de UI confirma IP, proxy y Strict; HTTPS publico normal confirma `/health=200`, backend deshabilitado y rutas de aplicacion `503` sin Location. Registro `kestra` y rutas productivas existentes conservados. |
+| Recuperacion sintetica | Repositorio Restic MetaMap independiente inicializado en el SATA; backup cifrado, rechazo de clave incorrecta, `check --read-data`, restore y hashes/metadatos/SQL correctos. Repeticion `changed=0` conserva snapshot y fecha; verify independiente `changed=0`. No protege datos productivos. |
+| Observabilidad local | Origen agregado al collector existente; exporter en loopback. Verificacion de proxy foundation y monitoreo local `changed=0`, con salud fresca y servicio nuevo activo. La conexion externa y sus alertas siguen pendientes. |
+| Pruebas locales | Base de 314 pruebas sin omisiones con Apache HTTPS y Restic reales; modulo de preparacion actualizado: 27 pruebas aprobadas, incluidas cinco de auth transitoria (319 pruebas distintas en total). YAML estricto, ambos inventarios, sintaxis de 24 playbooks y lint sin fallos ni avisos; lint/YAML focalizados repetidos para el ajuste de auth. Compose validado sin daemon, con valores sinteticos para dolares/comillas. |
 
-La siguiente intervencion propuesta aplica los playbooks al dedicado, primero
-en loopback y luego en el listener publico, verifica repeticion y lectura
-independiente, ensaya recuperacion **sintetica** en el repositorio nuevo y agrega
-el origen a la salud local. La creacion del DNS nuevo y su regla TLS tambien
-requiere autorizacion explicita. Aun no hay recibos de aplicacion en el host,
-descarga confirmada de imagen, ensayo Restic en el SATA, certificado servido ni
-verificacion HTTPS publica del origen nuevo.
+La preparacion del servicio usa revision
+`0cc65629c1b25ab4cd35ed69f5227cfd6b100ff7`, que incorpora auth transitoria.
+Origen, ensayo Restic y monitoreo se aplicaron con el codigo revisado en
+`4efe4f60b4e3ef52dadc790471affec200aefaec`; no se reinterpretan como si ya
+estuvieran aplicados desde un commit posterior de documentacion. El origen
+repetido termino `changed=0`, con verificacion independiente `changed=0`.
+El recibo sintetico conserva snapshot
+`07d81499cc8ea222ad9cebc7eeee552499dd38acac6c791019019dee1b1f264f`.
+La preparacion del servicio repetida, con el archivo de autenticacion temporal
+del controlador ya eliminado, y su verify independiente terminaron `changed=0`.
+La comprobacion del contenido OCI verifico los hashes del indice fijado, su
+manifiesto `linux/amd64` y el config digest `sha256:1c664fb180bd1c4de6ace104b6b305897a5cec8dcd670579a19d8ad42338b4f7`
+observado en la VPS; no dependio de comparar solamente los Image ID que muestran
+los distintos almacenes Docker.
+
+La comprobacion publica de produccion mantuvo salud `200`, consultas autenticadas
+`200`, rechazo sin credenciales `401` y manifiesto del updater `200`, conservando
+la revision de aplicacion `a86be2de266029cd1ec4479b8bdfb7f74378e943`.
+La lectura de preservacion en el dedicado confirmo BCRA healthy, sin reinicios,
+con su revision aplicada anterior y `/health=200`; `/root/.docker/config.json`
+continua ausente y no quedan directorios `/run/metamap-ghcr-*`.
 
 Siguen pendientes la conexion al monitoreo externo y una copia fuera del
 dedicado. Antes del corte tambien faltan la captura y recuperacion del dataset

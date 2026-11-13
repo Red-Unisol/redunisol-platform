@@ -1,7 +1,7 @@
 ---
 # Desired bootstrap resources only. No production Worker/Origin Rule is enabled.
 schema_version: 1
-apply_status: awaiting_explicit_dns_approval
+apply_status: applied_and_verified
 zone: redunisol.com.ar
 dns_record:
   type: A
@@ -19,6 +19,7 @@ origin_tls:
 application_backend_enabled: false
 production_routes_changed: false
 configuration_rule:
+  id: 0efd598abedc4c1ebd963f528c0479c7
   name: MetaMap origin - strict TLS
   expression: '(http.host eq "metamap-origin.redunisol.com.ar")'
   ssl: strict
