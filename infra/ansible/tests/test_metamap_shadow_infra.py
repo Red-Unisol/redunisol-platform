@@ -239,13 +239,15 @@ class ShadowComposeTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "Linux Ansible controller required")
 class ExecutableShadowContractTests(unittest.TestCase):
-    def run_contract(self, overrides=None, role=False, check=False, stop=False):
+    def run_contract(self, overrides=None, role=False, check=False, stop=False, tasks=None):
         values = variables()
         values.pop("role_path")
         values.update(overrides or {})
         play = dict(name="Local shadow contracts only", hosts="localhost", connection="local", gather_facts=False,
                     become=False, vars=values)
-        if role:
+        if tasks is not None:
+            play["tasks"] = tasks
+        elif role:
             play["roles"] = ["metamap_shadow"]
         elif stop:
             play["tasks"] = [{"name": "Original stop tasks", "ansible.builtin.import_role": {"name": "metamap_shadow", "tasks_from": "stop"}}]
@@ -285,6 +287,29 @@ class ExecutableShadowContractTests(unittest.TestCase):
             code, output = self.run_contract(check=True, **kwargs)
             self.assertEqual(code, 0, output)
             self.assertIn("changed=0", output)
+
+    def test_original_marker_copy_writes_exact_guard_bytes_and_second_run_is_unchanged(self):
+        main = read_yaml("roles/metamap_shadow/tasks/main.yml")
+        block = next(item["block"] for item in main if item["name"].startswith("Prepare only"))
+        task = copy.deepcopy(next(item for item in block if item["name"] ==
+                                  "Mark the new isolated state without importing application data"))
+        options = task["ansible.builtin.copy"]
+        self.assertEqual(set(options), {"src", "dest", "owner", "group", "mode"})
+        self.assertEqual(options["src"], "shadow-state.json")
+        source = ROLE / "files" / options["src"]
+        self.assertEqual(source.read_bytes(), CONTROL.MARKER.encode("utf-8"))
+        options.update(src=str(source), owner=str(os.getuid()), group=str(os.getgid()))
+        with tempfile.TemporaryDirectory(prefix="shadow-marker-copy-") as directory:
+            target = Path(directory) / ".shadow-state.json"
+            options["dest"] = str(target)
+            code, output = self.run_contract(tasks=[task])
+            self.assertEqual(code, 0, output)
+            self.assertIn("changed=1", output)
+            self.assertEqual(target.read_bytes(), CONTROL.MARKER.encode("utf-8"))
+            code, output = self.run_contract(tasks=[task])
+            self.assertEqual(code, 0, output)
+            self.assertIn("changed=0", output)
+            self.assertEqual(target.read_bytes(), CONTROL.MARKER.encode("utf-8"))
 
 
 if __name__ == "__main__":

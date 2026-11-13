@@ -58,7 +58,7 @@
 
     - name: Mark the new isolated state without importing application data
       ansible.builtin.copy:
-        content: '{"scope":"metamap-webhook-shadow","version":1}{{ "\n" }}'
+        src: shadow-state.json
         dest: "{{ metamap_shadow_state_dir }}/.shadow-state.json"
         owner: root
         group: root
