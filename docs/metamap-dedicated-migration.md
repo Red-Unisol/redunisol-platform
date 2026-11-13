@@ -263,6 +263,128 @@ Registrar revision, imagen, hash del manifiesto, resultado SQLite, archivos
 comparados y recibos de captura/restauracion sin incluir secretos o payloads.
 El ensayo no arranca el backend ni acredita una activacion.
 
+## Ensayo paralelo de webhooks
+
+El ensayo usa el [Worker y su configuracion](../infra/cloudflare/metamap-shadow/README.md)
+y el rol `metamap_shadow`, separados de la preparacion del backend productivo.
+La VPS sigue siendo la autoridad y conserva su respuesta HTTP original. Solo
+los POST firmados al pathname exacto `/metamap-platform/api/v1/metamap/webhooks`
+se copian; las consultas del cliente y el updater mantienen su recorrido.
+
+El Worker inicia `fetch(request)` del original antes de procesar la copia.
+Conserva URL, query, bytes, cabeceras y respuesta del principal. El trabajo de
+copia usa `ctx.waitUntil`: valida HMAC sobre los bytes originales, calcula su
+SHA256 y envia a Queues un sobre con UUID, cuerpo base64 y status del principal.
+La query y las cabeceras arbitrarias no se guardan en la cola. Un fallo de
+copia no sustituye ni cambia la respuesta de la VPS.
+
+El receptor corre la imagen ya fijada, con el handler MetaMap original y una
+base **nueva y aislada**. El adaptador acepta exclusivamente sobres autenticados;
+no publica las APIs de clientes. No tiene OAuth, API token de MetaMap, bootstrap
+de clientes ni recuperacion de enriquecimientos. Usa `network_mode: none`, sin
+puertos publicados ni acceso de red. Apache entrega las copias mediante el
+socket Unix `/run/redunisol-metamap-shadow/receiver.sock`; su directorio limita
+el acceso al usuario del receptor y al grupo de Apache. `systemd-tmpfiles`
+recrea ese directorio al arrancar. Apache permite unicamente POST a
+`/metamap-shadow/deliveries`, manteniendo `/metamap-platform` en 503.
+
+La proyeccion SQL original, el receipt y el ledger de entregas se confirman en
+una sola transaccion. Un reintento de Queues conserva el UUID y no incrementa
+otra vez el contador de eventos. Dos llamados originales distintos conservan
+sus dos entregas aunque el contenido coincida; no se deduplican por hash.
+Si el handler rechaza un payload firmado con 4xx, el rechazo queda registrado
+y el ACK del transporte incluye ese status. Un fallo 5xx revierte la transaccion
+completa y admite retry. La respuesta de ACK no contiene payloads ni credenciales.
+
+Workers y ambas colas usan el plan Free. El sobre admite hasta 40.000 bytes de
+cuerpo, acotados por debajo de un bloque facturable de Queues con su envoltorio.
+El consumidor usa timeout de ocho segundos, tres reintentos y una DLQ separada.
+La retencion de las colas gratuitas es de **24 horas**. La copia anterior al
+acuse de Queues sigue siendo de mejor esfuerzo; no se promete ausencia de
+perdidas ni orden global. Hay logs sanitizados de encolado, entregas y fallos.
+
+El estado inicial de despliegue tiene captura apagada, sin rutas y sin dominio
+`workers.dev`. Antes de activar la ruta se exige: pruebas locales, prepare y
+verify del dedicado, ensayo sintetico por la cola sin escribir en la VPS,
+observacion del modo fail-open de la ruta y lecturas de salud de produccion.
+El modo fail-open evita depender del Worker al agotar su cupo diario; no es
+una garantia contra cualquier falla del programa o de Cloudflare.
+
+La comparacion operativa cuenta entregas y hashes de los bytes por una cohorte
+nueva. No compara bases completas, marcas de revision hechas por clientes,
+IDs SQL locales ni timestamps de recepcion. El enriquecimiento externo sigue
+deshabilitado en el ensayo, por lo que sus campos derivados no acreditan paridad.
+Los controles `/health` y `/stats` se leen solo por el socket local; comprueban SQLite
+y exponen contadores agregados sin payloads. La recomendacion de ensayo de siete
+dias es operativa: **no hay limpieza automatica de la base sombra**. El backup
+Restic sintetico de la preparacion anterior no protege esta base.
+
+El rollback retira solamente la ruta del Worker y detiene el proyecto sombra
+mediante su playbook autorizado, conservando los datos. No exige cambiar URLs,
+configuracion de MetaMap ni datos de la VPS. El estado efectivo y las pruebas de
+aplicacion se registran despues del despliegue; este procedimiento por si solo
+no demuestra que la duplicacion este activa.
+
+### Estado verificado del receptor, 2026-11-13
+
+Se aplico el receptor y el proxy HTTPS del dedicado desde la revision
+`5cae35a674cd63a41051cbbd81691388605b4a2a`, con los flags operativos privados
+`metamap_shadow_running=true` y `metamap_origin_shadow_enabled=true`.
+Los defaults Git permanecen deshabilitados para evitar un arranque accidental
+sin la autorizacion y los inputs privados correspondientes.
+
+| Control observado | Resultado |
+| --- | --- |
+| Receptor | Healthy, cero reinicios, imagen fijada por digest, `network_mode: none`, sin IP ni TCP publicado. |
+| Persistencia y aislamiento | Base propia; socket `10090:www-data` con directorio `0750` y regla tmpfiles instalada. Sin credenciales de clientes ni enriquecimiento. |
+| HTTPS y deduplicacion | Un fixture sintetico dirigido solo al dedicado respondio 200; repetir su UUID/hash respondio 200 con `duplicate=true`. Estadisticas: una entrega, un receipt, una validacion y un duplicado. |
+| Reconciliacion | Repetir prepare de receptor y origen termino con `changed=0`; ambos verificaron configuracion activa y salud. |
+| Operativa existente | Salud y lectura autenticada de la VPS 200; lectura anonima 401; manifiesto del actualizador 200. BCRA conserva su contenedor healthy y cero reinicios. |
+| Backend productivo del dedicado | Deshabilitado; rutas `/metamap-platform*` devuelven 503 sin redirect. |
+| Cloudflare | El receptor se verifico antes de conectar el Worker. La activacion posterior se registra debajo. |
+
+El fixture no escribio en la VPS. La prueba directa HTTPS, por si sola, no
+acredita el transporte por Queues ni la paridad de una cohorte real. La base
+shadow no tiene backup configurado ni limpieza automatica; la recomendacion
+de ensayo sigue siendo de siete dias.
+
+### Activacion Cloudflare Free, 2026-11-13
+
+La captura se activo a las **18:06:31 ART** (`2026-11-13T21:06:31.255048Z`),
+con VPS como principal. La configuracion activa esta en
+`infra/cloudflare/metamap-shadow/wrangler.jsonc` y su manifiesto; los secretos
+se cargaron privadamente como bindings de Cloudflare.
+
+| Evidencia | Valor observado |
+| --- | --- |
+| Git del Worker activo | `1ec07a56a431537beafeba9f2a3058384cd43866` |
+| Version / despliegue Cloudflare | `84f47b5b-172f-4b46-b45c-4aefa4cf993c` / `07175c9b-1415-46e5-95b7-155b4bfeb8c0` |
+| Ruta unica | `7110b09ffbd442728da1448ee32606d2`; patron de webhooks exacto declarado en el manifiesto; `request_limit_fail_open=true` confirmado por GET despues del despliegue. |
+| Dominios adicionales | `workers.dev` y previews deshabilitados; sin cambios DNS. |
+| Colas Free | Principal y DLQ con 86.400 segundos de retencion. Consumer batch/concurrencia 1, tres retries, espera inicial 15 segundos. DLQ sin consumidor. |
+| Prueba de transporte | Fixture firmado enviado directamente a la cola, recibido en el dedicado con ingest 200. Repetir el mismo UUID/hash conserva una fila y aumenta solo el contador de duplicados. No se envio a la VPS. |
+| CPU observada | Consumidor sintetico exitoso: 2 ms de CPU, 730 ms de tiempo total. Los logs conservan UUID/hash/status; invocation logs apagados. |
+| Operativa posterior | Salud, API autenticada y actualizador de la VPS 200; anonimo 401. BCRA y receptor healthy, cero reinicios. Backend productivo dedicado sigue deshabilitado. |
+
+La primera prueba detecto una incompatibilidad real: Workers rechaza
+`redirect: "error"` antes de enviar HTTP. Se corrigio a `manual`, comprobando
+que 3xx se reintenta sin seguir `Location` ni reenviar el Bearer a otro destino.
+La prueba de rechazo/reintento dejo mensajes **sinteticos** en la DLQ; no son
+webhooks productivos perdidos y conservan la retencion Free de 24 horas.
+
+El transporte sintetico y la captura activa estan verificados. La paridad de
+la primera cohorte de webhooks reales se comprueba separadamente por hashes
+y multiplicidad, excluyendo los fixtures con `primary_status=null`; no se
+infiere a partir de los dos receipts sinteticos existentes al activar.
+
+Control de cohorte a las **18:14:23 ART**: cero receipts nuevos en la VPS desde
+la activacion y cero entregas reales en el dedicado; se excluyeron los dos
+fixtures. El ultimo receipt primario seguia siendo el de las 18:03:33 ART.
+La consulta fue de solo lectura y no exporto payloads. No hay una cohorte real
+con la cual afirmar paridad todavia. Un GET sin cuerpo al pathname del webhook
+conservo `405 / Allow: POST`; la invocacion observada del Worker activo uso
+1 ms de CPU y 34 ms de tiempo total, sin copiar ese GET.
+
 ## Corte posterior conservando los clientes
 
 El [actualizador desktop](../apps/metamap-platform/client/transferencias-celesol/src/update.rs)

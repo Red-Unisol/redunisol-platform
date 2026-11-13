@@ -45,6 +45,19 @@ SSLSessionTickets Off
         ForceType application/json
         Header always set Cache-Control "no-store"
     </LocationMatch>
+    # No shadow health/stats/API surface is public. Only the exact delivery POST is eligible.
+    <LocationMatch "^/metamap-shadow(?:/|$)">
+        Require all denied
+        Header always set Cache-Control "no-store"
+    </LocationMatch>
+{% if metamap_origin_shadow_enabled %}
+    ProxyRequests Off
+    ProxyPassMatch "^/metamap-shadow/(deliveries)$" "unix:{{ metamap_origin_shadow_socket }}|http://localhost/$1"
+    <LocationMatch "^/metamap-shadow/deliveries$">
+        Require method POST
+        Header always set Cache-Control "no-store"
+    </LocationMatch>
+{% endif %}
 {% if metamap_origin_backend_enabled %}
     ProxyRequests Off
     ProxyPreserveHost On

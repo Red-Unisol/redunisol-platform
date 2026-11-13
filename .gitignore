@@ -32,6 +32,7 @@ composer-setup.php
 !/infra/cloudflare/
 /infra/cloudflare/*
 !/infra/cloudflare/metamap-origin.yml
+!/infra/cloudflare/metamap-shadow/
 local-notes/
 apps/metamap-platform/docs/*.csv
 

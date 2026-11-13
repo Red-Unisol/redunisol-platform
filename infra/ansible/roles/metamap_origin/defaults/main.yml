@@ -3,6 +3,8 @@ metamap_origin_enabled: false
 metamap_origin_apply_authorized: false
 metamap_origin_public_listen_authorized: false
 metamap_origin_backend_enabled: false
+metamap_origin_shadow_enabled: false
+metamap_origin_shadow_socket: /run/redunisol-metamap-shadow/receiver.sock
 metamap_origin_revision: ""
 metamap_origin_hostname: metamap-origin.redunisol.com.ar
 metamap_origin_listen_address: 127.0.0.1

@@ -6,6 +6,9 @@
       - metamap_origin_apply_authorized | type_debug == 'bool'
       - metamap_origin_public_listen_authorized | type_debug == 'bool'
       - metamap_origin_backend_enabled | type_debug == 'bool'
+      - metamap_origin_shadow_enabled | type_debug == 'bool'
+      - metamap_origin_shadow_socket == '/run/redunisol-metamap-shadow/receiver.sock'
+      - not metamap_origin_shadow_enabled or metamap_origin_enabled
       - not metamap_origin_backend_enabled
       - metamap_origin_hostname == 'metamap-origin.redunisol.com.ar'
       - metamap_origin_backend_port | int == 18083

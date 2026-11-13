@@ -1,0 +1,69 @@
+# Managed shadow receiver; never activates the production MetaMap project.
+name: {{ metamap_shadow_project }}
+services:
+  receiver:
+    image: {{ metamap_shadow_image }}
+    pull_policy: never
+    container_name: {{ metamap_shadow_project }}
+    user: "{{ metamap_shadow_uid }}:{{ metamap_shadow_gid }}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 0.5
+    restart: unless-stopped
+    init: true
+    command: [python, -m, uvicorn, "shadow_app:app", --uds, /run/shadow/receiver.sock, --no-access-log]
+    network_mode: none
+    environment:
+      PYTHONPATH: /shadow:/app
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    env_file:
+      - path: {{ metamap_shadow_private_dir }}/runtime.env
+        format: raw
+        required: true
+    volumes:
+      - type: bind
+        source: {{ metamap_shadow_platform_dir }}/code/shadow_app.py
+        target: /shadow/shadow_app.py
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: {{ metamap_shadow_state_dir }}/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: {{ metamap_shadow_socket_dir }}
+        target: /run/shadow
+        bind:
+          create_host_path: false
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16777216"]
+    labels:
+      redunisol.shadow.scope: webhook-replay-only
+      redunisol.shadow.revision: "{{ metamap_shadow_revision }}"
+      redunisol.shadow.adapter-sha256: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-app.py', rstrip=false) | hash('sha256') }}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import http.client,json,socket;
+          c=http.client.HTTPConnection('localhost',timeout=2);
+          c.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);c.sock.settimeout(2);
+          c.sock.connect('/run/shadow/receiver.sock');c.request('GET','/health');r=c.getresponse();
+          assert r.status==200;d=json.load(r);c.close();
+          assert d['status']=='ok' and d['shadow_only'] is True and d['enrichment_enabled'] is False
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"

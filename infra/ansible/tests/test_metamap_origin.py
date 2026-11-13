@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import socketserver
 import ssl
 import subprocess
 import tempfile
@@ -56,7 +57,7 @@ def render(name, variables):
 class OriginRenderingTests(unittest.TestCase):
     def test_default_origin_is_inactive_private_and_without_backend(self):
         defaults = read_yaml("roles/metamap_origin/defaults/main.yml")
-        for key in ("enabled", "apply_authorized", "public_listen_authorized", "backend_enabled"):
+        for key in ("enabled", "apply_authorized", "public_listen_authorized", "backend_enabled", "shadow_enabled"):
             self.assertIs(defaults["metamap_origin_" + key], False)
         self.assertEqual(defaults["metamap_origin_listen_address"], "127.0.0.1")
         self.assertEqual(defaults["metamap_origin_listen_port"], 18443)
@@ -78,6 +79,19 @@ class OriginRenderingTests(unittest.TestCase):
         self.assertIn("RuntimeDirectory=metamap-origin", unit)
         self.assertNotIn("apache2ctl", unit)
         self.assertNotIn("systemctl reload apache2", unit)
+
+    def test_shadow_opt_in_exposes_only_one_post_path_and_preserves_the_closed_production_backend(self):
+        parameters = values()
+        parameters["metamap_origin_shadow_enabled"] = True
+        config = render("apache.conf.j2", parameters)
+        self.assertIn('ProxyPassMatch "^/metamap-shadow/(deliveries)$" "unix:/run/redunisol-metamap-shadow/receiver.sock|http://localhost/$1"', config)
+        self.assertIn('Require method POST', config)
+        self.assertIn('RedirectMatch 503 "^/metamap-platform(?:/|$)"', config)
+        self.assertNotIn('ProxyPass "/metamap-platform/', config)
+        marker = read_yaml("roles/metamap_origin/tasks/fingerprint.yml")
+        mapping = next(item["vars"]["metamap_origin_marker"] for item in marker if "vars" in item)
+        self.assertEqual(mapping["shadow_enabled"], "{{ metamap_origin_shadow_enabled }}")
+        self.assertEqual(mapping["shadow_socket"], "{{ metamap_origin_shadow_socket }}")
 
     def test_lost_restart_is_recovered_even_when_files_are_unchanged(self):
         tasks = read_yaml("roles/metamap_origin/tasks/main.yml")
@@ -136,6 +150,11 @@ class ExecutableOriginContractTests(unittest.TestCase):
     def test_backend_enablement_is_rejected_even_with_write_approval(self):
         self.assert_rejected(dict(metamap_origin_enabled=True, metamap_origin_apply_authorized=True,
                                   metamap_origin_backend_enabled=True))
+
+    def test_shadow_cannot_use_a_different_socket_or_string_authorization(self):
+        self.assert_rejected(dict(metamap_origin_shadow_socket="/run/other.sock"))
+        self.assert_rejected(dict(metamap_origin_shadow_enabled="true"))
+        self.assert_rejected(dict(metamap_origin_shadow_enabled=True, metamap_origin_enabled=False))
 
     def test_public_listener_without_its_own_approval_is_rejected(self):
         self.assert_rejected(dict(metamap_origin_listen_address="0.0.0.0", metamap_origin_listen_port=443))
@@ -233,6 +252,11 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
         cls.backend = HTTPServer(("127.0.0.1", 0), Backend)
         cls.backend_thread = Thread(target=cls.backend.serve_forever, daemon=True)
         cls.backend_thread.start()
+        cls.shadow_socket = cls.root / "shadow.sock"
+        cls.shadow_backend = socketserver.UnixStreamServer(str(cls.shadow_socket), Backend)
+        cls.shadow_socket.chmod(0o666)
+        cls.shadow_backend_thread = Thread(target=cls.shadow_backend.serve_forever, daemon=True)
+        cls.shadow_backend_thread.start()
         certificate, key = cls.root / "certificate.pem", cls.root / "private-key.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                         "-subj", "/CN=" + HOSTNAME, "-addext", "subjectAltName=DNS:" + HOSTNAME,
@@ -242,8 +266,8 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
         cls.context = ssl.create_default_context(cafile=str(certificate))
         cls.ports = {}
         try:
-            for enabled in (False, True):
-                fixture = cls.root / ("proxy" if enabled else "closed")
+            for enabled in (False, True, "shadow"):
+                fixture = cls.root / ("shadow" if enabled == "shadow" else "proxy" if enabled else "closed")
                 fixture.mkdir(mode=0o755)
                 fixture.chmod(0o755)
                 for name in ("tls", "www", "runtime", "logs"):
@@ -256,7 +280,9 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
                     probe.bind(("127.0.0.1", 0))
                     port = probe.getsockname()[1]
                 variables = values()
-                variables.update(metamap_origin_backend_enabled=enabled, metamap_origin_listen_port=port,
+                variables.update(metamap_origin_backend_enabled=enabled is True, metamap_origin_listen_port=port,
+                                 metamap_origin_shadow_enabled=enabled == "shadow",
+                                 metamap_origin_shadow_socket=str(cls.shadow_socket),
                                  metamap_origin_backend_port=cls.backend.server_port,
                                  metamap_origin_config_dir=str(fixture), metamap_origin_module_dir=MODULES,
                                  metamap_origin_document_root=str(fixture / "www"),
@@ -338,6 +364,8 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
             stream.close()
         cls.backend.shutdown()
         cls.backend.server_close()
+        cls.shadow_backend.shutdown()
+        cls.shadow_backend.server_close()
         cls.temporary.cleanup()
 
     def test_verified_tls_transport_health_and_fail_closed_routes_without_redirects(self):
@@ -379,6 +407,37 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "public, max-age=31536000, immutable")
         self.request(True, "GET", "/metamap-platform/api/fixture/a%2Fb?x=hello%2Bworld")
         self.assertEqual(self.received[-1][1], "/api/fixture/a%2Fb?x=hello%2Bworld")
+
+    def test_shadow_proxy_preserves_post_bytes_and_auth_but_blocks_other_routes_methods_and_production(self):
+        self.assertEqual(self.shadow_backend.address_family, socket.AF_UNIX)
+        body = b'{"fixture":"shadow-envelope"}\r\n\x00\xff'
+        status, headers, response = self.request("shadow", "POST", "/metamap-shadow/deliveries", body=body,
+                                                headers={"Content-Type": "application/json", "Authorization": "Bearer fixture"})
+        self.assertEqual((status, response), (200, body))
+        self.assertNotIn("Location", headers)
+        method, path, received_headers, received_body = self.received[-1]
+        self.assertEqual((method, path, received_body), ("POST", "/deliveries", body))
+        self.assertEqual(received_headers["Authorization"], "Bearer fixture")
+        before = len(self.received)
+        for method in ("GET", "HEAD", "PUT", "DELETE", "OPTIONS"):
+            status, unused_headers, unused_body = self.request("shadow", method, "/metamap-shadow/deliveries")
+            self.assertEqual(status, 403)
+        for path in ("/metamap-shadow", "/metamap-shadow/deliveries/", "/metamap-shadow/deliveries/extra",
+                     "/metamap-shadow/health", "/metamap-shadow/stats", "/metamap-shadow/api/v1/metamap/webhooks"):
+            status, unused_headers, unused_body = self.request("shadow", "POST", path)
+            self.assertEqual(status, 403)
+        for path in ("/metamap-platform", "/metamap-platform/health", "/metamap-platform/api/v1/metamap/webhooks"):
+            status, headers, unused_body = self.request("shadow", "POST", path)
+            self.assertEqual(status, 503)
+            self.assertNotIn("Location", headers)
+        self.assertEqual(len(self.received), before)
+
+    def test_disabled_shadow_route_never_reaches_the_backend(self):
+        before = len(self.received)
+        status, headers, unused_body = self.request(False, "POST", "/metamap-shadow/deliveries")
+        self.assertEqual(status, 403)
+        self.assertNotIn("Location", headers)
+        self.assertEqual(len(self.received), before)
 
 
 if __name__ == "__main__":
