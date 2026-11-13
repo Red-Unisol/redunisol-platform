@@ -18,7 +18,7 @@ PRIVATE = Path("/etc/redunisol-metamap-shadow")
 MARKER = '{"scope":"metamap-webhook-shadow","version":1}\n'
 ENV_KEYS = {"METAMAP_SHADOW_WEBHOOK_SECRET", "METAMAP_SHADOW_DELIVERY_TOKEN",
             "METAMAP_SHADOW_DATABASE_URL", "METAMAP_SHADOW_REVISION"}
-COMMAND = ["python", "-m", "uvicorn", "shadow_app:app", "--host", "0.0.0.0", "--port", "8000"]
+COMMAND = ["python", "-m", "uvicorn", "shadow_app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
 DOCKER = ["docker", "--host", "unix:///var/run/docker.sock"]
 
 

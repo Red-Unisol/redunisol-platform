@@ -14,7 +14,7 @@ services:
     cpus: 0.5
     restart: unless-stopped
     init: true
-    command: [python, -m, uvicorn, "shadow_app:app", --host, "0.0.0.0", --port, "8000"]
+    command: [python, -m, uvicorn, "shadow_app:app", --host, "0.0.0.0", --port, "8000", --no-access-log]
     environment:
       PYTHONPATH: /shadow:/app
       PYTHONDONTWRITEBYTECODE: "1"
@@ -37,7 +37,7 @@ services:
         target: /data
         bind:
           create_host_path: false
-    tmpfs: [/tmp:rw,noexec,nosuid,size=16777216]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16777216"]
     networks: [isolated]
     labels:
       redunisol.shadow.scope: webhook-replay-only

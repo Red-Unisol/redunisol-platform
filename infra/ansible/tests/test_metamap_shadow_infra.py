@@ -212,6 +212,8 @@ class ShadowComposeTests(unittest.TestCase):
         self.assertTrue(service["read_only"])
         self.assertEqual(service["ports"], ["127.0.0.1:18084:8000"])
         self.assertEqual(service["command"], CONTROL.COMMAND)
+        self.assertIn("--no-access-log", service["command"])
+        self.assertEqual(service["tmpfs"], ["/tmp:rw,noexec,nosuid,size=16777216"])
         self.assertEqual([item["target"] for item in service["volumes"]], ["/shadow/shadow_app.py", "/data"])
         self.assertTrue(service["volumes"][0]["read_only"])
         self.assertTrue(all(item["bind"]["create_host_path"] is False for item in service["volumes"]))
