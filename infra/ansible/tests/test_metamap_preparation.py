@@ -46,7 +46,7 @@ class PreparationWiringTests(unittest.TestCase):
         defaults = read_yaml("roles/metamap_server/defaults/main.yml")
         self.assertEqual(defaults["metamap_image"], "")
         for flag in ("running", "prepare_authorized", "backup_authorized", "restore_authorized",
-                     "prefetch_image", "writers_stopped_confirmed"):
+                     "prefetch_image", "writers_stopped_confirmed", "stage_runtime_env"):
             self.assertIs(defaults["metamap_" + flag], False)
 
     def test_prepare_and_verify_are_separate_from_foundation_and_source_capture(self):
@@ -69,7 +69,7 @@ class PreparationWiringTests(unittest.TestCase):
         self.assertEqual(server["image"], IMAGE)
         self.assertEqual(server["pull_policy"], "never")
         self.assertEqual(server["ports"], ["127.0.0.1:18083:8000"])
-        self.assertEqual(server["env_file"], [{"path": "./runtime.env", "required": True}])
+        self.assertEqual(server["env_file"], [{"path": "./runtime.env", "required": True, "format": "raw"}])
         self.assertEqual([item["target"] for item in server["volumes"]], ["/data", "/updates"])
         self.assertTrue(server["volumes"][1]["read_only"])
         self.assertTrue(all(item["bind"]["create_host_path"] is False for item in server["volumes"]))
@@ -81,6 +81,24 @@ class PreparationWiringTests(unittest.TestCase):
         self.assertEqual(record["image"], IMAGE)
         self.assertFalse(record["activation_included"])
         self.assertFalse(record["production_data_transferred"])
+        self.assertFalse(record["runtime_settings_staged"])
+        self.assertFalse(record["runtime_settings_loaded"])
+
+    def test_private_staging_cannot_supply_the_compose_runtime_environment(self):
+        values = variables()
+        values.update(metamap_stage_runtime_env=True,
+                      metamap_runtime_env_source_file="/private/operator/runtime.env.pending")
+        compose = yaml.safe_load(render("compose.yml.j2", values))
+        self.assertEqual(compose["services"]["server"]["env_file"][0]["path"], "./runtime.env")
+        self.assertNotIn(values["metamap_pending_runtime_env_path"], json.dumps(compose))
+        record = json.loads(render("preparation.json.j2", values))
+        self.assertTrue(record["runtime_settings_staged"])
+        self.assertFalse(record["runtime_settings_loaded"])
+        copy_task = task("roles/metamap_server/tasks/runtime-staging.yml",
+                         "Copy existing runtime settings to the pending private location only")
+        self.assertTrue(copy_task["no_log"])
+        self.assertFalse(copy_task["diff"])
+        self.assertEqual(copy_task["ansible.builtin.copy"]["mode"], "0600")
 
     def test_compose_validation_does_not_resolve_environment_or_run_services(self):
         checks = read_yaml("roles/metamap_server/tasks/compose-check.yml")
@@ -142,6 +160,14 @@ class ExecutablePreparationTests(unittest.TestCase):
     def test_valid_preparation_contract_is_accepted(self):
         code, output = self.run_tasks(self.contracts())
         self.assertEqual(code, 0, output)
+
+    def test_private_staging_requires_an_explicit_operator_source(self):
+        self.assert_rejected(dict(metamap_stage_runtime_env=True, metamap_runtime_env_source_file=""))
+
+    def test_private_staging_cannot_write_the_active_compose_environment(self):
+        self.assert_rejected(dict(metamap_stage_runtime_env=True,
+                                  metamap_runtime_env_source_file="/private/operator.env",
+                                  metamap_pending_runtime_env_path="/srv/redunisol/platform/metamap-server/runtime.env"))
 
     def test_activation_is_rejected_even_with_approval(self):
         self.assert_rejected(dict(metamap_running=True, metamap_prepare_authorized=True))

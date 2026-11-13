@@ -1,0 +1,73 @@
+---
+- name: Read the public origin certificate fingerprint
+  ansible.builtin.stat:
+    path: "{{ metamap_origin_config_dir }}/tls/certificate.pem"
+    checksum_algorithm: sha256
+    follow: false
+  register: metamap_origin_certificate_stat
+
+- name: Require an installed public certificate
+  ansible.builtin.assert:
+    that:
+      - metamap_origin_certificate_stat.stat.isreg | default(false)
+      - not metamap_origin_certificate_stat.stat.islnk | default(false)
+
+- name: Derive the public loaded-configuration marker
+  ansible.builtin.set_fact:
+    metamap_origin_configuration_sha256: "{{ metamap_origin_marker | to_json(sort_keys=true) | hash('sha256') }}"
+  vars:
+    metamap_origin_marker:
+      revision: "{{ metamap_origin_revision }}"
+      certificate_sha256: "{{ metamap_origin_certificate_stat.stat.checksum }}"
+      hostname: "{{ metamap_origin_hostname }}"
+      address: "{{ metamap_origin_listen_address }}"
+      port: "{{ metamap_origin_listen_port | int }}"
+      tls_mode: "{{ metamap_origin_tls_mode }}"
+      backend_enabled: false
+
+- name: Read the public certificate expiry and standard SHA256 fingerprint
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/openssl
+      - x509
+      - -in
+      - "{{ metamap_origin_config_dir }}/tls/certificate.pem"
+      - -noout
+      - -enddate
+      - -fingerprint
+      - -sha256
+  environment:
+    LC_ALL: C
+  register: metamap_origin_certificate_public_metadata
+  changed_when: false
+  check_mode: false
+
+- name: Require exactly one public certificate expiry and fingerprint
+  ansible.builtin.assert:
+    that:
+      - metamap_origin_certificate_public_metadata.stdout | regex_findall('(?m)^notAfter=(.+)$') | length == 1
+      - metamap_origin_certificate_public_metadata.stdout | regex_findall('(?mi)^sha256 Fingerprint=([0-9a-f:]+)$') | length == 1
+
+- name: Convert the GMT certificate expiry to Unix time without local timezone assumptions
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - import ssl,sys; print(int(ssl.cert_time_to_seconds(sys.argv[1])))
+      - "{{ (metamap_origin_certificate_public_metadata.stdout | regex_findall('(?m)^notAfter=(.+)$'))[0] }}"
+  register: metamap_origin_certificate_expiry
+  changed_when: false
+  check_mode: false
+
+- name: Retain only validated public TLS metric values
+  ansible.builtin.set_fact:
+    metamap_origin_certificate_not_after: "{{ metamap_origin_certificate_expiry.stdout | int }}"
+    metamap_origin_certificate_fingerprint_sha256: >-
+      {{ (metamap_origin_certificate_public_metadata.stdout |
+          regex_findall('(?mi)^sha256 Fingerprint=([0-9a-f:]+)$'))[0] | replace(':', '') | lower }}
+
+- name: Require safe public TLS metric values
+  ansible.builtin.assert:
+    that:
+      - metamap_origin_certificate_not_after | int > 0
+      - metamap_origin_certificate_fingerprint_sha256 is match('^[0-9a-f]{64}$')

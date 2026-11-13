@@ -1,0 +1,22 @@
+---
+- name: Inspect staged private runtime settings without exposing their content
+  ansible.builtin.stat:
+    path: "{{ metamap_pending_runtime_env_path }}"
+    follow: false
+    checksum_algorithm: sha256
+  register: metamap_staged_runtime_settings
+  no_log: true
+
+- name: Verify the complete staged settings against the private operator source
+  ansible.builtin.assert:
+    that:
+      - metamap_staged_runtime_settings.stat.exists
+      - metamap_staged_runtime_settings.stat.isreg
+      - not metamap_staged_runtime_settings.stat.islnk
+      - metamap_staged_runtime_settings.stat.uid == 0
+      - metamap_staged_runtime_settings.stat.mode == '0600'
+      - >-
+        metamap_staged_runtime_settings.stat.checksum ==
+        lookup('ansible.builtin.file', metamap_runtime_env_source_file, rstrip=false) | hash('sha256')
+    fail_msg: Pending runtime settings differ from the private reviewed source.
+  no_log: true

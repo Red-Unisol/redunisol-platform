@@ -1,5 +1,8 @@
 #!/usr/bin/python3
-"""Cold MetaMap SQLite/update bundles; never start a container or install state."""
+"""Cold MetaMap SQLite/update bundles, compatible with source Python 3.6+.
+
+Never start a container or install state. SQLite recovery uses a temporary copy.
+"""
 import argparse
 import hashlib
 import json
@@ -41,6 +44,15 @@ def canonical_directory(value):
     return path
 
 
+def within(path, root):
+    """Python 3.6-compatible lexical containment after canonical path checks."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def new_target(value, forbidden=()):
     path = Path(value)
     require(path.is_absolute() and path.name not in ("", ".", ".."), "An absolute new target is required")
@@ -50,7 +62,7 @@ def new_target(value, forbidden=()):
     require(not path.exists() and not path.is_symlink(), "Refusing to overwrite an existing target")
     for source in forbidden:
         source = Path(source)
-        require(not path.is_relative_to(source) and not source.is_relative_to(path),
+        require(not within(path, source) and not within(source, path),
                 "Target must be outside the source trees")
     return path
 
@@ -148,7 +160,8 @@ def sqlite_relative(environment):
 
 def docker_json(arguments):
     result = subprocess.run(["docker", "--host", "unix:///var/run/docker.sock", *arguments],
-                            env=docker_environment(), capture_output=True, text=True, timeout=30, check=False)
+                            env=docker_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            universal_newlines=True, timeout=30, check=False)
     require(result.returncode == 0, "Read-only Docker inspection failed")
     return json.loads(result.stdout)
 
@@ -165,7 +178,8 @@ def inspect_runtime(container):
     source = docker_json(["container", "inspect", container])
     require(isinstance(source, list) and len(source) == 1, "Ambiguous source container inspection")
     running = subprocess.run(["docker", "--host", "unix:///var/run/docker.sock", "container", "ls", "--quiet", "--no-trunc"],
-                             env=docker_environment(), capture_output=True, text=True, timeout=30, check=False)
+                             env=docker_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True, timeout=30, check=False)
     require(running.returncode == 0, "Could not inspect other active containers")
     active = []
     for identifier in running.stdout.splitlines():
@@ -199,7 +213,7 @@ def inspect_guard(observation, image_id, roots):
             matched[label] = {"source": mount["Source"], "type": mount["Type"], "rw": mount.get("RW")}
         else:
             location = PurePosixPath(target)
-            require(all(not location.is_relative_to(base) and not PurePosixPath(base).is_relative_to(location)
+            require(all(not within(location, base) and not within(PurePosixPath(base), location)
                         for base in ("/data", "/updates")), "Overlapping container mounts are not supported")
     require(set(matched) == {"data", "updates"}, "Both state mounts must be inspected")
     database = sqlite_relative(source["Config"]["Env"])
@@ -210,7 +224,7 @@ def inspect_guard(observation, image_id, roots):
             if not value.startswith("/"):
                 continue
             path = Path(value).resolve()
-            require(all(not path.is_relative_to(root) and not root.is_relative_to(path) for root in roots.values()),
+            require(all(not within(path, root) and not within(root, path) for root in roots.values()),
                     "Another active container shares a source tree")
     return {"container_id": source["Id"], "image_id": image_id, "mounts": matched,
             "sqlite_path": database, "container_lifecycle": lifecycle}
@@ -226,11 +240,11 @@ def check_sqlite(data_root, database):
         for path in copied.rglob("*"):
             path.chmod(0o700 if path.is_dir() else 0o600)
         copied.chmod(0o700)
-        connection = sqlite3.connect(copied / database, timeout=5)
+        connection = sqlite3.connect(str(copied / database), timeout=5)
         try:
             require(connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)], "SQLite integrity check failed")
             tables = [row[0] for row in connection.execute(
-                "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")]
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
             user_version = connection.execute("PRAGMA user_version").fetchone()[0]
         finally:
             connection.close()
@@ -248,7 +262,10 @@ def write_json_new(path, value):
             os.fsync(stream.fileno())
             os.link(staging, path)
         finally:
-            staging.unlink(missing_ok=True)
+            try:
+                staging.unlink()
+            except FileNotFoundError:
+                pass
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -259,8 +276,8 @@ def snapshot(container, expected_image_id, source_data, source_updates, bundle, 
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", container), "Invalid source container name")
     require(writers_stopped_confirmed is True, "All external writers must be explicitly confirmed stopped")
     roots = {"data": canonical_directory(source_data), "updates": canonical_directory(source_updates)}
-    require(not roots["data"].is_relative_to(roots["updates"])
-            and not roots["updates"].is_relative_to(roots["data"]), "Source trees must be disjoint")
+    require(not within(roots["data"], roots["updates"])
+            and not within(roots["updates"], roots["data"]), "Source trees must be disjoint")
     output = new_target(bundle, roots.values())
     before_inspection = inspect_guard(inspector(container), expected_image_id, roots)
     before, before_identity = scan_roots(roots)
@@ -382,7 +399,7 @@ def restore(bundle, expected_manifest_sha256, destination, reviewed_revision):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    operations = parser.add_subparsers(dest="operation", required=True)
+    operations = parser.add_subparsers(dest="operation")
     backup = operations.add_parser("snapshot")
     for flag in ("container", "expected-image-id", "source-data", "source-updates", "bundle", "revision"):
         backup.add_argument("--" + flag, required=True)
@@ -394,6 +411,8 @@ def main(argv=None):
     for flag in ("bundle", "expected-manifest-sha256", "destination", "revision"):
         recovery.add_argument("--" + flag, required=True)
     args = parser.parse_args(argv)
+    if args.operation is None:
+        parser.error("A snapshot, verify or restore operation is required")
     try:
         if args.operation == "snapshot":
             result = snapshot(args.container, args.expected_image_id, args.source_data, args.source_updates,

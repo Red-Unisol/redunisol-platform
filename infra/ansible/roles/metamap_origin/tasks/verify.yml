@@ -1,0 +1,185 @@
+---
+- name: Verify the origin contract without enabling the application backend
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Read independent origin activation
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ metamap_origin_service_unit }}"]
+  register: metamap_origin_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Require an inactive origin when its desired state is disabled
+  ansible.builtin.assert:
+    that:
+      - metamap_origin_active.stdout | trim in ['inactive', 'unknown', 'failed']
+    fail_msg: The origin is unexpectedly active; verify does not stop it implicitly.
+  when: not metamap_origin_enabled
+
+- name: Inspect a separately enabled HTTPS origin without modifying services
+  when: metamap_origin_enabled
+  block:
+    - name: Read the installed origin Apache version
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Require the reviewed installed Apache version without upgrading it
+      ansible.builtin.assert:
+        that:
+          - "'apache2' in ansible_facts.packages"
+          - ansible_facts.packages['apache2'][0].version == metamap_origin_apache_package_version
+
+    - name: Require the reviewed origin revision and an active independent unit
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_revision is match('^[0-9a-f]{40}$')
+          - metamap_origin_active.rc == 0
+          - metamap_origin_active.stdout | trim == 'active'
+
+    - name: Read origin reboot recovery enablement
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, "{{ metamap_origin_service_unit }}"]
+      register: metamap_origin_enabled_unit
+      changed_when: false
+      check_mode: false
+
+    - name: Require only the independent origin unit to be enabled
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_enabled_unit.stdout | trim == 'enabled'
+
+    - name: Inspect TLS file types ownership and permissions without reading the key
+      ansible.builtin.stat:
+        path: "{{ metamap_origin_config_dir }}/tls/{{ item.name }}"
+        follow: false
+        get_checksum: false
+      loop:
+        - {name: certificate.pem, mode: "0644"}
+        - {name: private-key.pem, mode: "0600"}
+        - {name: ca.pem, mode: "0644"}
+      register: metamap_origin_tls_metadata
+      no_log: true
+
+    - name: Require private origin key permissions and regular root-owned TLS files
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false)
+          - not item.stat.islnk | default(false)
+          - item.stat.uid == 0
+          - item.stat.mode == item.item.mode
+      loop: "{{ metamap_origin_tls_metadata.results }}"
+      no_log: true
+
+    - name: Derive the expected origin configuration marker from the public certificate
+      ansible.builtin.import_tasks: fingerprint.yml
+
+    - name: Read only nonsecret origin files for complete Git comparison
+      ansible.builtin.slurp:
+        src: "{{ item.path }}"
+      loop:
+        - {path: "{{ metamap_origin_config_dir }}/apache.conf", template: apache.conf.j2}
+        - {path: "{{ metamap_origin_document_root }}/health.json", template: health.json.j2}
+        - {path: "/etc/systemd/system/{{ metamap_origin_service_unit }}", template: metamap-origin.service.j2}
+        - {path: /etc/logrotate.d/redunisol-metamap-origin, template: logrotate.j2}
+        - {path: /var/lib/prometheus/node-exporter/metamap-origin.prom, template: origin.prom.j2}
+      register: metamap_origin_nonsecret_files
+
+    - name: Require origin files to match the complete reviewed templates
+      ansible.builtin.assert:
+        that:
+          - item.content | b64decode == lookup('ansible.builtin.template', role_path ~ '/templates/' ~ item.item.template)
+      loop: "{{ metamap_origin_nonsecret_files.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+
+    - name: Inspect public origin metric file metadata
+      ansible.builtin.stat:
+        path: /var/lib/prometheus/node-exporter/metamap-origin.prom
+        follow: false
+      register: metamap_origin_metrics_verified
+
+    - name: Require an atomic regular root-owned public metric file
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_metrics_verified.stat.isreg | default(false)
+          - not metamap_origin_metrics_verified.stat.islnk | default(false)
+          - metamap_origin_metrics_verified.stat.uid == 0
+          - metamap_origin_metrics_verified.stat.mode == '0644'
+
+    - name: Validate independent Apache configuration without reloading it
+      ansible.builtin.command:
+        argv: [/usr/sbin/apache2, -t, -f, "{{ metamap_origin_config_dir }}/apache.conf"]
+      changed_when: false
+      check_mode: false
+
+    - name: Read the origin listener addresses
+      ansible.builtin.command:
+        argv: [ss, -H, -ltnp, "sport = :{{ metamap_origin_listen_port }}"]
+      register: metamap_origin_listener
+      changed_when: false
+      check_mode: false
+
+    - name: Require exactly the explicitly declared origin listener
+      ansible.builtin.assert:
+        that:
+          - >-
+            (metamap_origin_listener.stdout | regex_findall('(?m)^\S+\s+\d+\s+\d+\s+(\S+)\s+')) ==
+            [metamap_origin_listen_address ~ ':' ~ metamap_origin_listen_port]
+
+    - name: Read verified TLS origin headers
+      ansible.builtin.import_tasks: probe.yml
+
+    - name: Require the reviewed configuration in the running HTTPS origin
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_loaded_probe.rc == 0
+          - metamap_origin_loaded_probe.stdout_lines | last | default('') == '200'
+          - >-
+            ('x-redunisol-origin-config: ' ~ metamap_origin_configuration_sha256)
+            in (metamap_origin_loaded_probe.stdout | lower)
+          - "'\nlocation:' not in (metamap_origin_loaded_probe.stdout | lower)"
+
+    - name: Read transport-only health metadata with the trusted origin CA
+      ansible.builtin.command:
+        argv: >-
+          {{ metamap_origin_https_base_arguments +
+             ['https://' ~ metamap_origin_hostname ~ ':' ~ metamap_origin_listen_port ~ '/health'] }}
+      register: metamap_origin_health_metadata
+      changed_when: false
+      check_mode: false
+
+    - name: Require explicit transport readiness without an application readiness claim
+      ansible.builtin.assert:
+        that:
+          - >-
+            metamap_origin_health_metadata.stdout | from_json ==
+            lookup('ansible.builtin.template', role_path ~ '/templates/health.json.j2') | from_json
+
+    - name: Probe blocked application paths without following redirects
+      ansible.builtin.command:
+        argv: >-
+          {{ metamap_origin_https_base_arguments + ['--head', '--write-out', '\n%{http_code}\n',
+             'https://' ~ metamap_origin_hostname ~ ':' ~ metamap_origin_listen_port ~ item] }}
+      loop:
+        - /metamap-platform
+        - /metamap-platform/health
+        - /metamap-platform/updates/transferencias/latest.json
+      register: metamap_origin_blocked_paths
+      changed_when: false
+      check_mode: false
+
+    - name: Require fail-closed 503 responses without a Location header
+      ansible.builtin.assert:
+        that:
+          - item.stdout_lines | last | default('') == '503'
+          - "'\nlocation:' not in (item.stdout | lower)"
+      loop: "{{ metamap_origin_blocked_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Report the origin trust and application boundary
+      ansible.builtin.debug:
+        msg: >-
+          Verified HTTPS origin using {{ metamap_origin_tls_mode }}. /health proves transport configuration only;
+          application paths return 503, no backend is enabled, and no production route or client was changed.

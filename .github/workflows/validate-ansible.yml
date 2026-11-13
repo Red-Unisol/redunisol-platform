@@ -4,6 +4,7 @@ name: Validate Ansible foundation
   pull_request:
     paths:
       - infra/ansible/**
+      - infra/cloudflare/metamap-origin.yml
       - docs/dedicated-foundation.md
       - docs/metamap-dedicated-migration.md
       - docs/README.md
@@ -12,6 +13,7 @@ name: Validate Ansible foundation
     branches: [main]
     paths:
       - infra/ansible/**
+      - infra/cloudflare/metamap-origin.yml
       - docs/dedicated-foundation.md
       - docs/metamap-dedicated-migration.md
       - docs/README.md
@@ -34,6 +36,8 @@ jobs:
       ANSIBLE_LOCAL_TEMP: ${{ runner.temp }}/ansible-local
       FOUNDATION_TEST_RESTIC_BINARY: ${{ runner.temp }}/redunisol-restic/restic
       FOUNDATION_TEST_FAIL2BAN_ROOT: ${{ runner.temp }}/redunisol-fail2ban
+      METAMAP_TEST_APACHE_BINARY: /usr/sbin/apache2
+      METAMAP_TEST_APACHE_MODULE_DIR: /usr/lib/apache2/modules
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Checkout
@@ -70,12 +74,23 @@ jobs:
       - name: Extract pinned Fail2ban for isolated local tests
         run: python infra/ansible/tools/install-test-fail2ban.py --directory "$RUNNER_TEMP/redunisol-fail2ban"
 
-      - name: Check foundation safety contracts
-        run: python -m unittest discover -s infra/ansible/tests -v
+      - name: Install Apache binaries for isolated HTTPS tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y apache2-bin openssl
+
+      - name: Check infrastructure safety with isolated root-owned local fixtures
+        run: |
+          sudo env PATH="$PATH" ANSIBLE_CONFIG="$ANSIBLE_CONFIG" \
+            FOUNDATION_TEST_RESTIC_BINARY="$FOUNDATION_TEST_RESTIC_BINARY" \
+            FOUNDATION_TEST_FAIL2BAN_ROOT="$FOUNDATION_TEST_FAIL2BAN_ROOT" \
+            METAMAP_TEST_APACHE_BINARY="$METAMAP_TEST_APACHE_BINARY" \
+            METAMAP_TEST_APACHE_MODULE_DIR="$METAMAP_TEST_APACHE_MODULE_DIR" \
+            bash infra/ansible/tools/run-local-tests.sh
 
       - name: Lint YAML
         working-directory: infra/ansible
-        run: yamllint --strict . ../../.github/workflows/validate-ansible.yml
+        run: yamllint --strict . ../cloudflare/metamap-origin.yml ../../.github/workflows/validate-ansible.yml
 
       - name: Lint Ansible offline
         working-directory: infra/ansible

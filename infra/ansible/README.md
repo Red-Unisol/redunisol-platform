@@ -379,11 +379,27 @@ destino inactivo, verifican su preparacion y separan la captura fria del estado
 de su restauracion aislada. No forman parte de `provision.yml`: preparar
 MetaMap no vuelve a provisionar la base ni activa la aplicacion.
 
-El grupo `metamap_server_hosts` selecciona solamente el dedicado; el grupo
-`metamap_migration_origins` queda vacio hasta el inventario de origen revisado.
-La imagen por digest y las autorizaciones deben declararse expresamente antes
-de cualquier escritura. El inventario de integracion no contiene hosts.
+Los grupos `metamap_server_hosts`, `metamap_origin_hosts` y
+`metamap_backup_hosts` seleccionan solamente el dedicado. El grupo separado
+`metamap_migration_origins` identifica la VPS revisada; las autorizaciones de
+captura y confirmacion de escritores detenidos siguen en false. La imagen por
+digest esta revisada; toda escritura requiere su autorizacion propia y una
+revision completa. El inventario de integracion no contiene hosts.
 
 Consultar el [contrato y procedimiento de migracion](../../docs/metamap-dedicated-migration.md)
 y el [rol](roles/metamap_server/README.md). La ruta operativa actual y los
 clientes se conservan durante esta preparacion.
+
+El origen HTTPS tiene una unidad Apache independiente y backend deshabilitado;
+el repositorio Restic separado prueba solo recuperacion sintetica. Los archivos
+privados pendientes no se cargan en Compose. Ver los README de
+`roles/metamap_origin` y `roles/metamap_backup` antes de aplicar sus playbooks.
+
+Para validar localmente toda la infraestructura, ejecutar
+`tools/run-local-tests.sh` desde Linux/WSL con las dependencias fijadas y como
+root local. Usa solo fixtures sinteticas temporales, sin inventarios ni SSH.
+Cada archivo corre en un proceso Python separado: evita que las opciones
+globales de un helper afecten pruebas ajenas, y permite probar las guardas de
+propiedad root. Los tests HTTPS requieren `apache2-bin` y OpenSSL; pueden usarse
+binarios extraidos en una cache con `METAMAP_TEST_APACHE_BINARY` y
+`METAMAP_TEST_APACHE_MODULE_DIR`, sin instalar o arrancar servicios del sistema.

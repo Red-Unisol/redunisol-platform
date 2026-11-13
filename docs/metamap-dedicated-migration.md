@@ -2,18 +2,20 @@
 
 ## Alcance de este cambio
 
-Este cambio prepara contratos, directorios, configuracion y herramientas de
-verificacion para `dedicated_prod_01`. La preparacion no se aplico a ningun host.
-No contacta la VPS, copia datos, arranca MetaMap, admite webhooks ni cambia
-clientes, publisher, proxy, DNS o el workflow operativo de deploy.
+Esta etapa prepara contratos, directorios, configuracion, origen HTTPS y
+recuperacion sintetica para `dedicated_prod_01`. La aplicacion operativa sigue
+atendida por la VPS. El checkpoint al final distingue lo aplicado de las
+operaciones pendientes; preparar el origen no activa MetaMap, copia datos
+productivos, cambia clientes o cambia el destino del deploy y del publisher.
 
 El rol `metamap_server` tiene playbooks propios de preparacion y verificacion.
 El destino se selecciona con `metamap_server_hosts`; el grupo de captura
-`metamap_migration_origins` queda vacio por defecto.
+`metamap_migration_origins` identifica el origen revisado, con captura y
+confirmacion de escritores detenidos desautorizadas por defecto.
 `metamap_running` solo admite `false`, incluso con autorizacion de escritura.
-No hay una opcion de activacion en estos playbooks. La imagen queda vacia hasta
-revisar la metadata del runtime; preparar codigo en Git no acredita una imagen
-elegida, datos recuperables ni una migracion aplicada.
+No hay una opcion de activacion de la aplicacion en estos playbooks. La imagen
+esta fijada por digest tras revisar el runtime; eso no acredita datos
+productivos recuperables ni una migracion aplicada.
 
 El nombre historico `metamap-platform-server-dev` corresponde al servicio
 operativo. Su [workflow actual](../.github/workflows/deploy-metamap-server-dev.yml)
@@ -42,18 +44,26 @@ Antes de elegir la imagen o una ventana, completar un inventario por servicio:
 | Receipts | Retencion efectiva y cobertura del snapshot. El servidor documenta siete dias y limpieza al iniciar; migrar no recupera receipts ya eliminados. |
 | HTTP y clientes | URLs, prefijos, autenticacion, timeouts, consumidores, productor de webhooks y comportamiento de reintento observado. |
 | Recuperacion | Ventana, responsables, presupuesto de transferencia, retencion de origen y destino, copia cifrada recuperable y ensayo de restore. |
-| Herramientas del origen | Linux, cliente Docker con daemon local en `/var/run/docker.sock` y `/usr/bin/python3` compatible con Ansible fijado: Python 3.9-3.14. El Python de la imagen no demuestra el del host. |
+| Herramientas del origen | Linux, cliente Docker con daemon local en `/var/run/docker.sock` y `/usr/bin/python3` 3.6 o posterior. La captura no usa modulos remotos del Ansible moderno. |
 
 La captura incluida soporta SQLite. Si el inventario confirma PostgreSQL, esa
 captura debe rechazarlo y el procedimiento consistente de PostgreSQL queda por
 definir antes de continuar. El corte conserva motor, esquema e imagen revisada;
 no incluye migrar a PostgreSQL ni actualizar versiones de la aplicacion.
 
-El playbook de captura usa modulos Ansible y ejecuta el helper con
-`/usr/bin/python3` en el origen. La [matriz de soporte de Ansible 2.21](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html#ansible-core-support-matrix)
-exige Python 3.9-3.14 en el host administrado; el helper requiere como minimo
-3.9. Si el inventario encuentra solo Python 3.6, la captura queda bloqueada
-hasta revisar otra via compatible. Este cambio no instala ni actualiza Python.
+El origen observado usa Python 3.6.8 y SQLite 3.26.0. El playbook de captura
+usa `gather_facts: false`, validaciones del controlador y `raw` para ejecutar
+el helper compatible con 3.6, comprobar hostname, machine-id e interprete.
+No instala ni actualiza Python. Prepare, verify y restore del dedicado usan
+los modulos Ansible habituales sobre su Python 3.13. El controlador sigue la
+[matriz de soporte de Ansible 2.21](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html#ansible-core-support-matrix).
+
+El 13/11 se observaron la imagen de codigo `a86be2de266029cd1ec4479b8bdfb7f74378e943`,
+el Docker image ID `sha256:1c664fb180bd1c4de6ace104b6b305897a5cec8dcd670579a19d8ad42338b4f7`
+y el digest GHCR fijado en el inventario. Los datos estan en el volumen
+`metamap-platform-server-dev_metamap_platform_server_data` (SQLite de unos
+185 MB, mas WAL), y `/srv/redunisol-updates` contiene unos 83 MB de archivos.
+Son mediciones parciales: antes del corte volver a relevar cambios y escritores.
 
 ## Preparacion del destino
 
@@ -62,7 +72,7 @@ hasta revisar otra via compatible. Este cambio no instala ni actualiza Python.
 | `metamap_prepare_authorized` | `false` por defecto; habilita solo la preparacion expresamente revisada. |
 | `metamap_revision` | SHA Git completo de 40 caracteres del checkout revisado. |
 | `metamap_running` | Siempre `false`; `true` se rechaza. |
-| `metamap_image` | Vacia por defecto; solo admite `ghcr.io/red-unisol/metamap-platform-server@sha256:<64 hex>` tras revisar su metadata. |
+| `metamap_image` | Default del rol vacio; produccion fija el digest revisado `ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5`. |
 | `metamap_prefetch_image` | `false` por defecto; con opt-in descarga esa imagen directamente en el dedicado, sin pasar por la VPS ni iniciar el contenedor. |
 | `/srv/redunisol/platform/metamap-server` | Configuracion preparada del servicio. |
 | `/srv/redunisol/state/metamap-server/data` | Destino previsto para datos, sin poblacion automatica. |
@@ -73,6 +83,14 @@ Una preparacion real exige autorizacion, revision y digest revisado. En check
 mode puede describirse el plan con la imagen vacia, sin inventar un digest ni
 simular que se instalo. Prepare y verify rechazan contenedores existentes del
 proyecto, incluso detenidos: no adoptan ni arrancan un runtime previo.
+
+`metamap_stage_runtime_env` permite custodiar una copia de los valores actuales
+en `/etc/redunisol-metamap/runtime.env.pending`, root `0600`, con padre `0700`.
+Su origen es un archivo privado del controlador, nunca valores en Git, argumentos
+o logs. Esta copia **no** se llama `runtime.env` ni esta referenciada por Compose.
+El futuro `runtime.env` sigue siendo requerido y ausente. Compose usa `format: raw`
+para conservar literalmente dolares y comillas de los valores existentes;
+la preparacion no los carga ni arranca la aplicacion.
 
 La descarga opcional usa la autenticacion existente del Docker client en el
 dedicado. Este cambio no hace `docker login` ni copia credenciales GHCR. Si esa
@@ -86,12 +104,12 @@ desde el controlador Linux/WSL descrito en la [guia Ansible](../infra/ansible/RE
 ```bash
 cd infra/ansible
 ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-server-prepare.yml \
-  --limit dedicated_prod_01 --check --diff
+  --limit dedicated_prod_01 --check --diff --extra-vars "@/ruta/privada/metamap-prepare.yml"
 ```
 
 Tras revisar la metadata, el archivo privado de variables fija el SHA, el digest,
 `metamap_prepare_authorized: true`, `metamap_running: false` y el opt-in de
-prefetch elegido. No se ejecutan estos comandos como parte de este PR:
+prefetch elegido. La aplicacion exige la autorizacion operativa de esta etapa:
 
 ```bash
 ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-server-prepare.yml \
@@ -102,11 +120,77 @@ ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-server-ve
 
 Verify exige digest, revision y el mismo valor de `metamap_prefetch_image` usado
 en prepare: compara tambien esa decision registrada en `preparation.json`.
+Si se selecciono staging privado, usar tambien sus mismas variables y archivo
+fuente privado: verify compara los bytes sin exponerlos ni cargar el runtime.
 El ejemplo reutiliza el archivo de variables, aunque verify no requiere
 autorizacion de escritura. Comprueba la
 preparacion y ausencia de un runtime del proyecto; no prueba salud HTTP de una
 aplicacion arrancada. Repetir prepare y registrar convergencia cuando se autorice
 aplicarlo, sin convertir verify en una correccion implicita.
+
+## Origen HTTPS y ensayo de recuperacion
+
+El rol `metamap_origin` usa el Apache ya instalado, con configuracion, PID,
+logs y unidad `metamap-origin.service` propios. No altera ni recarga la unidad
+`apache2.service` de foundation. La verificacion de foundation identifica su
+propio MainPID para no confundir ambos servicios.
+
+El origen nuevo es `metamap-origin.redunisol.com.ar`, con certificado Origin CA
+de Cloudflare limitado a ese hostname y vigencia de un ano. La clave se genera
+y custodia fuera del dedicado; se entrega mediante archivos privados, nunca
+inventarios Git. Su CA se verifica explicitamente en los ensayos directos; los
+navegadores deben entrar por el registro proxied de Cloudflare. El recurso
+DNS y la huella publica estan descritos en
+[`infra/cloudflare/metamap-origin.yml`](../infra/cloudflare/metamap-origin.yml).
+No se cambia el registro de `kestra.redunisol.com.ar` ni se configura un Worker
+o una ruta productiva en esta etapa.
+
+El primer ensayo usa `127.0.0.1:18443`; la preparacion publica autorizada usa
+`168.197.51.104:443`. `GET /health` informa solo transporte HTTPS y backend
+deshabilitado. Todo `/metamap-platform` devuelve **503 sin Location**, hasta un
+corte separado: no acepta webhooks, sirve una base vacia ni ejecuta un clon.
+El contrato rechaza `metamap_origin_backend_enabled: true` en esta etapa.
+
+La configuracion aislada se valida antes de arrancar. La aplicacion compara
+tambien la huella servida para reconciliar una recarga perdida tras un fallo;
+verify no repara ni recarga. La prueba local de proxy usa un backend HTTP
+sintetico, no la base ni las credenciales de MetaMap. Conserva cuerpo, cabeceras,
+prefijo y respuestas Range sin redirects al cliente.
+
+El rol `metamap_backup` inicializa un repositorio Restic **independiente** en
+`/srv/redunisol-backups/restic/metamap`, con clave distinta, retenida fuera del
+dedicado. Comprueba UUID del montaje, ausencia de fallback a `/`, privacidad y
+propiedad de la clave; no adopta repositorios desconocidos ni reemplaza claves.
+No toca las copias de foundation/BCRA.
+
+El ensayo usa solo un dataset sintetico privado con SQLite y archivos ficticios:
+backup cifrado, rechazo de clave incorrecta, `check --read-data`, restore nuevo
+y comparacion de hashes/metadatos/SQL. Repetir la preparacion valida la prueba
+existente, sin crear snapshots ni renovar su fecha; verify solo lee. La politica
+de retencion queda documentada, sin activar timers ni ejecutar prune/forget.
+El recibo declara expresamente `production_data_protected: false`, `offsite:
+false` y `continuous_backup: false`. La copia productiva, la retencion aplicada
+y la cobertura fuera del dedicado siguen siendo requisitos antes de activar.
+
+Los playbooks se ejecutan por separado, con claves y autorizaciones en archivos
+privados del controlador. Los grupos de destino seleccionan solo el dedicado:
+
+```bash
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-origin-prepare.yml \
+  --limit dedicated_prod_01 --extra-vars "@/ruta/privada/metamap-origin.yml"
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-origin-verify.yml \
+  --limit dedicated_prod_01 --extra-vars "@/ruta/privada/metamap-origin.yml"
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-backup-prepare.yml \
+  --limit dedicated_prod_01 --extra-vars "@/ruta/privada/metamap-backup.yml"
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-backup-verify.yml \
+  --limit dedicated_prod_01 --extra-vars "@/ruta/privada/metamap-backup-verify.yml"
+```
+
+Tras preparar origen y repositorio, `metamap-monitoring-prepare.yml` agrega la
+unidad nueva a la comprobacion local existente de salud cada 60 segundos. El
+exporter conserva el bind privado; la conexion con monitoreo externo sigue
+pendiente. La expiracion del certificado y el estado de preparacion se exponen
+como textfiles, sin declarar un backend activo ni proteccion de datos productivos.
 
 ## Captura fria y restauracion aislada
 
@@ -133,27 +217,28 @@ comprobaciones. El hash esperado del manifiesto se conserva por un canal
 confiable separado del bundle; calcular otro hash de una copia recibida no
 demuestra que coincida con el origen aprobado.
 
-El origen no se incorpora al inventario operativo de este cambio. Una fase
-posterior debe declarar su inventario privado y revisar estas variables:
+El origen se declara en un grupo aislado y revisado; las operaciones de captura
+siguen necesitando autorizacion propia y estas variables:
 
 | Operacion | Variables y guardas |
 | --- | --- |
 | Captura | `metamap_backup_authorized`, `metamap_revision`, `metamap_writers_stopped_confirmed`; `metamap_source_container`, `metamap_source_image_id`, `metamap_source_data_dir`, `metamap_source_updates_dir`, `metamap_source_expected_hostname`, `metamap_source_expected_machine_id`; `metamap_backup_bundle_dir` nuevo, con padre existente. |
 | Restore | `metamap_restore_authorized`, `metamap_revision`, `metamap_restore_bundle_dir` ya presente en el destino, `metamap_bundle_manifest_sha256` revisado y `metamap_restore_directory` nuevo bajo `/srv/redunisol/state/metamap-server/restores/<operation>`. |
 
-Los accesos del inventario privado deben proceder del bloque SSH canonico de
-`credentials.txt`; no se copian a esta guia. En una ventana autorizada, desde
-`infra/ansible`, el inventario privado debe poblar exclusivamente
-`metamap_migration_origins` con el origen revisado. El flujo de playbooks es:
+Los accesos privados deben proceder del bloque SSH canonico de `credentials.txt`;
+no se copian a esta guia. En una ventana autorizada, desde `infra/ansible`,
+revisar exclusivamente `metamap_migration_origins` y las variables privadas de
+captura. El flujo de playbooks es:
 
 ```bash
-ansible-playbook -i /ruta/privada/metamap-source.yml playbooks/metamap-server-backup.yml \
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-server-backup.yml \
   --list-hosts --extra-vars "@/ruta/privada/metamap-capture.yml"
-ansible-playbook -i /ruta/privada/metamap-source.yml playbooks/metamap-server-backup.yml \
+ansible-playbook -i inventories/production/hosts.yml playbooks/metamap-server-backup.yml \
   --extra-vars "@/ruta/privada/metamap-capture.yml"
 ```
 
-El helper se envia por stdin; no se instala un script persistente en la VPS.
+El helper se envia codificado en la invocacion `raw`; no se instala un script
+persistente ni se ejecutan modulos Ansible Python modernos en la VPS.
 El playbook no transfiere el bundle entre hosts. La copia posterior debe ser
 acotada, reanudable y con limite de ancho de banda, dentro de la ventana acordada;
 validar el manifiesto y retener el origen frio. No ejecutar una copia masiva o
@@ -178,9 +263,10 @@ El [actualizador desktop](../apps/metamap-platform/client/transferencias-celesol
 tiene `BASE_URL` fijo en
 `https://kestra.redunisol.com.ar/metamap-platform/updates/transferencias/` y
 deshabilita redirects. La API general tiene su propia configuracion de URL;
-ambos contratos se inventarian por separado. El primer corte conserva la URL
-publica y el HTTPS de la VPS mediante proxy y un enlace privado acotado hacia
-el dedicado, cuya configuracion y pruebas se preparan en otra etapa.
+ambos contratos se inventarian por separado. El corte conserva la URL publica:
+puede usar un proxy VPS con enlace privado o el enrutamiento directo desde
+Cloudflare al origen nuevo. La seleccion, configuracion y pruebas del trafico
+productivo corresponden a la siguiente etapa.
 
 El [publisher](../apps/metamap-platform/client/transferencias-celesol/tools/publish_update.py)
 escribe hoy en `/srv/redunisol-updates/transferencias`. Al mover el servidor,
@@ -191,8 +277,11 @@ su workflow actuales. Servir una copia vieja mientras el publisher escribe en
 otro root no satisface el contrato.
 
 Conservar la URL a traves de la VPS mantiene el trafico de descarga del EXE por
-ella. Reducir ese ancho de banda requiere una etapa **posterior** de cliente y
-distribucion. No se cambia codigo ni se distribuye una version desktop ahora.
+ella. Otra alternativa es enrutar internamente `/metamap-platform/*` desde
+Cloudflare al nuevo origen: conserva la URL y evita ese salto sin actualizar
+el cliente ni emitir redirects HTTP. Elegir y probar esa ruta corresponde a
+la etapa de enrutamiento, posterior a esta preparacion. No se cambia codigo
+ni se distribuye una version desktop ahora.
 
 El primer arranque tampoco es una prueba inocua: `create_app` inicializa SQL,
 bootstrap de clientes y limpieza de receipts; su lifespan recupera trabajo de

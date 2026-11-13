@@ -1,0 +1,25 @@
+---
+- name: Require a separate fail-closed HTTPS origin
+  ansible.builtin.assert:
+    that:
+      - metamap_origin_enabled | type_debug == 'bool'
+      - metamap_origin_apply_authorized | type_debug == 'bool'
+      - metamap_origin_public_listen_authorized | type_debug == 'bool'
+      - metamap_origin_backend_enabled | type_debug == 'bool'
+      - not metamap_origin_backend_enabled
+      - metamap_origin_hostname == 'metamap-origin.redunisol.com.ar'
+      - metamap_origin_backend_port | int == 18083
+      - metamap_origin_listen_port | string is match('^(18443|443)$')
+      - >-
+        (metamap_origin_listen_address == '127.0.0.1' and metamap_origin_listen_port | int == 18443) or
+        (metamap_origin_public_listen_authorized and
+         (metamap_origin_listen_address == '0.0.0.0' or
+          metamap_origin_listen_address in (ansible_facts.all_ipv4_addresses | default([]))))
+      - metamap_origin_tls_mode in ['private-ca-test', 'cloudflare-origin-ca', 'public-ca']
+      - metamap_origin_config_dir == '/etc/redunisol-metamap-origin'
+      - metamap_origin_document_root == '/var/www/redunisol-metamap-origin'
+      - metamap_origin_log_dir == '/var/log/metamap-origin'
+      - metamap_origin_runtime_dir == '/run/metamap-origin'
+      - metamap_origin_module_dir == '/usr/lib/apache2/modules'
+      - metamap_origin_service_unit == 'metamap-origin.service'
+    fail_msg: This stage permits only an isolated HTTPS origin with the application backend disabled and explicitly approved public binding.

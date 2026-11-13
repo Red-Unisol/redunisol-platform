@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scope": "metamap-future-production-backup-policy",
+  "repository": "/srv/redunisol-backups/restic/metamap",
+  "proposed_retention": {"keep_daily": 7, "keep_weekly": 4, "keep_monthly": 6},
+  "enforcement_enabled": false,
+  "timers_enabled": false,
+  "automatic_forget_or_prune": false,
+  "production_activation_requires": [
+    "consistent real MetaMap dataset and immutable image/cutoff receipt",
+    "encrypted real snapshot and full repository check",
+    "isolated full dataset restore with hashes, metadata and SQLite validation",
+    "separate authorization of scheduling, retention and deletion"
+  ],
+  "synthetic_canary_satisfies_production_activation": false,
+  "offsite_configured": false
+}

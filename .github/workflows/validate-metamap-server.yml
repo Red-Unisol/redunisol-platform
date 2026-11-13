@@ -6,8 +6,8 @@ on:
       - 'apps/metamap-platform/server/**'
       - '.github/workflows/validate-metamap-server.yml'
       - '.github/workflows/validate-metamap-runtime-env.yml'
-      - 'infra/ansible/roles/metamap_server/**'
-      - 'infra/ansible/playbooks/metamap-server-*.yml'
+      - 'infra/ansible/roles/metamap_*/**'
+      - 'infra/ansible/playbooks/metamap-*.yml'
       - 'infra/ansible/tests/test_metamap_*.py'
   workflow_dispatch:
 

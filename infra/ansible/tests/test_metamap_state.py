@@ -1,5 +1,6 @@
 """Real SQLite/file recovery in local temporary trees; Docker is never invoked."""
 import contextlib
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -16,6 +17,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import yaml
+
 
 SOURCE = Path(__file__).resolve().parents[1] / "roles/metamap_server/files/metamap-state.py"
 SPEC = importlib.util.spec_from_file_location("metamap_state", SOURCE)
@@ -23,6 +26,110 @@ STATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STATE)
 IMAGE = "sha256:" + "a" * 64
 REVISION = "b" * 40
+CONTROLLER = shutil.which("ansible-playbook")
+if not CONTROLLER and Path(sys.executable).with_name("ansible-playbook").is_file():
+    CONTROLLER = str(Path(sys.executable).with_name("ansible-playbook"))
+
+
+class SourceCompatibilityTests(unittest.TestCase):
+    def test_helper_and_identity_script_parse_as_python36(self):
+        ast.parse(SOURCE.read_text(encoding="utf-8"), feature_version=(3, 6))
+        tasks = yaml.safe_load((SOURCE.parents[1] / "tasks/backup.yml").read_text())
+        identity = next(task["ansible.builtin.raw"] for task in tasks
+                        if task["name"] == "Read the reviewed migration origin identity without changing it")
+        script = identity.split("\n", 1)[1].rsplit("REDUNISOL_METAMAP_ORIGIN_IDENTITY", 1)[0]
+        ast.parse(script, feature_version=(3, 6))
+
+    def test_source_does_not_depend_on_newer_stdlib_apis(self):
+        tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                self.assertNotEqual(node.attr, "is_relative_to")
+            if isinstance(node, ast.Call):
+                self.assertFalse({keyword.arg for keyword in node.keywords}
+                                 & {"capture_output", "text", "missing_ok"})
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "add_subparsers":
+                    self.assertNotIn("required", {keyword.arg for keyword in node.keywords})
+
+    def test_entire_source_route_uses_raw_without_remote_python_modules(self):
+        root = SOURCE.parents[3]
+        play = yaml.safe_load((root / "playbooks/metamap-server-backup.yml").read_text())[0]
+        self.assertIs(play["gather_facts"], False)
+        self.assertEqual(play["hosts"], "metamap_migration_origins")
+        self.assertEqual(play["tasks"][0]["ansible.builtin.import_role"],
+                         {"name": "metamap_server", "tasks_from": "backup"})
+        tasks = yaml.safe_load((SOURCE.parents[1] / "tasks/backup.yml").read_text())
+        allowed = {"ansible.builtin.raw", "ansible.builtin.assert", "ansible.builtin.debug"}
+        for task in tasks:
+            self.assertTrue({key for key in task if key.startswith("ansible.")} <= allowed)
+        capture = next(task for task in tasks if task["name"] == "Capture the stopped source into a new private local bundle")
+        self.assertIn("ansible.builtin.raw", capture)
+        self.assertEqual(capture["when"], "not ansible_check_mode")
+        self.assertIn("--writers-stopped-confirmed", capture["ansible.builtin.raw"])
+        identity = next(task for task in tasks if task["name"] == "Match the immutable migration origin identity")
+        clauses = "\n".join(identity["ansible.builtin.assert"]["that"])
+        for field in ("hostname", "machine_id", "python_version", "docker_socket"):
+            self.assertIn(field, clauses)
+
+
+@unittest.skipUnless(os.name == "posix" and CONTROLLER, "Local Linux Ansible controller required")
+class SourceRawRouteTests(unittest.TestCase):
+    def run_local_tasks(self, tasks, variables):
+        with tempfile.TemporaryDirectory(prefix="metamap-raw-controller-") as directory:
+            root = Path(directory)
+            playbook = root / "play.yml"
+            play = [{"name": "Exercise raw compatibility without SSH or runtime operations",
+                     "hosts": "localhost", "connection": "local", "gather_facts": False,
+                     "become": False, "vars": variables, "tasks": tasks}]
+            playbook.write_text(yaml.safe_dump(play, sort_keys=False))
+            configuration = root / "ansible.cfg"
+            configuration.write_text("[defaults]\nretry_files_enabled=False\n")
+            environment = dict(os.environ, ANSIBLE_CONFIG=str(configuration), ANSIBLE_NOCOLOR="1",
+                               ANSIBLE_LOCAL_TEMP=str(root / "controller-tmp"))
+            return subprocess.run([CONTROLLER, "-i", "localhost,", "--limit", "localhost", "-c", "local", str(playbook)],
+                                  env=environment, cwd=root, capture_output=True, text=True, timeout=45, check=False)
+
+    def identity_guard(self):
+        tasks = yaml.safe_load((SOURCE.parents[1] / "tasks/backup.yml").read_text())
+        return copy.deepcopy(next(task for task in tasks if task["name"] == "Match the immutable migration origin identity"))
+
+    def identity_variables(self):
+        return {"metamap_source_expected_hostname": "synthetic-origin.test",
+                "metamap_source_expected_machine_id": "e" * 32,
+                "metamap_source_identity": {"stdout": json.dumps({
+                    "hostname": "synthetic-origin.test", "machine_id": "e" * 32,
+                    "python_version": [3, 6, 8], "sqlite_version": "3.7.17", "docker_socket": True})}}
+
+    def test_real_identity_guard_accepts_the_legacy_origin_signature(self):
+        result = self.run_local_tasks([self.identity_guard()], self.identity_variables())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_real_identity_guard_rejects_different_hosts_old_python_or_no_socket(self):
+        for override in ({"machine_id": "f" * 32}, {"hostname": "different-origin.test"},
+                         {"python_version": [3, 5, 9]}, {"docker_socket": False}):
+            with self.subTest(override=override):
+                variables = self.identity_variables()
+                signature = json.loads(variables["metamap_source_identity"]["stdout"])
+                signature.update(override)
+                variables["metamap_source_identity"]["stdout"] = json.dumps(signature)
+                result = self.run_local_tasks([self.identity_guard()], variables)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Migration origin identity differs", result.stdout + result.stderr)
+
+    def test_real_raw_transport_executes_only_helper_help_in_a_local_shell(self):
+        tasks = yaml.safe_load((SOURCE.parents[1] / "tasks/backup.yml").read_text())
+        capture = copy.deepcopy(next(task for task in tasks
+                                     if task["name"] == "Capture the stopped source into a new private local bundle"))
+        # Keep the actual base64/bootstrap/quoting. Replace the snapshot's data
+        # arguments with --help, which exits before inspection or filesystem work.
+        prefix, _ = capture["ansible.builtin.raw"].split(" snapshot", 1)
+        capture["ansible.builtin.raw"] = prefix + " snapshot --help"
+        capture["changed_when"] = False
+        assertion = {"ansible.builtin.assert": {"that": [
+            "'--writers-stopped-confirmed' in metamap_cold_capture.stdout"]}}
+        result = self.run_local_tasks([capture, assertion], {"role_path": str(SOURCE.parents[1])})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("changed=0", result.stdout)
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX metadata and nonsymlink file operations required")
@@ -309,6 +416,42 @@ c.execute("UPDATE records SET value=?",(b'b'*8192,)); os._exit(0)
             with self.assertRaises(OSError):
                 STATE.write_json_new(path, {"synthetic": True})
         self.assertFalse(path.exists())
+
+    def test_legacy_sqlite_api_uses_string_paths_and_sqlite_master(self):
+        original_connect = sqlite3.connect
+
+        class LegacyConnection:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, statement):
+                if "sqlite_schema" in statement:
+                    raise sqlite3.OperationalError("Legacy SQLite has no sqlite_schema alias")
+                return self.connection.execute(statement)
+
+            def close(self):
+                self.connection.close()
+
+        def legacy_connect(database, **kwargs):
+            self.assertIsInstance(database, str, "Python 3.6 sqlite3 does not accept pathlib objects")
+            return LegacyConnection(original_connect(database, **kwargs))
+
+        with mock.patch.object(STATE.sqlite3, "connect", side_effect=legacy_connect):
+            result = STATE.check_sqlite(self.data, "metamap.db")
+        self.assertEqual(result["table_names"], ["validations"])
+        self.assertEqual(result["integrity"], "ok")
+
+    def test_docker_subprocess_uses_python36_compatible_keywords(self):
+        responses = [subprocess.CompletedProcess([], 0, json.dumps([self.observation["container"]]), ""),
+                     subprocess.CompletedProcess([], 0, "", "")]
+        with mock.patch.object(STATE.subprocess, "run", side_effect=responses) as run:
+            STATE.inspect_runtime("metamap-source")
+        for call in run.call_args_list:
+            self.assertNotIn("capture_output", call.kwargs)
+            self.assertNotIn("text", call.kwargs)
+            self.assertIs(call.kwargs["universal_newlines"], True)
+            self.assertEqual(call.kwargs["stdout"], subprocess.PIPE)
+            self.assertEqual(call.kwargs["stderr"], subprocess.PIPE)
 
 
 if __name__ == "__main__":

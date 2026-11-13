@@ -2,7 +2,9 @@
 - name: Capture only an explicitly inventoried stopped MetaMap migration origin
   hosts: metamap_migration_origins
   become: true
-  gather_facts: true
+  # The inventoried migration origin may expose only Python 3.6.8. All remote
+  # execution is raw; assert/debug and file lookup stay on the controller.
+  gather_facts: false
   serial: 1
   any_errors_fatal: true
   tasks:

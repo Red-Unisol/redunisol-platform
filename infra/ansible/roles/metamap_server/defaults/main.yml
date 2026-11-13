@@ -7,6 +7,9 @@ metamap_revision: ""
 metamap_running: false
 metamap_image: ""
 metamap_prefetch_image: false
+metamap_stage_runtime_env: false
+metamap_runtime_env_source_file: ""
+metamap_pending_runtime_env_path: /etc/redunisol-metamap/runtime.env.pending
 metamap_compose_project: metamap-server
 metamap_platform_dir: /srv/redunisol/platform/metamap-server
 metamap_state_dir: /srv/redunisol/state/metamap-server

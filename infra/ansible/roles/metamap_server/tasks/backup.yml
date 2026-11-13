@@ -12,7 +12,6 @@
       - metamap_source_container is match('^[A-Za-z0-9][A-Za-z0-9_.-]+$')
       - metamap_source_image_id is match('^sha256:[0-9a-f]{64}$')
       - metamap_source_expected_hostname | length > 0
-      - ansible_facts.nodename == metamap_source_expected_hostname
       - metamap_source_expected_machine_id is match('^[0-9a-f]{32}$')
       - metamap_source_data_dir is match('^/[A-Za-z0-9_./-]+$')
       - metamap_source_updates_dir is match('^/[A-Za-z0-9_./-]+$')
@@ -26,37 +25,46 @@
     fail_msg: Cold capture needs its own approval, immutable source identity, stopped writers and a reviewed Git SHA40.
 
 - name: Read the reviewed migration origin identity without changing it
-  ansible.builtin.slurp:
-    src: /etc/machine-id
-  register: metamap_source_machine_id
+  ansible.builtin.raw: |
+    /usr/bin/python3 - <<'REDUNISOL_METAMAP_ORIGIN_IDENTITY'
+    import json, os, sqlite3, stat, sys
+    if sys.version_info < (3, 6):
+        raise SystemExit('MetaMap cold capture requires source Python 3.6 or newer')
+    with open('/etc/machine-id') as stream:
+        machine_id = stream.read().strip()
+    print(json.dumps(dict(hostname=os.uname().nodename, machine_id=machine_id,
+                         python_version=list(sys.version_info[:3]), sqlite_version=sqlite3.sqlite_version,
+                         docker_socket=stat.S_ISSOCK(os.lstat('/var/run/docker.sock').st_mode))))
+    REDUNISOL_METAMAP_ORIGIN_IDENTITY
+  register: metamap_source_identity
+  changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Match the immutable migration origin identity
   ansible.builtin.assert:
     that:
-      - metamap_source_machine_id.content | b64decode | trim == metamap_source_expected_machine_id
+      - (metamap_source_identity.stdout | from_json).hostname == metamap_source_expected_hostname
+      - (metamap_source_identity.stdout | from_json).machine_id == metamap_source_expected_machine_id
+      - (metamap_source_identity.stdout | from_json).python_version[0] == 3
+      - (metamap_source_identity.stdout | from_json).python_version[1] >= 6
+      - (metamap_source_identity.stdout | from_json).docker_socket | bool
     fail_msg: Migration origin identity differs from the reviewed source inventory.
 
 - name: Capture the stopped source into a new private local bundle
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/python3
-      - "-"
-      - snapshot
-      - --container
-      - "{{ metamap_source_container }}"
-      - --expected-image-id
-      - "{{ metamap_source_image_id }}"
-      - --revision
-      - "{{ metamap_revision }}"
-      - --source-data
-      - "{{ metamap_source_data_dir }}"
-      - --source-updates
-      - "{{ metamap_source_updates_dir }}"
-      - --bundle
-      - "{{ metamap_backup_bundle_dir }}"
-      - --writers-stopped-confirmed
-    stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/metamap-state.py') }}"
+  vars:
+    metamap_capture_bootstrap: >-
+      import base64;exec(compile(base64.b64decode('{{ lookup('ansible.builtin.file',
+      role_path ~ '/files/metamap-state.py') | b64encode }}'),'<metamap-state>','exec'))
+  ansible.builtin.raw: >-
+    /usr/bin/python3 -c {{ metamap_capture_bootstrap | quote }} snapshot
+    --container {{ metamap_source_container | quote }}
+    --expected-image-id {{ metamap_source_image_id | quote }}
+    --revision {{ metamap_revision | quote }}
+    --source-data {{ metamap_source_data_dir | quote }}
+    --source-updates {{ metamap_source_updates_dir | quote }}
+    --bundle {{ metamap_backup_bundle_dir | quote }}
+    --writers-stopped-confirmed
   register: metamap_cold_capture
   changed_when: true
   when: not ansible_check_mode

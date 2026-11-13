@@ -58,6 +58,10 @@
 - name: Validate the closed Compose profile without reading credentials
   ansible.builtin.import_tasks: compose-check.yml
 
+- name: Verify staged private settings without loading them into a runtime
+  ansible.builtin.import_tasks: runtime-staging-verify.yml
+  when: metamap_stage_runtime_env
+
 - name: Inspect an explicitly prefetched image
   ansible.builtin.import_tasks: image-inspect.yml
   when: metamap_prefetch_image

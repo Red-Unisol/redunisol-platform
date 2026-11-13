@@ -10,6 +10,7 @@ services:
     env_file:
       - path: ./runtime.env
         required: true
+        format: raw
     volumes:
       - type: bind
         source: {{ metamap_data_dir }}

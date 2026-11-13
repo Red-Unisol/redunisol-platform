@@ -1,0 +1,18 @@
+---
+- name: Require the separate inactive MetaMap recovery contract
+  ansible.builtin.assert:
+    that:
+      - metamap_backup_prepare_authorized | type_debug == 'bool'
+      - metamap_backup_initialize_authorized | type_debug == 'bool'
+      - metamap_backup_key_custody_confirmed | type_debug == 'bool'
+      - metamap_backup_revision is match('^[0-9a-f]{40}$')
+      - metamap_backup_mountpoint == '/srv/redunisol-backups'
+      - metamap_backup_mount_uuid == 'df29bb35-b77f-4355-a93c-c53a32580267'
+      - metamap_backup_repository == metamap_backup_mountpoint ~ '/restic/metamap'
+      - metamap_backup_password_file == '/etc/redunisol-metamap/restic-password'
+      - metamap_backup_state_dir == '/var/lib/redunisol-foundation/metamap-backup'
+      - metamap_backup_restore_dir == '/srv/redunisol/state/metamap-server/restores/backup-canary'
+      - metamap_backup_tool == '/usr/local/libexec/redunisol-foundation/metamap-backup'
+      - metamap_backup_timeout_seconds | int >= 60
+      - metamap_backup_timeout_seconds | int <= 1800
+    fail_msg: Recovery preparation is restricted to the separate local MetaMap repository and synthetic fixtures.

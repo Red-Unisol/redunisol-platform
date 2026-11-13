@@ -1,0 +1,68 @@
+# Managed by infra/ansible role metamap_origin; independent of apache2.service.
+ServerRoot "{{ metamap_origin_config_dir }}"
+DefaultRuntimeDir "{{ metamap_origin_runtime_dir }}"
+PidFile "{{ metamap_origin_runtime_dir }}/apache.pid"
+Mutex file:{{ metamap_origin_runtime_dir }} default
+LoadModule mpm_event_module {{ metamap_origin_module_dir }}/mod_mpm_event.so
+LoadModule authz_core_module {{ metamap_origin_module_dir }}/mod_authz_core.so
+LoadModule alias_module {{ metamap_origin_module_dir }}/mod_alias.so
+LoadModule headers_module {{ metamap_origin_module_dir }}/mod_headers.so
+LoadModule socache_shmcb_module {{ metamap_origin_module_dir }}/mod_socache_shmcb.so
+LoadModule ssl_module {{ metamap_origin_module_dir }}/mod_ssl.so
+LoadModule proxy_module {{ metamap_origin_module_dir }}/mod_proxy.so
+LoadModule proxy_http_module {{ metamap_origin_module_dir }}/mod_proxy_http.so
+User www-data
+Group www-data
+ServerName {{ metamap_origin_hostname }}
+ServerTokens Prod
+ServerSignature Off
+Listen {{ metamap_origin_listen_address }}:{{ metamap_origin_listen_port }} https
+ErrorLog "{{ metamap_origin_log_dir }}/error.log"
+LogFormat "%a %t \"%m %U %H\" %>s %B" origin_without_query_or_headers
+CustomLog "{{ metamap_origin_log_dir }}/access.log" origin_without_query_or_headers
+LogLevel warn
+Timeout 60
+KeepAlive On
+KeepAliveTimeout 5
+SSLSessionCache shmcb:{{ metamap_origin_runtime_dir }}/ssl-cache(512000)
+SSLSessionTickets Off
+<Directory />
+    Require all denied
+</Directory>
+<VirtualHost {{ metamap_origin_listen_address }}:{{ metamap_origin_listen_port }}>
+    ServerName {{ metamap_origin_hostname }}
+    DocumentRoot "{{ metamap_origin_document_root }}"
+    SSLEngine On
+    SSLProtocol -all +TLSv1.2 +TLSv1.3
+    SSLCertificateFile "{{ metamap_origin_config_dir }}/tls/certificate.pem"
+    SSLCertificateKeyFile "{{ metamap_origin_config_dir }}/tls/private-key.pem"
+    AllowEncodedSlashes NoDecode
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Redunisol-Origin-Config "{{ metamap_origin_configuration_sha256 }}"
+    AliasMatch "^/health$" "{{ metamap_origin_document_root }}/health.json"
+    <LocationMatch "^/health$">
+        Require all granted
+        ForceType application/json
+        Header always set Cache-Control "no-store"
+    </LocationMatch>
+{% if metamap_origin_backend_enabled %}
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyTimeout 300
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "{{ metamap_origin_listen_port }}"
+    # Trailing slashes strip only this prefix; nocanon preserves encoded paths.
+    ProxyPass "/metamap-platform/" "http://127.0.0.1:{{ metamap_origin_backend_port }}/" nocanon
+    ProxyPassReverse "/metamap-platform/" "http://127.0.0.1:{{ metamap_origin_backend_port }}/"
+    <Location "/metamap-platform/">
+        Require all granted
+    </Location>
+{% else %}
+    # A non-3xx status emits 503 without a Location header or redirect.
+    RedirectMatch 503 "^/metamap-platform(?:/|$)"
+    ErrorDocument 503 "MetaMap application backend is disabled; HTTPS origin preparation only."
+    <LocationMatch "^/metamap-platform(?:/|$)">
+        Header always set Cache-Control "no-store"
+    </LocationMatch>
+{% endif %}
+</VirtualHost>

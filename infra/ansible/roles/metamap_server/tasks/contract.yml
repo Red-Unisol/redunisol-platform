@@ -6,6 +6,9 @@
       - not metamap_running
       - metamap_prefetch_image | type_debug == 'bool'
       - metamap_prepare_authorized | type_debug == 'bool'
+      - metamap_stage_runtime_env | type_debug == 'bool'
+      - metamap_pending_runtime_env_path == '/etc/redunisol-metamap/runtime.env.pending'
+      - not metamap_stage_runtime_env or metamap_runtime_env_source_file is match('^/')
       - metamap_compose_project == 'metamap-server'
       - metamap_platform_dir == '/srv/redunisol/platform/metamap-server'
       - metamap_state_dir == '/srv/redunisol/state/metamap-server'

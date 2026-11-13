@@ -1,7 +1,7 @@
 # Inactive MetaMap migration preparation
 
 `main.yml` prepares only reviewed files and directories. `verify.yml` reads the
-result. Neither changes container state, installs credentials, serves an API or
+result. Neither changes container state, loads credentials, serves an API or
 changes public routing. `metamap_running=true` is rejected even with approval.
 Any existing container in the proposed Compose project, including a stopped one,
 blocks preparation and verification.
@@ -17,6 +17,13 @@ Verification requires the concrete revision and digest used to prepare.
 before pulling from GHCR, using the target Docker client's existing credentials;
 it does not log in or obtain images from the VPS. Verify never pulls images.
 
+Optional private staging copies the existing operator-reviewed environment to
+`/etc/redunisol-metamap/runtime.env.pending` with mode `0600`, outside the project.
+It requires `metamap_stage_runtime_env=true` and an absolute private controller
+source file; no secret content or diff is logged. Verify compares complete bytes.
+The pending file is never loaded by Compose. The future active env file uses
+`format: raw` so literal dollars and quotes are preserved.
+
 Compose has only the `activation` profile, `pull_policy: never`, a loopback bind,
 and a **required** future `runtime.env`. Only `runtime.env.example` is prepared;
 it is not loaded by Compose. `docker compose config --no-env-resolution --quiet`
@@ -24,11 +31,13 @@ validates the model without resolving that absent private file. A profile is not
 an access control: explicit service targeting can select it. No activation command
 is implemented by these playbooks.
 
-`backup.yml` uses only the separate, initially empty `metamap_migration_origins`
+`backup.yml` uses only the separate, explicitly reviewed `metamap_migration_origins`
 group. It requires its own authorization, exact source host/container/image/path
 identity and a stopped-writers confirmation. The helper refuses running writers;
 the playbook never stops them. Its new `0700` bundle contains private plaintext
-data for transfer, not a continuous, encrypted or offsite backup.
+data for transfer, not a continuous, encrypted or offsite backup. Source identity
+and capture use `raw` without fact gathering or modern remote Ansible modules;
+the helper supports Python 3.6 and uses `sqlite_master` on older SQLite versions.
 
 `restore.yml` has separate authorization and a trusted manifest SHA-256. The
 bundle must already be on the target; no transfer is performed. Restoration goes

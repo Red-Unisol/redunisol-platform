@@ -1,0 +1,91 @@
+---
+- name: Inspect the exact backup filesystem without mounting it
+  ansible.builtin.command:
+    argv: [findmnt, --json, --mountpoint, "{{ metamap_backup_mountpoint }}", --output, "TARGET,UUID,MAJ:MIN,FSTYPE"]
+  register: metamap_backup_mount
+  changed_when: false
+  check_mode: false
+
+- name: Inspect root filesystem identity
+  ansible.builtin.command:
+    argv: [findmnt, --json, --target, /, --output, "TARGET,UUID,MAJ:MIN"]
+  register: metamap_backup_root_mount
+  changed_when: false
+  check_mode: false
+
+- name: Require the reviewed XFS filesystem rather than a root fallback
+  ansible.builtin.assert:
+    that:
+      - (metamap_backup_mount.stdout | from_json).filesystems | length == 1
+      - (metamap_backup_root_mount.stdout | from_json).filesystems | length == 1
+      - (metamap_backup_mount.stdout | from_json).filesystems[0].target == metamap_backup_mountpoint
+      - (metamap_backup_mount.stdout | from_json).filesystems[0].uuid == metamap_backup_mount_uuid
+      - (metamap_backup_mount.stdout | from_json).filesystems[0].fstype == 'xfs'
+      - >-
+        (metamap_backup_mount.stdout | from_json).filesystems[0]['maj:min'] !=
+        (metamap_backup_root_mount.stdout | from_json).filesystems[0]['maj:min']
+    fail_msg: The approved backup filesystem is absent, changed or resolves to root; no repository is prepared.
+
+- name: Resolve private paths before changing any file
+  ansible.builtin.command:
+    argv: [realpath, --canonicalize-missing, --, "{{ item }}"]
+  loop:
+    - "{{ metamap_backup_repository }}"
+    - "{{ metamap_backup_password_file }}"
+    - "{{ metamap_backup_state_dir }}"
+    - "{{ metamap_backup_restore_dir }}"
+    - "{{ metamap_backup_tool }}"
+  register: metamap_backup_canonical_paths
+  changed_when: false
+  check_mode: false
+
+- name: Reject symbolic or noncanonical path components
+  ansible.builtin.assert:
+    that:
+      - item.stdout == item.item
+  loop: "{{ metamap_backup_canonical_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect existing shared parents without changing their permissions
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ metamap_backup_repository | dirname }}"
+    - "{{ metamap_backup_state_dir | dirname }}"
+    - "{{ metamap_backup_restore_dir | dirname }}"
+    - "{{ metamap_backup_tool | dirname }}"
+  register: metamap_backup_parents
+
+- name: Require canonical root-owned parents without group or world write
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.mode | default('') is match('^0[0-7][0145][0145]$')
+  loop: "{{ metamap_backup_parents.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect owned private paths before adopting or changing any permissions
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ metamap_backup_repository }}"
+    - "{{ metamap_backup_state_dir }}"
+    - "{{ metamap_backup_restore_dir }}"
+  register: metamap_backup_private_paths
+
+- name: Refuse unexpected existing private directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.stat.exists or
+        (item.stat.isdir | default(false) and not item.stat.islnk | default(false) and
+         item.stat.uid | default(-1) == 0 and item.stat.mode | default('') == '0700')
+  loop: "{{ metamap_backup_private_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"

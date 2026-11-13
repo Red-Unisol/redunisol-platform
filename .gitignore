@@ -29,6 +29,9 @@ composer
 composer-setup.php
 /infra/*
 !/infra/ansible/
+!/infra/cloudflare/
+/infra/cloudflare/*
+!/infra/cloudflare/metamap-origin.yml
 local-notes/
 apps/metamap-platform/docs/*.csv
 
