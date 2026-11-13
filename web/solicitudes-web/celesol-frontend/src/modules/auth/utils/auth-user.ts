@@ -22,7 +22,9 @@ export function canManageUsers(user: AuthUser | null | undefined) {
 }
 
 export function canCreateSocio(user: AuthUser | null | undefined) {
-  return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
+  return user?.isSystemAdmin === true ||
+    user?.workflowOwner?.code === "RIESGO" ||
+    user?.workflowOwner?.code === "TESORERIA";
 }
 
 export function canEditSocio(user: AuthUser | null | undefined) {
