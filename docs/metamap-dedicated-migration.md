@@ -341,14 +341,49 @@ sin la autorizacion y los inputs privados correspondientes.
 | Reconciliacion | Repetir prepare de receptor y origen termino con `changed=0`; ambos verificaron configuracion activa y salud. |
 | Operativa existente | Salud y lectura autenticada de la VPS 200; lectura anonima 401; manifiesto del actualizador 200. BCRA conserva su contenedor healthy y cero reinicios. |
 | Backend productivo del dedicado | Deshabilitado; rutas `/metamap-platform*` devuelven 503 sin redirect. |
-| Cloudflare | Worker, colas y ruta de duplicacion **pendientes de desplegar**; falta la credencial API del operador. No hay captura de webhooks reales acreditada. |
+| Cloudflare | El receptor se verifico antes de conectar el Worker. La activacion posterior se registra debajo. |
 
-El fixture no escribio en la VPS. La prueba directa HTTPS todavia no acredita
-el transporte por Queues ni la paridad de una cohorte real. Antes de activar,
-completar esa prueba, verificar fail-open y guardar en Git la configuracion
-activa del Worker, su version y la evidencia de entrega. La base shadow no tiene
-backup configurado ni limpieza automatica; la recomendacion de ensayo sigue
-siendo de siete dias.
+El fixture no escribio en la VPS. La prueba directa HTTPS, por si sola, no
+acredita el transporte por Queues ni la paridad de una cohorte real. La base
+shadow no tiene backup configurado ni limpieza automatica; la recomendacion
+de ensayo sigue siendo de siete dias.
+
+### Activacion Cloudflare Free, 2026-11-13
+
+La captura se activo a las **18:06:31 ART** (`2026-11-13T21:06:31.255048Z`),
+con VPS como principal. La configuracion activa esta en
+`infra/cloudflare/metamap-shadow/wrangler.jsonc` y su manifiesto; los secretos
+se cargaron privadamente como bindings de Cloudflare.
+
+| Evidencia | Valor observado |
+| --- | --- |
+| Git del Worker activo | `1ec07a56a431537beafeba9f2a3058384cd43866` |
+| Version / despliegue Cloudflare | `84f47b5b-172f-4b46-b45c-4aefa4cf993c` / `07175c9b-1415-46e5-95b7-155b4bfeb8c0` |
+| Ruta unica | `7110b09ffbd442728da1448ee32606d2`; patron de webhooks exacto declarado en el manifiesto; `request_limit_fail_open=true` confirmado por GET despues del despliegue. |
+| Dominios adicionales | `workers.dev` y previews deshabilitados; sin cambios DNS. |
+| Colas Free | Principal y DLQ con 86.400 segundos de retencion. Consumer batch/concurrencia 1, tres retries, espera inicial 15 segundos. DLQ sin consumidor. |
+| Prueba de transporte | Fixture firmado enviado directamente a la cola, recibido en el dedicado con ingest 200. Repetir el mismo UUID/hash conserva una fila y aumenta solo el contador de duplicados. No se envio a la VPS. |
+| CPU observada | Consumidor sintetico exitoso: 2 ms de CPU, 730 ms de tiempo total. Los logs conservan UUID/hash/status; invocation logs apagados. |
+| Operativa posterior | Salud, API autenticada y actualizador de la VPS 200; anonimo 401. BCRA y receptor healthy, cero reinicios. Backend productivo dedicado sigue deshabilitado. |
+
+La primera prueba detecto una incompatibilidad real: Workers rechaza
+`redirect: "error"` antes de enviar HTTP. Se corrigio a `manual`, comprobando
+que 3xx se reintenta sin seguir `Location` ni reenviar el Bearer a otro destino.
+La prueba de rechazo/reintento dejo mensajes **sinteticos** en la DLQ; no son
+webhooks productivos perdidos y conservan la retencion Free de 24 horas.
+
+El transporte sintetico y la captura activa estan verificados. La paridad de
+la primera cohorte de webhooks reales se comprueba separadamente por hashes
+y multiplicidad, excluyendo los fixtures con `primary_status=null`; no se
+infiere a partir de los dos receipts sinteticos existentes al activar.
+
+Control de cohorte a las **18:14:23 ART**: cero receipts nuevos en la VPS desde
+la activacion y cero entregas reales en el dedicado; se excluyeron los dos
+fixtures. El ultimo receipt primario seguia siendo el de las 18:03:33 ART.
+La consulta fue de solo lectura y no exporto payloads. No hay una cohorte real
+con la cual afirmar paridad todavia. Un GET sin cuerpo al pathname del webhook
+conservo `405 / Allow: POST`; la invocacion observada del Worker activo uso
+1 ms de CPU y 34 ms de tiempo total, sin copiar ese GET.
 
 ## Corte posterior conservando los clientes
 
