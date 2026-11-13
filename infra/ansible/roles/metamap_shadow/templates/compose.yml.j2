@@ -14,7 +14,8 @@ services:
     cpus: 0.5
     restart: unless-stopped
     init: true
-    command: [python, -m, uvicorn, "shadow_app:app", --host, "0.0.0.0", --port, "8000", --no-access-log]
+    command: [python, -m, uvicorn, "shadow_app:app", --uds, /run/shadow/receiver.sock, --no-access-log]
+    network_mode: none
     environment:
       PYTHONPATH: /shadow:/app
       PYTHONDONTWRITEBYTECODE: "1"
@@ -23,8 +24,6 @@ services:
       - path: {{ metamap_shadow_private_dir }}/runtime.env
         format: raw
         required: true
-    ports:
-      - "127.0.0.1:{{ metamap_shadow_port }}:8000"
     volumes:
       - type: bind
         source: {{ metamap_shadow_platform_dir }}/code/shadow_app.py
@@ -37,8 +36,12 @@ services:
         target: /data
         bind:
           create_host_path: false
+      - type: bind
+        source: {{ metamap_shadow_socket_dir }}
+        target: /run/shadow
+        bind:
+          create_host_path: false
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16777216"]
-    networks: [isolated]
     labels:
       redunisol.shadow.scope: webhook-replay-only
       redunisol.shadow.revision: "{{ metamap_shadow_revision }}"
@@ -49,8 +52,11 @@ services:
         - python
         - -c
         - >-
-          import json,urllib.request;
-          d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2));
+          import http.client,json,socket;
+          c=http.client.HTTPConnection('localhost',timeout=2);
+          c.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);c.sock.settimeout(2);
+          c.sock.connect('/run/shadow/receiver.sock');c.request('GET','/health');r=c.getresponse();
+          assert r.status==200;d=json.load(r);c.close();
           assert d['status']=='ok' and d['shadow_only'] is True and d['enrichment_enabled'] is False
       interval: 30s
       timeout: 5s
@@ -61,7 +67,3 @@ services:
       options:
         max-size: 5m
         max-file: "2"
-networks:
-  isolated:
-    name: metamap-webhook-shadow-internal
-    internal: true

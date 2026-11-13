@@ -9,10 +9,11 @@
       - metamap_shadow_platform_dir == '/srv/redunisol/platform/metamap-shadow'
       - metamap_shadow_state_dir == '/srv/redunisol/state/metamap-shadow'
       - metamap_shadow_private_dir == '/etc/redunisol-metamap-shadow'
-      - metamap_shadow_port | int == 18084
+      - metamap_shadow_socket_dir == '/run/redunisol-metamap-shadow'
+      - metamap_shadow_socket == '/run/redunisol-metamap-shadow/receiver.sock'
       - metamap_shadow_uid | int == 10090
       - metamap_shadow_gid | int == 10090
       - >-
         metamap_shadow_image ==
         'ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5'
-    fail_msg: Shadow permits only its reviewed image, isolated project, paths, numeric identity and loopback port.
+    fail_msg: Shadow permits only its reviewed image, isolated project, paths, numeric identity and private Unix socket.

@@ -1,15 +1,19 @@
 """Executable local contracts and isolated Docker-inspection fixtures; no remote host or daemon."""
 import copy
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
 import shutil
+import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
 import unittest
+from threading import Thread
 from unittest.mock import patch
 
 from jinja2 import Environment, StrictUndefined
@@ -57,18 +61,52 @@ def snapshot():
         "HostConfig": {"ReadonlyRootfs": True, "CapDrop": ["ALL"], "CapAdd": None,
                        "SecurityOpt": ["no-new-privileges:true"], "Privileged": False, "PidsLimit": 64,
                        "Memory": 536870912, "NanoCpus": 500000000, "RestartPolicy": {"Name": "unless-stopped"},
-                       "Init": True, "PortBindings": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18084"}]},
+                       "Init": True, "PortBindings": {}, "NetworkMode": "none",
                        "Binds": None, "Devices": None, "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=16777216"},
                        "PidMode": "", "IpcMode": "private", "UTSMode": ""},
         "Mounts": [{"Type": "bind", "Source": str(CONTROL.PLATFORM / "code/shadow_app.py"),
                     "Destination": "/shadow/shadow_app.py", "RW": False},
-                   {"Type": "bind", "Source": str(CONTROL.STATE / "data"), "Destination": "/data", "RW": True}],
-        "NetworkSettings": {"Networks": {CONTROL.PROJECT + "-internal": {}}}}
+                   {"Type": "bind", "Source": str(CONTROL.STATE / "data"), "Destination": "/data", "RW": True},
+                   {"Type": "bind", "Source": str(CONTROL.RUN), "Destination": "/run/shadow", "RW": True}],
+        "NetworkSettings": {"Networks": {"none": {"IPAddress": "", "GlobalIPv6Address": "", "Gateway": "", "MacAddress": ""}},
+                            "Ports": {"8000/tcp": None}}}
 
 
-def network():
-    return {"Internal": True, "EnableIPv6": False, "Labels": {"com.docker.compose.project": CONTROL.PROJECT},
-            "Containers": {"c" * 64: {}}}
+def health_responses():
+    common = {"shadow_only": True, "enrichment_enabled": False, "revision": REVISION,
+              "recommended_trial_days": 7, "automatic_retention": False}
+    return {"/health": {"status": "ok", **common},
+            "/stats": {"status": "ok", "deliveries": 3, "duplicates": 1, "rejections": 0, "processing_failures": 0,
+                       "validations": 2, "receipts": 3, "volatile_counters": ["envelope_rejections", "processing_failures"], **common}}
+
+
+@contextmanager
+def unix_http_fixture(responses):
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, unused_format, *unused_arguments):
+            pass
+
+        def do_GET(self):
+            received.append(self.path)
+            body = json.dumps(responses[self.path]).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    with tempfile.TemporaryDirectory(prefix="shadow-uds-") as directory:
+        path = Path(directory) / "receiver.sock"
+        server = socketserver.UnixStreamServer(str(path), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield path, received
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
 
 class ShadowEnvironmentTests(unittest.TestCase):
@@ -111,8 +149,8 @@ class ShadowEnvironmentTests(unittest.TestCase):
 
 
 class ShadowRuntimeTests(unittest.TestCase):
-    def differences(self, value=None, net=None):
-        return CONTROL.runtime_differences(value or snapshot(), REVISION, ADAPTER, environment_values(), net or network(),
+    def differences(self, value=None):
+        return CONTROL.runtime_differences(value or snapshot(), REVISION, ADAPTER, environment_values(),
                                            ["METAMAP_SERVER_GIT_SHA=" + "d" * 40, "PATH=/usr/local/bin:/usr/bin"])
 
     def test_reviewed_runtime_accepts_only_the_build_sha_inherited_from_the_base_image(self):
@@ -146,16 +184,25 @@ class ShadowRuntimeTests(unittest.TestCase):
                 changed["HostConfig"][name] = value
                 self.assertIn(expected, self.differences(changed))
 
-    def test_production_mount_network_and_foreign_peer_are_rejected(self):
+    def test_production_mount_network_and_ips_are_rejected(self):
         value = snapshot()
         value["Mounts"][1]["Source"] = "/srv/redunisol/state/metamap-server/data"
         self.assertIn("bind_mounts", self.differences(value))
-        net = network()
-        net["Internal"] = False
-        self.assertIn("network_isolation", self.differences(net=net))
-        net = network()
-        net["Containers"]["foreign"] = {}
-        self.assertIn("shared_network", self.differences(net=net))
+        value = snapshot()
+        value["HostConfig"]["NetworkMode"] = "bridge"
+        value["NetworkSettings"]["Networks"] = {"bridge": {"IPAddress": "172.17.0.2"}}
+        self.assertIn("network_mode", self.differences(value))
+        self.assertIn("network_addresses", self.differences(value))
+
+    def test_legacy_internal_tcp_without_effective_publication_does_not_match_uds(self):
+        value = snapshot()
+        value["Config"]["Cmd"] = ["python", "-m", "uvicorn", "shadow_app:app", "--host", "0.0.0.0", "--port", "8000"]
+        value["HostConfig"]["NetworkMode"] = CONTROL.PROJECT + "-internal"
+        value["HostConfig"]["PortBindings"] = {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18084"}]}
+        value["NetworkSettings"] = {"Networks": {CONTROL.PROJECT + "-internal": {}}, "Ports": {"8000/tcp": None}}
+        differences = self.differences(value)
+        for name in ("command", "network_mode", "networks", "ports"):
+            self.assertIn(name, differences)
 
     def test_all_docker_reads_pin_the_local_unix_socket(self):
         completed = subprocess.CompletedProcess([], 0, "[]", "")
@@ -169,28 +216,30 @@ class ShadowRuntimeTests(unittest.TestCase):
         with patch.object(CONTROL, "docker", side_effect=["abc", "abc", [value]]), self.assertRaises(ValueError):
             CONTROL.owned_snapshot()
 
-    def test_health_and_stats_accept_only_current_readonly_aggregate_contract(self):
-        common = {"shadow_only": True, "enrichment_enabled": False, "revision": REVISION,
-                  "recommended_trial_days": 7, "automatic_retention": False}
-        health = {"status": "ok", **common}
-        stats = {"status": "ok", "deliveries": 3, "duplicates": 1, "rejections": 0, "processing_failures": 0,
-                 "validations": 2, "receipts": 3, "volatile_counters": ["envelope_rejections", "processing_failures"], **common}
+    @unittest.skipUnless(hasattr(socketserver, "UnixStreamServer") and os.name == "posix", "POSIX Unix sockets")
+    def test_health_and_stats_use_real_unix_http_only_and_reject_nonaggregate_fields(self):
+        responses = health_responses()
+        with unix_http_fixture(responses) as (path, received):
+            self.assertEqual(CONTROL.read_health(REVISION, path),
+                             {"health": responses["/health"], "stats": responses["/stats"]})
+            self.assertEqual(received, ["/health", "/stats"])
+        for extra in ({"automatic_retention": True}, {"private_payload": "forbidden"}):
+            changed = health_responses()
+            changed["/health"].update(extra)
+            with unix_http_fixture(changed) as (path, unused_received), self.assertRaises(ValueError):
+                CONTROL.read_health(REVISION, path)
 
-        def response(value):
-            stream = io.BytesIO(json.dumps(value).encode())
-            stream.status = 200
-            return stream
-
-        with patch.object(CONTROL.urllib.request, "build_opener") as build:
-            build.return_value.open.side_effect = [response(health), response(stats)]
-            self.assertEqual(CONTROL.read_health(REVISION), {"health": health, "stats": stats})
-            self.assertEqual([call.args[0] for call in build.return_value.open.call_args_list],
-                             ["http://127.0.0.1:18084/health", "http://127.0.0.1:18084/stats"])
-        for changed in ({**health, "automatic_retention": True}, {**health, "private_payload": "forbidden"}):
-            with patch.object(CONTROL.urllib.request, "build_opener") as build:
-                build.return_value.open.return_value = response(changed)
-                with self.assertRaises(ValueError):
-                    CONTROL.read_health(REVISION)
+    @unittest.skipUnless(os.name == "posix", "POSIX socket metadata")
+    def test_socket_guard_rejects_regular_file_and_symlink(self):
+        with tempfile.TemporaryDirectory(prefix="shadow-socket-type-") as directory:
+            regular = Path(directory) / "receiver.sock"
+            regular.write_bytes(b"not a socket")
+            with self.assertRaises(ValueError):
+                CONTROL.validate_socket(regular)
+            link = Path(directory) / "link.sock"
+            link.symlink_to(regular)
+            with self.assertRaises(ValueError):
+                CONTROL.validate_socket(link)
 
 
 class ShadowComposeTests(unittest.TestCase):
@@ -210,18 +259,42 @@ class ShadowComposeTests(unittest.TestCase):
         self.assertEqual(service["pull_policy"], "never")
         self.assertEqual(service["user"], "10090:10090")
         self.assertTrue(service["read_only"])
-        self.assertEqual(service["ports"], ["127.0.0.1:18084:8000"])
+        self.assertNotIn("ports", service)
+        self.assertNotIn("networks", service)
+        self.assertNotIn("networks", data)
+        self.assertEqual(service["network_mode"], "none")
         self.assertEqual(service["command"], CONTROL.COMMAND)
         self.assertIn("--no-access-log", service["command"])
         self.assertEqual(service["tmpfs"], ["/tmp:rw,noexec,nosuid,size=16777216"])
-        self.assertEqual([item["target"] for item in service["volumes"]], ["/shadow/shadow_app.py", "/data"])
+        self.assertEqual([item["target"] for item in service["volumes"]], ["/shadow/shadow_app.py", "/data", "/run/shadow"])
         self.assertTrue(service["volumes"][0]["read_only"])
         self.assertTrue(all(item["bind"]["create_host_path"] is False for item in service["volumes"]))
-        self.assertTrue(data["networks"]["isolated"]["internal"])
         serialized = json.dumps(data)
         for forbidden in ("18083", "runtime.env.pending", "metamap-server/data", "docker.sock", "OAuth", "updates"):
             self.assertNotIn(forbidden, serialized)
         self.assertEqual(service["env_file"], [{"path": "/etc/redunisol-metamap-shadow/runtime.env", "format": "raw", "required": True}])
+
+    def test_tmpfiles_and_socket_directory_permissions_are_explicit_and_persistent(self):
+        self.assertEqual((ROLE / "files/shadow-tmpfiles.conf").read_bytes(),
+                         b"d /run/redunisol-metamap-shadow 0750 10090 www-data -\n")
+        tasks = read_yaml("roles/metamap_shadow/tasks/main.yml")
+        block = next(item["block"] for item in tasks if item["name"].startswith("Prepare only"))
+        directories = next(item["loop"] for item in block if item["name"].startswith("Create only shadow directories"))
+        self.assertIn({"path": "{{ metamap_shadow_socket_dir }}", "owner": "10090", "group": "www-data", "mode": "0750"}, directories)
+        persistent = next(item["ansible.builtin.copy"] for item in block if item["name"].startswith("Persist the private socket"))
+        self.assertEqual(persistent, {"src": "shadow-tmpfiles.conf", "dest": "/etc/tmpfiles.d/redunisol-metamap-shadow.conf",
+                                      "owner": "root", "group": "root", "mode": "0644"})
+
+    @unittest.skipUnless(hasattr(socketserver, "UnixStreamServer") and os.name == "posix", "POSIX Unix sockets")
+    def test_rendered_docker_healthcheck_executes_against_a_real_unix_socket(self):
+        command = self.render()["services"]["receiver"]["healthcheck"]["test"]
+        self.assertEqual(command[:3], ["CMD", "python", "-c"])
+        self.assertNotIn("127.0.0.1", command[3])
+        with unix_http_fixture(health_responses()) as (path, received):
+            source = command[3].replace("/run/shadow/receiver.sock", str(path))
+            result = subprocess.run([sys.executable, "-c", source], capture_output=True, text=True, check=False, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(received, ["/health"])
 
     def test_defaults_inventory_and_playbooks_keep_authorizations_separate_and_inactive(self):
         defaults = variables()
@@ -266,7 +339,7 @@ class ExecutableShadowContractTests(unittest.TestCase):
     def test_original_contract_accepts_default_isolation_and_rejects_escape_inputs(self):
         code, output = self.run_contract()
         self.assertEqual(code, 0, output)
-        for overrides in ({"metamap_shadow_project": "metamap-server"}, {"metamap_shadow_port": 18083},
+        for overrides in ({"metamap_shadow_project": "metamap-server"}, {"metamap_shadow_socket": "/run/other.sock"},
                           {"metamap_shadow_running": "true"}, {"metamap_shadow_uid": 0},
                           {"metamap_shadow_image": "ghcr.io/red-unisol/metamap-platform-server:latest"},
                           {"metamap_shadow_state_dir": "/srv/redunisol/state/metamap-server"}):

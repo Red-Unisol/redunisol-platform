@@ -21,6 +21,7 @@
     - {path: "{{ metamap_shadow_platform_dir }}/compose.yml", source: template}
     - {path: "{{ metamap_shadow_platform_dir }}/shadow-control.py", source: shadow-control.py}
     - {path: "{{ metamap_shadow_platform_dir }}/code/shadow_app.py", source: shadow-app.py}
+    - {path: /etc/tmpfiles.d/redunisol-metamap-shadow.conf, source: shadow-tmpfiles.conf}
   register: metamap_shadow_verified_files
 
 - name: Require complete shadow files to match Git without applying repairs
@@ -44,6 +45,7 @@
     - {path: "{{ metamap_shadow_platform_dir }}/shadow-control.py", mode: "0755"}
     - {path: "{{ metamap_shadow_platform_dir }}/code/shadow_app.py", mode: "0444"}
     - {path: "{{ metamap_shadow_private_dir }}/runtime.env", mode: "0600"}
+    - {path: /etc/tmpfiles.d/redunisol-metamap-shadow.conf, mode: "0644"}
   register: metamap_shadow_file_metadata
 
 - name: Require regular root-owned shadow files and a private environment

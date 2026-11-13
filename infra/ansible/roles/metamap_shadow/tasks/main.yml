@@ -13,14 +13,14 @@
 - name: Explain contract-only shadow planning
   ansible.builtin.debug:
     msg: >-
-      Shadow running={{ metamap_shadow_running }}; fixed cached image and loopback port 18084.
+      Shadow running={{ metamap_shadow_running }}; fixed cached image, no network and a private Unix socket.
       Check mode validates contracts only; it does not inspect Docker, read secrets, create files or start any container.
   when: ansible_check_mode
 
 - name: Prepare only the authorized isolated shadow outside check mode
   when: not ansible_check_mode
   block:
-    - name: Inspect shadow ownership paths cached image and reserved port before writing
+    - name: Inspect shadow ownership paths cached image and private socket before writing
       ansible.builtin.command:
         argv: [/usr/bin/python3, -, preflight]
         stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-control.py', rstrip=false) }}"
@@ -55,6 +55,15 @@
         - {path: "{{ metamap_shadow_state_dir }}", owner: root, group: root, mode: "0750"}
         - {path: "{{ metamap_shadow_state_dir }}/data", owner: "10090", group: "10090", mode: "0700"}
         - {path: "{{ metamap_shadow_private_dir }}", owner: root, group: root, mode: "0700"}
+        - {path: "{{ metamap_shadow_socket_dir }}", owner: "10090", group: www-data, mode: "0750"}
+
+    - name: Persist the private socket directory before Docker starts after reboot
+      ansible.builtin.copy:
+        src: shadow-tmpfiles.conf
+        dest: /etc/tmpfiles.d/redunisol-metamap-shadow.conf
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Mark the new isolated state without importing application data
       ansible.builtin.copy:

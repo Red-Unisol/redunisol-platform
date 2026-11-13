@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 """Read-only guards for the one isolated shadow project; never print environment values."""
 import argparse
+import http.client
 import json
 import os
 from pathlib import Path
 import re
+import socket
 import stat
 import subprocess
 import sys
-import urllib.request
 
 PROJECT = "metamap-webhook-shadow"
 IMAGE = "ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5"
 PLATFORM = Path("/srv/redunisol/platform/metamap-shadow")
 STATE = Path("/srv/redunisol/state/metamap-shadow")
 PRIVATE = Path("/etc/redunisol-metamap-shadow")
+RUN = Path("/run/redunisol-metamap-shadow")
+SOCKET = RUN / "receiver.sock"
 MARKER = '{"scope":"metamap-webhook-shadow","version":1}\n'
 ENV_KEYS = {"METAMAP_SHADOW_WEBHOOK_SECRET", "METAMAP_SHADOW_DELIVERY_TOKEN",
             "METAMAP_SHADOW_DATABASE_URL", "METAMAP_SHADOW_REVISION"}
-COMMAND = ["python", "-m", "uvicorn", "shadow_app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+COMMAND = ["python", "-m", "uvicorn", "shadow_app:app", "--uds", "/run/shadow/receiver.sock", "--no-access-log"]
 DOCKER = ["docker", "--host", "unix:///var/run/docker.sock"]
 
 
@@ -83,19 +86,24 @@ def owned_snapshot():
 
 def check_paths():
     paths = [Path("/srv"), Path("/srv/redunisol"), Path("/srv/redunisol/platform"), Path("/srv/redunisol/state"),
-             PLATFORM, PLATFORM / "code", STATE, STATE / "data", Path("/etc"), PRIVATE]
+             PLATFORM, PLATFORM / "code", STATE, STATE / "data", Path("/etc"), Path("/etc/tmpfiles.d"), PRIVATE,
+             Path("/run"), RUN]
     for path in paths:
         if str(path.resolve()) != str(path):
             raise ValueError("Shadow path has a symlinked ancestor")
         if path.exists():
             info = path.lstat()
-            owner = 10090 if path == STATE / "data" else 0
+            owner = 10090 if path in (STATE / "data", RUN) else 0
             if not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or info.st_mode & 0o022:
                 raise ValueError("Existing shadow path has unsafe type, owner or permissions")
+            if path == RUN and (info.st_gid != 33 or stat.S_IMODE(info.st_mode) != 0o750):
+                raise ValueError("Shadow socket directory must be 10090:www-data mode 0750")
     for path in [PLATFORM / "compose.yml", PLATFORM / "shadow-control.py", PLATFORM / "code/shadow_app.py",
-                 PRIVATE / "runtime.env", STATE / ".shadow-state.json"]:
+                 PRIVATE / "runtime.env", STATE / ".shadow-state.json", Path("/etc/tmpfiles.d/redunisol-metamap-shadow.conf")]:
         if path.is_symlink() or (path.exists() and (not path.is_file() or path.lstat().st_uid != 0)):
             raise ValueError("Existing shadow file has an unsafe type or owner")
+    if SOCKET.exists() or SOCKET.is_symlink():
+        validate_socket(SOCKET)
     marker = STATE / ".shadow-state.json"
     if marker.exists():
         if marker.stat().st_size != len(MARKER) or marker.read_text(encoding="utf-8") != MARKER:
@@ -104,7 +112,13 @@ def check_paths():
         raise ValueError("Refusing to adopt existing data without the shadow state marker")
 
 
-def runtime_differences(snapshot, revision, adapter_hash, environment, network, image_environment):
+def validate_socket(path):
+    info = path.lstat()
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != 10090 or str(path.resolve()) != str(path):
+        raise ValueError("Existing shadow endpoint must be a canonical Unix socket owned by 10090")
+
+
+def runtime_differences(snapshot, revision, adapter_hash, environment, image_environment):
     config = snapshot.get("Config", {})
     host = snapshot.get("HostConfig", {})
     labels = config.get("Labels") or {}
@@ -131,10 +145,10 @@ def runtime_differences(snapshot, revision, adapter_hash, environment, network, 
             "resource_limits")
     require(host.get("RestartPolicy", {}).get("Name") == "unless-stopped", "restart_policy")
     require(host.get("Init") is True, "init")
-    require(host.get("PortBindings") == {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18084"}]}, "ports")
+    require(not host.get("PortBindings"), "ports")
     require(not host.get("Binds") and not host.get("Devices"), "unmanaged_mounts_or_devices")
     expected_mounts = {(str(PLATFORM / "code/shadow_app.py"), "/shadow/shadow_app.py", False),
-                       (str(STATE / "data"), "/data", True)}
+                       (str(STATE / "data"), "/data", True), (str(RUN), "/run/shadow", True)}
     binds = [item for item in snapshot.get("Mounts", []) if item.get("Type") == "bind"]
     require({(item.get("Source"), item.get("Destination"), item.get("RW")) for item in binds} == expected_mounts,
             "bind_mounts")
@@ -142,10 +156,14 @@ def runtime_differences(snapshot, revision, adapter_hash, environment, network, 
     require(set(host.get("Tmpfs") or {}) == {"/tmp"}, "tmpfs")
     temporary = set((host.get("Tmpfs") or {}).get("/tmp", "").split(","))
     require({"noexec", "nosuid"} <= temporary and bool({"size=16777216", "size=16m"} & temporary), "tmpfs_limits")
-    require(set(snapshot.get("NetworkSettings", {}).get("Networks", {})) == {PROJECT + "-internal"}, "networks")
-    require(network.get("Internal") is True and not network.get("EnableIPv6"), "network_isolation")
-    require((network.get("Labels") or {}).get("com.docker.compose.project") == PROJECT, "network_ownership")
-    require(set(network.get("Containers") or {}) <= {snapshot.get("Id")}, "shared_network")
+    settings = snapshot.get("NetworkSettings", {})
+    require(host.get("NetworkMode") == "none", "network_mode")
+    require(set(settings.get("Networks") or {}) == {"none"}, "networks")
+    addresses = ("IPAddress", "Gateway", "GlobalIPv6Address", "IPv6Gateway", "MacAddress")
+    require(not any(settings.get(name) for name in addresses) and
+            not any(item.get(name) for item in (settings.get("Networks") or {}).values() for name in addresses), "network_addresses")
+    # The base image exposes 8000/tcp as metadata; null has no host publication.
+    require(all(value is None for value in (settings.get("Ports") or {}).values()), "published_ports")
     actual = {}
     for item in config.get("Env") or []:
         key, separator, value = item.partition("=")
@@ -164,17 +182,24 @@ def runtime_differences(snapshot, revision, adapter_hash, environment, network, 
     return differences
 
 
-def read_health(revision):
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def read_health(revision, socket_path=SOCKET):
     values = {}
     for endpoint in ("health", "stats"):
-        with opener.open("http://127.0.0.1:18084/" + endpoint, timeout=3) as response:
+        connection = http.client.HTTPConnection("localhost", timeout=3)
+        connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.sock.settimeout(3)
+        try:
+            connection.sock.connect(str(socket_path))
+            connection.request("GET", "/" + endpoint)
+            response = connection.getresponse()
             if response.status != 200:
                 raise ValueError("Shadow health or stats did not return 200")
             body = response.read(8193)
             if len(body) > 8192:
                 raise ValueError("Shadow aggregate response is too large")
             value = json.loads(body)
+        finally:
+            connection.close()
         common = {"shadow_only": True, "enrichment_enabled": False, "revision": revision,
                   "recommended_trial_days": 7, "automatic_retention": False}
         if not isinstance(value, dict) or any(type(value.get(key)) is not type(expected) or value[key] != expected
@@ -199,9 +224,8 @@ def inspect_runtime(revision, adapter_hash, with_health=False):
         return {"exists": False, "running": False, "matches": False, "needs_recreate": False, "container_id": None,
                 "differences": ["absent"]}
     environment = parse_environment(private_file(PRIVATE / "runtime.env"), revision)
-    network = docker(["network", "inspect", PROJECT + "-internal"], json_output=True)[0]
     image = docker(["image", "inspect", IMAGE], json_output=True)[0]
-    differences = runtime_differences(snapshot, revision, adapter_hash, environment, network,
+    differences = runtime_differences(snapshot, revision, adapter_hash, environment,
                                       image.get("Config", {}).get("Env") or [])
     running = snapshot.get("State", {}).get("Running") is True
     result = {"exists": True, "running": running, "matches": not differences and running,
@@ -211,6 +235,7 @@ def inspect_runtime(revision, adapter_hash, with_health=False):
     if with_health:
         if not result["matches"] or result["docker_health"] != "healthy":
             raise ValueError("Shadow runtime configuration, state or Docker health differs")
+        validate_socket(SOCKET)
         result.update(read_health(revision))
     return result
 
@@ -243,11 +268,6 @@ def main():
                         (network.get("Labels") or {}).get("com.docker.compose.project") != PROJECT or
                         not set(network.get("Containers") or {}) <= allowed):
                     raise ValueError("Refusing to adopt a foreign shared or nonisolated shadow network")
-            if snapshot is None:
-                listener = subprocess.run(["ss", "-H", "-ltn", "sport = :18084"], capture_output=True,
-                                          text=True, timeout=5, check=True)
-                if listener.stdout.strip():
-                    raise ValueError("Another service occupies the shadow loopback port")
             result = {"valid": True, "container_exists": snapshot is not None}
         elif args.operation == "owned":
             snapshot = owned_snapshot()
@@ -259,7 +279,7 @@ def main():
             result = inspect_runtime(args.revision, args.adapter_sha256, args.health)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError, json.JSONDecodeError):
+    except (ValueError, OSError, http.client.HTTPException, subprocess.SubprocessError, KeyError, TypeError, json.JSONDecodeError):
         # Docker errors may contain environment/configuration; never reproduce stderr or inspected values.
         print(json.dumps({"valid": False, "error": "Shadow guard failed; inspect the reviewed inputs and isolated runtime."}))
         return 2

@@ -7,7 +7,8 @@ Runtime dependencies are already in the image: FastAPI, SQLAlchemy and Uvicorn.
 HTTPX is used only by local development tests.
 
 The only network routes are `POST /deliveries`, `GET /health` and `GET /stats`.
-Apache maps the isolated delivery prefix; health and statistics stay loopback.
+Apache maps the isolated delivery prefix through a Unix socket; health and
+statistics stay on that local socket and are never publicly routed.
 The delivery token is checked with a constant-time comparison before reading the
 body. The fixed eight-field version-1 envelope is limited to 60,000 bytes. Its
 canonical base64 body is limited to 40,000 bytes; SHA-256 and HMAC-SHA256 are

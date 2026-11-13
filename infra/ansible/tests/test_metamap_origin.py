@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import socketserver
 import ssl
 import subprocess
 import tempfile
@@ -83,14 +84,14 @@ class OriginRenderingTests(unittest.TestCase):
         parameters = values()
         parameters["metamap_origin_shadow_enabled"] = True
         config = render("apache.conf.j2", parameters)
-        self.assertIn('ProxyPassMatch "^/metamap-shadow/(deliveries)$" "http://127.0.0.1:18084/$1"', config)
+        self.assertIn('ProxyPassMatch "^/metamap-shadow/(deliveries)$" "unix:/run/redunisol-metamap-shadow/receiver.sock|http://localhost/$1"', config)
         self.assertIn('Require method POST', config)
         self.assertIn('RedirectMatch 503 "^/metamap-platform(?:/|$)"', config)
         self.assertNotIn('ProxyPass "/metamap-platform/', config)
         marker = read_yaml("roles/metamap_origin/tasks/fingerprint.yml")
         mapping = next(item["vars"]["metamap_origin_marker"] for item in marker if "vars" in item)
         self.assertEqual(mapping["shadow_enabled"], "{{ metamap_origin_shadow_enabled }}")
-        self.assertEqual(mapping["shadow_port"], "{{ metamap_origin_shadow_port | int }}")
+        self.assertEqual(mapping["shadow_socket"], "{{ metamap_origin_shadow_socket }}")
 
     def test_lost_restart_is_recovered_even_when_files_are_unchanged(self):
         tasks = read_yaml("roles/metamap_origin/tasks/main.yml")
@@ -150,8 +151,8 @@ class ExecutableOriginContractTests(unittest.TestCase):
         self.assert_rejected(dict(metamap_origin_enabled=True, metamap_origin_apply_authorized=True,
                                   metamap_origin_backend_enabled=True))
 
-    def test_shadow_cannot_use_the_production_port_or_string_authorization(self):
-        self.assert_rejected(dict(metamap_origin_shadow_port=18083))
+    def test_shadow_cannot_use_a_different_socket_or_string_authorization(self):
+        self.assert_rejected(dict(metamap_origin_shadow_socket="/run/other.sock"))
         self.assert_rejected(dict(metamap_origin_shadow_enabled="true"))
         self.assert_rejected(dict(metamap_origin_shadow_enabled=True, metamap_origin_enabled=False))
 
@@ -251,6 +252,11 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
         cls.backend = HTTPServer(("127.0.0.1", 0), Backend)
         cls.backend_thread = Thread(target=cls.backend.serve_forever, daemon=True)
         cls.backend_thread.start()
+        cls.shadow_socket = cls.root / "shadow.sock"
+        cls.shadow_backend = socketserver.UnixStreamServer(str(cls.shadow_socket), Backend)
+        cls.shadow_socket.chmod(0o666)
+        cls.shadow_backend_thread = Thread(target=cls.shadow_backend.serve_forever, daemon=True)
+        cls.shadow_backend_thread.start()
         certificate, key = cls.root / "certificate.pem", cls.root / "private-key.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                         "-subj", "/CN=" + HOSTNAME, "-addext", "subjectAltName=DNS:" + HOSTNAME,
@@ -276,7 +282,7 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
                 variables = values()
                 variables.update(metamap_origin_backend_enabled=enabled is True, metamap_origin_listen_port=port,
                                  metamap_origin_shadow_enabled=enabled == "shadow",
-                                 metamap_origin_shadow_port=cls.backend.server_port,
+                                 metamap_origin_shadow_socket=str(cls.shadow_socket),
                                  metamap_origin_backend_port=cls.backend.server_port,
                                  metamap_origin_config_dir=str(fixture), metamap_origin_module_dir=MODULES,
                                  metamap_origin_document_root=str(fixture / "www"),
@@ -358,6 +364,8 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
             stream.close()
         cls.backend.shutdown()
         cls.backend.server_close()
+        cls.shadow_backend.shutdown()
+        cls.shadow_backend.server_close()
         cls.temporary.cleanup()
 
     def test_verified_tls_transport_health_and_fail_closed_routes_without_redirects(self):
@@ -401,6 +409,7 @@ class IsolatedHttpsOriginTests(unittest.TestCase):
         self.assertEqual(self.received[-1][1], "/api/fixture/a%2Fb?x=hello%2Bworld")
 
     def test_shadow_proxy_preserves_post_bytes_and_auth_but_blocks_other_routes_methods_and_production(self):
+        self.assertEqual(self.shadow_backend.address_family, socket.AF_UNIX)
         body = b'{"fixture":"shadow-envelope"}\r\n\x00\xff'
         status, headers, response = self.request("shadow", "POST", "/metamap-shadow/deliveries", body=body,
                                                 headers={"Content-Type": "application/json", "Authorization": "Bearer fixture"})

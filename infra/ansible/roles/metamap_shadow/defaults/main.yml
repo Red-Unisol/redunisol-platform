@@ -9,6 +9,7 @@ metamap_shadow_project: metamap-webhook-shadow
 metamap_shadow_platform_dir: /srv/redunisol/platform/metamap-shadow
 metamap_shadow_state_dir: /srv/redunisol/state/metamap-shadow
 metamap_shadow_private_dir: /etc/redunisol-metamap-shadow
-metamap_shadow_port: 18084
+metamap_shadow_socket_dir: /run/redunisol-metamap-shadow
+metamap_shadow_socket: /run/redunisol-metamap-shadow/receiver.sock
 metamap_shadow_uid: 10090
 metamap_shadow_gid: 10090

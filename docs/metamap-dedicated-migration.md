@@ -281,9 +281,12 @@ copia no sustituye ni cambia la respuesta de la VPS.
 El receptor corre la imagen ya fijada, con el handler MetaMap original y una
 base **nueva y aislada**. El adaptador acepta exclusivamente sobres autenticados;
 no publica las APIs de clientes. No tiene OAuth, API token de MetaMap, bootstrap
-de clientes ni recuperacion de enriquecimientos. Su red Docker interna bloquea
-egreso; el puerto publicado es solo `127.0.0.1:18084`. Apache permite unicamente
-POST a `/metamap-shadow/deliveries`, manteniendo `/metamap-platform` en 503.
+de clientes ni recuperacion de enriquecimientos. Usa `network_mode: none`, sin
+puertos publicados ni acceso de red. Apache entrega las copias mediante el
+socket Unix `/run/redunisol-metamap-shadow/receiver.sock`; su directorio limita
+el acceso al usuario del receptor y al grupo de Apache. `systemd-tmpfiles`
+recrea ese directorio al arrancar. Apache permite unicamente POST a
+`/metamap-shadow/deliveries`, manteniendo `/metamap-platform` en 503.
 
 La proyeccion SQL original, el receipt y el ledger de entregas se confirman en
 una sola transaccion. Un reintento de Queues conserva el UUID y no incrementa
@@ -311,7 +314,7 @@ La comparacion operativa cuenta entregas y hashes de los bytes por una cohorte
 nueva. No compara bases completas, marcas de revision hechas por clientes,
 IDs SQL locales ni timestamps de recepcion. El enriquecimiento externo sigue
 deshabilitado en el ensayo, por lo que sus campos derivados no acreditan paridad.
-Los controles `/health` y `/stats` se leen solo por loopback; comprueban SQLite
+Los controles `/health` y `/stats` se leen solo por el socket local; comprueban SQLite
 y exponen contadores agregados sin payloads. La recomendacion de ensayo de siete
 dias es operativa: **no hay limpieza automatica de la base sombra**. El backup
 Restic sintetico de la preparacion anterior no protege esta base.

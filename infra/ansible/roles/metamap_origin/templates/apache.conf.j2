@@ -52,7 +52,7 @@ SSLSessionTickets Off
     </LocationMatch>
 {% if metamap_origin_shadow_enabled %}
     ProxyRequests Off
-    ProxyPassMatch "^/metamap-shadow/(deliveries)$" "http://127.0.0.1:{{ metamap_origin_shadow_port }}/$1"
+    ProxyPassMatch "^/metamap-shadow/(deliveries)$" "unix:{{ metamap_origin_shadow_socket }}|http://localhost/$1"
     <LocationMatch "^/metamap-shadow/deliveries$">
         Require method POST
         Header always set Cache-Control "no-store"
