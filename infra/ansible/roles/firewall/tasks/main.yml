@@ -1,0 +1,149 @@
+---
+- name: Validar puertos y tiempo de vuelta atrás antes de tocar el host
+  ansible.builtin.assert:
+    that:
+      - foundation_firewall_ssh_port | int == foundation_expected_ssh_port | default(2241) | int
+      - foundation_firewall_provider_ssh_port | int == 22
+      - foundation_firewall_https_port | int == 443
+      - foundation_firewall_snmp_port | int == 161
+      - foundation_firewall_monitoring_port | int == 9100
+      - foundation_firewall_rollback_seconds | int >= 60
+      - foundation_firewall_rollback_seconds | int <= 900
+    fail_msg: "Configuración de firewall inválida; no se modificó el host."
+
+- name: Exigir las listas de orígenes cuando el firewall está activado
+  ansible.builtin.assert:
+    that:
+      - foundation_firewall_provider_sources | length > 0
+      - foundation_firewall_cloudflare_ipv4 | length > 0
+      - foundation_firewall_cloudflare_ipv6 | length > 0
+      - foundation_firewall_monitoring_sources | length > 0
+      - foundation_firewall_public_interface is match('^[A-Za-z0-9_.-]{1,15}$')
+    fail_msg: "Firewall activado con listas de orígenes vacías o sin interfaz pública; no se modificó el host."
+  when: foundation_firewall_enabled | bool
+
+- name: Validar que los orígenes tengan formato de IP o rango
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_firewall_provider_sources + foundation_firewall_cloudflare_ipv4 + foundation_firewall_monitoring_sources)
+        | reject('match', '^[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?$') | list | length == 0
+      - >-
+        foundation_firewall_cloudflare_ipv6
+        | reject('match', '^[0-9A-Fa-f:]+(/[0-9]{1,3})?$') | list | length == 0
+    fail_msg: "Hay orígenes con formato inválido; no se modificó el host."
+
+- name: Describir el plan del firewall en modo prueba
+  ansible.builtin.debug:
+    msg:
+      activado: "{{ foundation_firewall_enabled }}"
+      ssh_abierto_a_todos: "{{ foundation_firewall_ssh_port }}"
+      ssh_solo_proveedor: "{{ foundation_firewall_provider_ssh_port }} desde {{ foundation_firewall_provider_sources }}"
+      https_solo_cloudflare: >-
+        {{ foundation_firewall_https_port }} desde {{ foundation_firewall_cloudflare_ipv4 | length }} rangos IPv4
+        y {{ foundation_firewall_cloudflare_ipv6 | length }} rangos IPv6
+      snmp_solo_proveedor: "{{ foundation_firewall_snmp_port }}/udp desde {{ foundation_firewall_provider_sources }}"
+      metricas: "{{ foundation_firewall_monitoring_port }} desde {{ foundation_firewall_monitoring_sources }}"
+      docker_sin_conexiones_nuevas_desde: "{{ foundation_firewall_public_interface }}"
+      vuelta_atras_segundos: "{{ foundation_firewall_rollback_seconds }}"
+      nota: "Modo prueba: no se escribió ni se cargó ninguna regla."
+  when: ansible_check_mode
+
+- name: Aplicar el firewall
+  when:
+    - foundation_firewall_enabled | bool
+    - not ansible_check_mode
+  block:
+    - name: Comprobar que nft está instalado
+      ansible.builtin.stat:
+        path: /usr/sbin/nft
+      register: foundation_firewall_nft_binary
+
+    - name: Exigir nft antes de escribir reglas
+      ansible.builtin.assert:
+        that:
+          - foundation_firewall_nft_binary.stat.exists
+          - foundation_firewall_nft_binary.stat.executable
+        fail_msg: "No está /usr/sbin/nft; no se modificó el host."
+
+    - name: Crear la carpeta de reglas
+      ansible.builtin.file:
+        path: /etc/redunisol-firewall
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Escribir el archivo de reglas, validado antes de reemplazar
+      ansible.builtin.template:
+        src: firewall.nft.j2
+        dest: /etc/redunisol-firewall/rules.nft
+        owner: root
+        group: root
+        mode: "0640"
+        validate: /usr/sbin/nft -c -f %s
+
+    - name: Crear la carpeta del script de vuelta atrás
+      ansible.builtin.file:
+        path: /usr/local/libexec/redunisol-firewall
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Instalar el script de vuelta atrás
+      ansible.builtin.copy:
+        src: firewall-rollback.sh
+        dest: /usr/local/libexec/redunisol-firewall/rollback
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Instalar el servicio que carga las reglas confirmadas al arrancar
+      ansible.builtin.copy:
+        src: redunisol-firewall.service
+        dest: /etc/systemd/system/redunisol-firewall.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: foundation_firewall_unit
+
+    - name: Recargar systemd si cambió el servicio
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: foundation_firewall_unit.changed
+
+    # Se compara contra lo último confirmado y no contra si el archivo cambió:
+    # tras una vuelta atrás el archivo queda nuevo pero el host corre lo anterior,
+    # y la próxima corrida tiene que volver a intentarlo.
+    - name: Leer la huella de las reglas escritas
+      ansible.builtin.stat:
+        path: /etc/redunisol-firewall/rules.nft
+        checksum_algorithm: sha256
+      register: foundation_firewall_rules_file
+
+    - name: Leer la huella de las últimas reglas confirmadas
+      ansible.builtin.stat:
+        path: /etc/redunisol-firewall/rules.confirmed.nft
+        checksum_algorithm: sha256
+      register: foundation_firewall_confirmed_file
+
+    - name: Ver si nuestra tabla está cargada
+      ansible.builtin.command:
+        argv: [/usr/sbin/nft, list, table, inet, redunisol_firewall]
+      register: foundation_firewall_loaded
+      changed_when: false
+      failed_when: false
+
+    - name: Cargar las reglas con confirmación si difieren de las confirmadas o no están cargadas
+      ansible.builtin.include_tasks: load.yml
+      when: >-
+        foundation_firewall_loaded.rc != 0
+        or not foundation_firewall_confirmed_file.stat.exists
+        or foundation_firewall_confirmed_file.stat.checksum != foundation_firewall_rules_file.stat.checksum
+
+    - name: Dejar el servicio activo para que cargue las reglas confirmadas en cada arranque
+      ansible.builtin.systemd_service:
+        name: redunisol-firewall.service
+        enabled: true
+        state: started

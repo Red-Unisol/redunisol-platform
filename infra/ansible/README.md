@@ -15,7 +15,8 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | --- | --- |
 | Sistema | Configuracion declarativa de Debian, paquetes base, hora y registros. |
 | Acceso | Cuentas y claves publicas expresamente configuradas. |
-| Seguridad | fail2ban para SSH, con version revisada; sin politica de firewall. |
+| Seguridad | fail2ban para SSH, con version revisada. |
+| Firewall | Politica de entrada con nftables en su propia tabla, con carga confirmada; preparada y desactivada en el inventario ([guia](roles/firewall/README.md)). |
 | Docker | Motor y plugin Compose, configuracion del daemon y verificacion. |
 | Proxy | Configuracion base sin publicar los dominios de las aplicaciones actuales. |
 | Storage habitual | Validacion de discos y montajes existentes, y creacion de directorios. |
@@ -24,7 +25,8 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | Recuperacion | Copias de la configuracion base y comprobaciones de respaldo. |
 | Mantenimiento | Revision de actualizaciones y necesidad de reinicio, separada del provisionamiento. |
 
-Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root.
+Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root: el rol
+`firewall` queda desactivado en el inventario hasta una decision expresa.
 El rol `security` solo agrega fail2ban para SSH: sus bloqueos son las unicas
 reglas nftables que crea, en la tabla que administra fail2ban.
 Antes del primer apply, agregar la IP publica de gestion de la oficina a

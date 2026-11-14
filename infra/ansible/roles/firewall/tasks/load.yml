@@ -1,0 +1,49 @@
+---
+# Carga con confirmación ("commit confirmado"). Antes de cargar se programa en el
+# host una vuelta atrás; solo se cancela si una conexión SSH nueva entra con las
+# reglas ya activas. Si Ansible pierde el acceso, el host se recupera solo.
+
+- name: Limpiar una vuelta atrás que haya quedado de una corrida anterior
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, stop, redunisol-firewall-rollback.timer, redunisol-firewall-rollback.service]
+  changed_when: false
+  failed_when: false
+
+- name: Programar la vuelta atrás por si no se confirma
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemd-run
+      - --unit=redunisol-firewall-rollback
+      - --collect
+      - --on-active={{ foundation_firewall_rollback_seconds | int }}
+      # Sin esto systemd puede demorar el disparo hasta un minuto más.
+      - --timer-property=AccuracySec=1s
+      - /usr/local/libexec/redunisol-firewall/rollback
+  changed_when: true
+
+- name: Cargar las reglas nuevas de una sola vez
+  ansible.builtin.command:
+    argv: [/usr/sbin/nft, -f, /etc/redunisol-firewall/rules.nft]
+  changed_when: true
+
+- name: Cerrar la conexión SSH actual para probar una nueva
+  ansible.builtin.meta: reset_connection
+
+- name: Confirmar que una conexión SSH nueva entra con las reglas activas
+  ansible.builtin.command:
+    argv: [/usr/bin/true]
+  changed_when: false
+
+- name: Guardar las reglas como confirmadas
+  ansible.builtin.copy:
+    src: /etc/redunisol-firewall/rules.nft
+    dest: /etc/redunisol-firewall/rules.confirmed.nft
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Cancelar la vuelta atrás
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, stop, redunisol-firewall-rollback.timer]
+  changed_when: true

@@ -30,6 +30,11 @@
         name: docker
         tasks_from: verify
       tags: [docker]
+    - name: Verify the host firewall
+      ansible.builtin.import_role:
+        name: firewall
+        tasks_from: verify
+      tags: [firewall]
     - name: Verify the private proxy
       ansible.builtin.import_role:
         name: proxy

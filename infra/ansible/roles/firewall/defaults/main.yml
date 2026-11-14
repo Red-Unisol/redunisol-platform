@@ -1,0 +1,29 @@
+# Política de entrada del dedicado. Todo lo que no esté permitido acá se descarta.
+# La salida no se filtra. Las direcciones reales van en el inventario revisado.
+foundation_firewall_enabled: false
+
+# Puerto SSH abierto a todos; fail2ban lo sigue vigilando.
+foundation_firewall_ssh_port: 2241
+
+# Puerto SSH clásico, solo para las direcciones de administración del proveedor (DonWeb).
+foundation_firewall_provider_ssh_port: 22
+foundation_firewall_provider_sources: []
+
+# HTTPS solo a través del proxy de Cloudflare.
+foundation_firewall_https_port: 443
+foundation_firewall_cloudflare_ipv4: []
+foundation_firewall_cloudflare_ipv6: []
+
+# Monitoreo SNMP del proveedor (mismos orígenes que /etc/snmp/snmpd.conf).
+foundation_firewall_snmp_port: 161
+
+# Métricas para nuestro servidor de monitoreo.
+foundation_firewall_monitoring_port: 9100
+foundation_firewall_monitoring_sources: []
+
+# Interfaz de red pública del servidor. Lo que entra por ella no puede abrir
+# conexiones nuevas hacia contenedores, aunque alguno publique un puerto en 0.0.0.0.
+foundation_firewall_public_interface: ""
+
+# Segundos antes de deshacer automáticamente un apply que no se confirmó.
+foundation_firewall_rollback_seconds: 300

@@ -1,0 +1,128 @@
+---
+# Verificación de solo lectura. No corrige nada: si algo difiere, falla y explica qué.
+
+- name: Ver si nuestra tabla está cargada
+  ansible.builtin.command:
+    argv: [/usr/sbin/nft, list, table, inet, redunisol_firewall]
+  register: foundation_firewall_verify_loaded
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Ver si el servicio del firewall está instalado
+  ansible.builtin.stat:
+    path: /etc/systemd/system/redunisol-firewall.service
+  register: foundation_firewall_verify_unit
+
+- name: Verificar que no haya firewall cargado si el inventario lo tiene desactivado
+  ansible.builtin.assert:
+    that:
+      - foundation_firewall_verify_loaded.rc != 0
+      - not foundation_firewall_verify_unit.stat.exists
+    fail_msg: >-
+      El inventario tiene el firewall desactivado pero el host tiene la tabla redunisol_firewall
+      o el servicio redunisol-firewall. Ver el README del rol para retirarlo.
+  when: not foundation_firewall_enabled | bool
+
+- name: Verificar el firewall activado
+  when: foundation_firewall_enabled | bool
+  block:
+    - name: Leer los archivos administrados
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /etc/redunisol-firewall/rules.nft
+        - /etc/redunisol-firewall/rules.confirmed.nft
+        - /usr/local/libexec/redunisol-firewall/rollback
+        - /etc/systemd/system/redunisol-firewall.service
+      register: foundation_firewall_verify_files
+
+    - name: Verificar que los archivos coincidan con Git y que lo escrito esté confirmado
+      ansible.builtin.assert:
+        that:
+          - >-
+            foundation_firewall_verify_files.results[0].content | b64decode ==
+            lookup('ansible.builtin.template', role_path ~ '/templates/firewall.nft.j2')
+          - >-
+            foundation_firewall_verify_files.results[1].content ==
+            foundation_firewall_verify_files.results[0].content
+          - >-
+            foundation_firewall_verify_files.results[2].content | b64decode ==
+            lookup('ansible.builtin.file', role_path ~ '/files/firewall-rollback.sh', rstrip=false)
+          - >-
+            foundation_firewall_verify_files.results[3].content | b64decode ==
+            lookup('ansible.builtin.file', role_path ~ '/files/redunisol-firewall.service', rstrip=false)
+        fail_msg: >-
+          Los archivos del firewall difieren de Git o las últimas reglas escritas no se confirmaron;
+          aplicar el rol revisado antes de verificar.
+
+    - name: Leer el estado del servicio y de la vuelta atrás
+      ansible.builtin.command:
+        argv: "{{ ['/usr/bin/systemctl'] + item }}"
+      loop:
+        - [is-enabled, redunisol-firewall.service]
+        - [is-active, redunisol-firewall.service]
+        - [is-active, redunisol-firewall-rollback.timer]
+      register: foundation_firewall_verify_units
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Verificar el servicio y que no quede una vuelta atrás pendiente
+      ansible.builtin.assert:
+        that:
+          - foundation_firewall_verify_units.results[0].stdout | trim == 'enabled'
+          - foundation_firewall_verify_units.results[1].stdout | trim == 'active'
+          - foundation_firewall_verify_units.results[2].stdout | trim != 'active'
+        fail_msg: >-
+          El servicio redunisol-firewall no está habilitado y activo, o quedó una vuelta atrás
+          pendiente de un apply sin confirmar; revisar antes de seguir.
+
+    # Las reglas confirmadas se cargan en un espacio de red descartable que
+    # desaparece al terminar el comando, y nft las lista con el mismo formato que
+    # usa para el host. Así se compara todo, sin depender de cómo nft agrupa rangos.
+    - name: Listar cómo deberían quedar las reglas confirmadas, en una red descartable
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/unshare
+          - --net
+          - /bin/sh
+          - -c
+          - /usr/sbin/nft -f /etc/redunisol-firewall/rules.confirmed.nft && /usr/sbin/nft list table inet redunisol_firewall
+      register: foundation_firewall_verify_expected
+      changed_when: false
+      check_mode: false
+
+    - name: Verificar que las reglas activas sean exactamente las confirmadas
+      ansible.builtin.assert:
+        that:
+          - foundation_firewall_verify_loaded.rc == 0
+          - foundation_firewall_verify_loaded.stdout == foundation_firewall_verify_expected.stdout
+        fail_msg: >-
+          Las reglas activas no son las confirmadas (falta la tabla o alguien la modificó a mano);
+          aplicar el rol revisado.
+
+    - name: Ver si existe la configuración de SNMP del proveedor
+      ansible.builtin.stat:
+        path: /etc/snmp/snmpd.conf
+      register: foundation_firewall_verify_snmpd
+
+    - name: Leer los orígenes que snmpd acepta
+      ansible.builtin.slurp:
+        src: /etc/snmp/snmpd.conf
+      register: foundation_firewall_verify_snmpd_conf
+      when: foundation_firewall_verify_snmpd.stat.exists
+
+    - name: Verificar que el firewall permita SNMP a los mismos orígenes que snmpd
+      vars:
+        foundation_firewall_snmpd_sources: >-
+          {{ foundation_firewall_verify_snmpd_conf.content | b64decode
+             | regex_findall('(?m)^[ \t]*com2sec[ \t]+[^ \t]+[ \t]+([^ \t]+)') }}
+      ansible.builtin.assert:
+        that:
+          - foundation_firewall_snmpd_sources | sort == foundation_firewall_provider_sources | sort
+        fail_msg: >-
+          snmpd.conf acepta {{ foundation_firewall_snmpd_sources }} y el firewall permite
+          {{ foundation_firewall_provider_sources }}; el proveedor cambió su monitoreo:
+          actualizar el inventario.
+      when: foundation_firewall_verify_snmpd.stat.exists
