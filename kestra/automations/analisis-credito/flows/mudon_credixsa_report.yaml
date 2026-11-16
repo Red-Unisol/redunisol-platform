@@ -1,7 +1,7 @@
 id: mudon_credixsa_report
 namespace: redunisol
 
-description: Construye de forma reanudable el padrÃƒÂ³n de socios MUDON con crÃƒÂ©dito activo, lo enriquece con CredixSA y publica un Excel compartido.
+description: Construye de forma reanudable el padrón de socios MUDON con crédito activo, lo enriquece con CredixSA y publica un Excel compartido.
 
 concurrency:
   limit: 1
