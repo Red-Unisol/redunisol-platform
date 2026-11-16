@@ -41,7 +41,12 @@ export function SolicitudWorkflowActionDialog({
   const [validationMessage, setValidationMessage] = useState<string | null>(
     null,
   );
-  const trimmedComment = comment.trim();
+  const showComment = !(
+    transition?.actionCode === "liquidar" &&
+    transition.toState.code === "VerificarFirmaYDocumentacion" &&
+    transition.requiresComment === false
+  );
+  const trimmedComment = showComment ? comment.trim() : "";
   const isCommentMissing =
     transition?.requiresComment === true && trimmedComment.length === 0;
 
@@ -136,22 +141,24 @@ export function SolicitudWorkflowActionDialog({
             </div>
           ) : null}
 
-          <label className="grid gap-1.5">
-            <span className="text-xs font-medium text-foreground-secondary">
-              Comentario{transition?.requiresComment ? " *" : ""}
-            </span>
-            <textarea
-              className="flex min-h-24 w-full min-w-0 resize-none rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-foreground shadow-xs transition outline-none placeholder:text-foreground-muted focus-visible:border-input-focus focus-visible:ring-2 focus-visible:ring-input-focus/20 disabled:cursor-not-allowed disabled:bg-disabled-background disabled:text-disabled-foreground"
-              disabled={isSubmitting}
-              onChange={(event) => {
-                setComment(event.target.value);
-                if (validationMessage) {
-                  setValidationMessage(null);
-                }
-              }}
-              value={comment}
-            />
-          </label>
+          {showComment && (
+            <label className="grid gap-1.5">
+              <span className="text-xs font-medium text-foreground-secondary">
+                Comentario{transition?.requiresComment ? " *" : ""}
+              </span>
+              <textarea
+                className="flex min-h-24 w-full min-w-0 resize-none rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-foreground shadow-xs transition outline-none placeholder:text-foreground-muted focus-visible:border-input-focus focus-visible:ring-2 focus-visible:ring-input-focus/20 disabled:cursor-not-allowed disabled:bg-disabled-background disabled:text-disabled-foreground"
+                disabled={isSubmitting}
+                onChange={(event) => {
+                  setComment(event.target.value);
+                  if (validationMessage) {
+                    setValidationMessage(null);
+                  }
+                }}
+                value={comment}
+              />
+            </label>
+          )}
 
           {validationMessage || errorMessage ? (
             <p className="rounded-md border border-danger bg-danger px-3 py-2 text-sm text-danger-foreground">

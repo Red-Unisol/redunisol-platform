@@ -1,0 +1,30 @@
+---
+- name: Require explicit approval and a concrete local snapshot
+  ansible.builtin.assert:
+    that:
+      - foundation_apply_authorized | default(false) | bool
+      - foundation_backups_restore_authorized | bool
+      - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+      - foundation_backups_repository_kind == 'local'
+      - foundation_backups_restore_snapshot is match('^[0-9a-f]{64}$')
+    fail_msg: Local restore needs explicit approval and a full concrete snapshot ID.
+
+- name: Validate the existing selected local repository
+  ansible.builtin.import_tasks: validate-local.yml
+
+- name: Restore only approved configuration into a new isolated directory
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/redunisol-foundation/restore-local-config
+      - --snapshot
+      - "{{ foundation_backups_restore_snapshot }}"
+  register: foundation_backups_restore_execution
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Report isolated local restore scope
+  ansible.builtin.debug:
+    msg: >-
+      {{ foundation_backups_restore_execution.stdout
+         if not ansible_check_mode else
+         'Check mode validated prerequisites only; no restore was performed.' }}

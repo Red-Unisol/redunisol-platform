@@ -7,6 +7,8 @@ use App\Http\Controllers\CuadMasivoController;
 use App\Http\Controllers\HerramientasController;
 use App\Http\Controllers\ObjectivesDashboardController;
 use App\Http\Controllers\PadronesController;
+use App\Http\Controllers\PadronesServiceController;
+use App\Http\Middleware\PadronesServiceAccess;
 use App\Http\Middleware\AnalisisAccess;
 use App\Http\Middleware\CuadMasivoAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -32,6 +34,9 @@ Route::middleware(CuadMasivoAccess::class)->prefix('/api/cuad-masivo')->group(fu
     Route::get('/corridas/{corrida}/descargar', [CuadMasivoController::class, 'download'])->name('cuad-masivo.download');
 });
 Route::get('/padrones', [PadronesController::class, 'index'])->name('padrones');
+Route::post('/api/internal/padrones/lookup', PadronesServiceController::class)
+    ->middleware([PadronesServiceAccess::class, 'throttle:120,1'])
+    ->withoutMiddleware([PreventRequestForgery::class]);
 Route::post('/padrones/login', [PadronesController::class, 'login']);
 Route::middleware(AnalisisAccess::class)->prefix('/api/padrones')->group(function () {
     Route::get('/sources', [PadronesController::class, 'sources']);

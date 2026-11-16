@@ -1,0 +1,7 @@
+---
+# Public connection policy; the private key remains on the VPS.
+bcra_private_link_server_host: "168.197.51.104"
+bcra_private_link_server_port: 2241
+bcra_private_link_server_host_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH4lp8yk8pXoCcvtF5dn9IMV0gbcPcEyEcdQzLJbZot9"
+bcra_private_link_client_source_ip: "66.97.34.158"
+bcra_private_link_client_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA0O4dX0jUrTZTPMPh8BILssvoSTc+gHS4luPhB1Gl/B"

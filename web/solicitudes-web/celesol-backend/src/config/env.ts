@@ -110,6 +110,8 @@ const envSchema = z.object({
   // Las dos vias comparten la misma cache, asi que la consulta al crear la
   // solicitud le sigue sirviendo a esta.
   CREDIXSA_INFORME_WEBHOOK_URL: z.string().trim().default(""),
+  PADRONES_API_URL: z.string().trim().default(""),
+  PADRONES_API_TOKEN: z.string().trim().default(""),
   // Alto a proposito: con la cache fria hay que esperar el scraping, que en el
   // ambiente real tardo entre 1 y 2 minutos.
   CREDIXSA_INFORME_TIMEOUT_MS: z.coerce

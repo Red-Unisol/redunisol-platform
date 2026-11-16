@@ -1,0 +1,14 @@
+# Managed by Ansible. Only the reviewed backup SATA UUID is mounted.
+[Unit]
+Description=Red Unisol backup filesystem ({{ foundation_backup_storage_serial }})
+JobTimeoutSec=30s
+
+[Mount]
+What=/dev/disk/by-uuid/{{ foundation_backup_storage_uuid }}
+Where={{ foundation_backup_storage_mountpoint }}
+Type=xfs
+Options=nodev,nosuid,noexec,nofail
+TimeoutSec=30s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+---
+- name: Collect every health timestamp sample before validating its value
+  ansible.builtin.set_fact:
+    foundation_monitoring_health_timestamp_lines: >-
+      {{ foundation_monitoring_probe.content |
+         regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds(?=[ \t{]|$).*$') }}
+
+- name: Require exactly one health timestamp sample
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_health_timestamp_lines | length == 1
+    fail_msg: Exactly one unlabelled health collection timestamp sample is required.
+
+- name: Parse the Prometheus integer decimal or scientific timestamp
+  ansible.builtin.set_fact:
+    foundation_monitoring_health_timestamp_values: >-
+      {{ foundation_monitoring_probe.content |
+         regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds[ \t]+([+-]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][+-]?[0-9]+)?)[ \t]*$') }}
+
+- name: Require one numeric unlabelled timestamp and a valid server clock
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_health_timestamp_values | length == 1
+      - foundation_monitoring_now.stdout is match('^[0-9]{1,12}$')
+      - foundation_monitoring_now.stdout | int > 0
+      - foundation_monitoring_health_max_age_seconds | int > 0
+    fail_msg: A numeric Prometheus timestamp and a valid server clock are required.
+
+- name: Require a finite positive timestamp no later than the server clock
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_health_timestamp_values[0] | float > 0
+      - >-
+        foundation_monitoring_health_timestamp_values[0] | float <=
+        foundation_monitoring_now.stdout | float
+    fail_msg: Health timestamp must be finite positive and not in the future.
+
+- name: Require the health timestamp to be fresh without truncating fractions
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_monitoring_now.stdout | float -
+         foundation_monitoring_health_timestamp_values[0] | float) <=
+        foundation_monitoring_health_max_age_seconds | float
+    fail_msg: Host health collection is stale.
+
+- name: Record the verified finite health timestamp
+  ansible.builtin.set_fact:
+    foundation_monitoring_last_collection: "{{ foundation_monitoring_health_timestamp_values[0] | float }}"

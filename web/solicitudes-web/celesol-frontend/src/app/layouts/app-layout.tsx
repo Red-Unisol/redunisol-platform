@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Bell,
+  CalendarDays,
   FileCheck2,
   Calculator,
   ClipboardList,
@@ -30,6 +31,7 @@ import {
 } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
 
 const TITLE_BY_PATH: Record<string, string> = {
+  "/solicitudes/fechas-de-corte": "Fechas de corte",
   "/notificaciones": "Notificaciones",
   "/legajos/firmas": "Legajos Digitales",
   "/404": "Página no encontrada",
@@ -63,6 +65,7 @@ const TITLE_BY_PATH: Record<string, string> = {
 };
 
 const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
+  "/solicitudes/fechas-de-corte": CalendarDays,
   "/notificaciones": Bell,
   "/legajos/firmas": FileCheck2,
   "/404": History,

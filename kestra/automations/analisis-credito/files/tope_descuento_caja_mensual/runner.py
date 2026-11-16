@@ -13,6 +13,7 @@ from .caja_client import (
     CajaTechnicalError,
 )
 from .checkpoint import Checkpoint, ResultRow, now_iso
+from .diagnostics import emit
 from .sources import Candidate, is_valid_cuil
 
 INVALID_CUIL_ERROR = "CUIL con digito verificador invalido."
@@ -106,15 +107,25 @@ def run_candidates(
                 )
                 break
             except CajaRateLimitedError as exc:
+                emit("caja_query_failed", candidate_index=index, attempt=attempt + 1,
+                     error_type=type(exc).__name__, error=str(exc),
+                     diagnostic_id=exc.diagnostics.get("diagnostic_id"))
                 stop_reason = str(exc)
                 row = ResultRow(
                     cuil=candidate.cuil,
                     status="technical_error",
                     checked_at=now_iso(now()),
                     error=stop_reason,
+                    error_details=exc.diagnostics,
                 )
                 break
             except CajaTechnicalError as exc:
+                retry_delay = retry_delays[attempt] if attempt < len(retry_delays) else None
+                emit("caja_query_retry" if retry_delay is not None else "caja_query_failed",
+                     candidate_index=index, attempt=attempt + 1,
+                     max_attempts=len(retry_delays) + 1, retry_in_seconds=retry_delay,
+                     error_type=type(exc).__name__, error=str(exc),
+                     diagnostic_id=exc.diagnostics.get("diagnostic_id"))
                 if attempt < len(retry_delays):
                     sleep(retry_delays[attempt])
                     continue
@@ -123,6 +134,7 @@ def run_candidates(
                     status="technical_error",
                     checked_at=now_iso(now()),
                     error=str(exc),
+                    error_details=exc.diagnostics,
                 )
 
         if row is None:  # pragma: no cover - defensive
@@ -157,7 +169,7 @@ def run_candidates(
         if stop_reason:
             break
         if consecutive_errors >= max_consecutive_errors:
-            stop_reason = f"{consecutive_errors} errores tecnicos consecutivos."
+            stop_reason = f"{consecutive_errors} errores tecnicos consecutivos. Ultimo error: {row.error}"
             break
     final_rows = checkpoint.latest()
     pending = sum(

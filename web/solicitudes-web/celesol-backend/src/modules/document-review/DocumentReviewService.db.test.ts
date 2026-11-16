@@ -7,7 +7,9 @@ import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { DocumentReviewService } from "./DocumentReviewService";
 import { createDocumentReviewWorkflow } from "./workflow";
 import { candidateFixture } from "./fixtures";
-import { REVIEW_STATE, type ProviderCandidate } from "./domain";
+import { REVIEW_STATE, digest, type ProviderCandidate } from "./domain";
+import { getSignatureApproval, reviewSource, signatureSourceInclude } from "./signature-workflow";
+import { PDFDocument } from "pdf-lib";
 import { coreConditionsFingerprint } from "../solicitudes-core/domain/workflow/AdministrativeCorrection";
 import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
 
@@ -52,6 +54,7 @@ test(
       },
     });
     const objects = new Map<string, Buffer>();
+    let providerReads = 0;
     let provider: ProviderCandidate[] = [],
       storageFails = false,
       workflowFails = false,
@@ -64,7 +67,7 @@ test(
       bucket: "test-bucket",
       maxPdfBytes: 2000000,
       gateway: {
-        candidates: async () => structuredClone(provider),
+        candidates: async () => { providerReads++; return structuredClone(provider); },
         download: async () => Buffer.from("unused"),
       },
       buildLegajo: async (i) =>
@@ -144,6 +147,65 @@ test(
       decision: approve ? ("approve" as const) : ("not_approve" as const),
       verificationId: "good-old",
       reason,
+    });
+
+    async function externalInput(id: string) {
+      const row = await db.solicitud.findUniqueOrThrow({ where: { id }, include: signatureSourceInclude });
+      const pdf = await PDFDocument.create(); pdf.addPage().drawText("Legajo externo firmado de prueba");
+      return { requestId: randomUUID(), sourceFingerprint: digest(reviewSource(row)), reason: "Legajo físico verificado",
+        confirmed: true, files: [{ name: "legajo.pdf", contentType: "application/pdf", bytes: Buffer.from(await pdf.save()) }] };
+    }
+
+    await t.test("external approval needs no provider attempts, is immutable, idempotent and advances atomically", async () => {
+      const row = await fixture(); provider = [];
+      const input = await externalInput(row.id);
+      providerReads = 0;
+      const [result] = await Promise.all([service.approveExternal(row.id, actor, input), service.approveExternal(row.id, actor, input)]);
+      assert.equal(providerReads, 0);
+      assert.equal(result.signature?.approved, true);
+      assert.equal(result.signature?.evidenceType, "external");
+      assert.equal(result.signature?.completedAttempts, 0);
+      assert.equal(result.state, "Transferir");
+      const saved = await db.solicitudDocumentDecision.findUniqueOrThrow({ where: { requestId: input.requestId }, include: { review: true } });
+      assert.equal(saved.verificationId, null);
+      assert.equal(saved.legajoAdjuntoId, saved.review.legajoAdjuntoId);
+      await assert.rejects(db.solicitudAdjunto.update({ where: { id: saved.legajoAdjuntoId! }, data: { deletedAt: new Date() } }), /IMMUTABLE/);
+      const objectCount = objects.size;
+      await Promise.all([service.approveExternal(row.id, actor, input), service.approveExternal(row.id, actor, input)]);
+      assert.equal(objects.size, objectCount);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 1);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, reason: "Otro motivo" }), /otros datos/);
+    });
+
+    await t.test("external approval waits for analysis and is invalidated by a new cycle or loan", async () => {
+      const row = await fixture(); provider = [];
+      const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });
+      await db.solicitud.update({ where: { id: row.id }, data: { estadoActualId: confirmed.id } });
+      const input = await externalInput(row.id);
+      assert.equal((await service.approveExternal(row.id, actor, input)).state, "Confirmada");
+      await db.solicitud.update({ where: { id: row.id }, data: { signatureCycleId: randomUUID() } });
+      assert.equal((await getSignatureApproval(db, row.id)).approved, false);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, requestId: randomUUID() }), /cambió/);
+    });
+
+    await t.test("external load fails closed for permissions, missing confirmation, storage, changed data and workflow rollback", async () => {
+      const row = await fixture(); const input = await externalInput(row.id);
+      const before = objects.size;
+      await assert.rejects(service.approveExternal(row.id, outsider as AuthUser, input), /Solo Legajos/);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, confirmed: false }), /confirmá/);
+      storageFails = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /No se pudo guardar/);
+      storageFails = false;
+      workflowFails = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /post-workflow/);
+      workflowFails = false;
+      assert.equal(objects.size, before);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 0);
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: row.id } })).estadoActualId, state.id);
+      changeDuringPreflight = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /cambió/);
+      changeDuringPreflight = false;
+      assert.equal(objects.size, before);
     });
 
     await t.test(
@@ -466,6 +528,56 @@ test(
         );
       },
     );
+    await t.test("a verified signed attempt without the final webhook can be approved and transferred atomically", async () => {
+      const row = await fixture();
+      provider = provider.filter(c => c.verificationId === "good-old");
+      provider[0]!.completedAt = null;
+      const review = await service.evaluate(row.id);
+      const before = await service.view(row.id, actor);
+      assert.equal(before.currentReview?.systemDecision, "approve");
+      assert.equal(before.signature.completedAttempts, 1);
+      assert.equal(before.signature.approved, false);
+      const input = decision(review.id);
+      await service.decide(row.id, actor, input);
+      const after = await service.view(row.id, actor);
+      assert.equal(after.state, "Transferir");
+      assert.equal(after.signature.approved, true);
+      assert.equal((await getSignatureApproval(db, row.id)).approved, true);
+      const saved = await db.solicitudDocumentDecision.findUniqueOrThrow({ where: { requestId: input.requestId }, include: { review: true } });
+      assert.equal((saved.review.assessment as { attempts: { completedAt: string | null }[] }).attempts[0]!.completedAt, null);
+      await service.decide(row.id, actor, input);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 1);
+    });
+
+    await t.test("missing completion metadata cannot replace signed evidence", async () => {
+      const row = await fixture();
+      provider = provider.filter(c => c.verificationId === "good-old");
+      provider[0]!.completedAt = null;
+      provider[0]!.resource!.steps = [];
+      const review = await service.evaluate(row.id);
+      await assert.rejects(() => service.decide(row.id, actor, decision(review.id, true, "Revisado")), /evidencia y legajo completos/);
+      assert.equal((await service.view(row.id, actor)).signature.approved, false);
+    });
+
+    await t.test("a new signature cycle accepts newly signed originals without a final webhook", async () => {
+      const row = await fixture();
+      await service.requestSignature(row.id, actor, { requestId: randomUUID(), reason: "Repetir firma" });
+      const fresh = structuredClone(provider.find(c => c.verificationId === "good-old")!);
+      fresh.verificationId = "fresh-without-webhook";
+      fresh.completedAt = null;
+      const steps = fresh.resource!.steps as { id: string; data?: { signedDocumentDetails?: { signedAt: string }[] } }[];
+      steps.find(s => s.id === "electronic-signature-document-validation")!.data!.signedDocumentDetails![0]!.signedAt = new Date(Date.now() + 1000).toISOString();
+      provider.push(fresh);
+      const review = await service.evaluate(row.id);
+      const before = await service.view(row.id, actor);
+      assert.deepEqual(before.currentReview?.attempts.map(a => a.verificationId), [fresh.verificationId]);
+      assert.equal(before.signature.completedAttempts, 1);
+      await service.decide(row.id, actor, { ...decision(review.id), verificationId: fresh.verificationId });
+      const after = await service.view(row.id, actor);
+      assert.equal(after.signature.approved, true);
+      assert.equal(after.state, "Transferir");
+    });
+
     await t.test("Legajos may approve while analysis is still pending without moving the application", async () => {
       const row = await fixture();
       const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });

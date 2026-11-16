@@ -1,0 +1,46 @@
+---
+- name: Refresh metadata and report maintenance without upgrading services
+  hosts: foundation_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require an independent maintenance decision
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode or (foundation_maintenance_authorized | default(false) | bool)
+          - ansible_check_mode or (foundation_revision | default('') is match('^[0-9a-f]{40}$'))
+        fail_msg: "Maintenance requires foundation_maintenance_authorized=true and a reviewed foundation_revision."
+    - name: Verify host identity before maintenance
+      ansible.builtin.include_role:
+        name: preflight
+  tasks:
+    - name: Refresh metadata without upgrading packages
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Report packages with available upgrades
+      ansible.builtin.command:
+        argv: [apt, list, --upgradable]
+      register: foundation_maintenance_upgrades
+      changed_when: false
+      check_mode: false
+    - name: Inspect reboot recommendation
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: foundation_reboot_required
+    - name: Report maintenance observations
+      ansible.builtin.debug:
+        msg:
+          available_upgrades: "{{ foundation_maintenance_upgrades.stdout_lines }}"
+          reboot_recommended: "{{ foundation_reboot_required.stat.exists }}"
+          automatic_upgrade_or_reboot: false
+    - name: Verify Docker without restarting it
+      ansible.builtin.include_role:
+        name: docker
+        tasks_from: verify
+    - name: Verify the proxy without reloading it
+      ansible.builtin.include_role:
+        name: proxy
+        tasks_from: verify

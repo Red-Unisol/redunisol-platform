@@ -3,6 +3,8 @@ import {
   ajustarCuotasTexto,
 } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { Controller } from "react-hook-form";
+import { MonthlyCutoffNotice } from "@/modules/monthly-cutoffs/MonthlyCutoffNotice";
+import { isAmejucaLine } from "@/modules/monthly-cutoffs/api";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 import { DateInputField } from "@/shared/components/forms/date-input-field";
@@ -48,6 +50,7 @@ export function SolicitudMainSection({
 
   return (
     <Section title="Solicitud">
+      <MonthlyCutoffNotice lineId={selectedLinea?.oid} />
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-3">
           <Field label="Línea">
@@ -111,7 +114,10 @@ export function SolicitudMainSection({
             ) : null}
           </Field>
           <Field label="Fecha Primer Vencimiento">
-            <DateInputField control={control} name="fechaPrimerVencimiento" />
+            <fieldset disabled={isAmejucaLine(selectedLinea?.oid)} className="min-w-0">
+              <DateInputField control={control} name="fechaPrimerVencimiento" />
+            </fieldset>
+            {isAmejucaLine(selectedLinea?.oid) ? <span className="text-xs text-foreground-muted">Se calcula automáticamente con el corte de AMEJUCA.</span> : null}
           </Field>
           <Field label="Motivo">
             <Input {...register("motivo")} />

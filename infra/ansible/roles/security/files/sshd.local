@@ -1,0 +1,7 @@
+# Managed by infra/ansible (role security).
+# Temporary backport for CVE-2026-109786 while Debian fail2ban=1.1.0-8 is pinned.
+# Upstream: https://github.com/fail2ban/fail2ban/commit/ddd879d22664904ace24e1255ac6571808c58187
+# Remove only with a reviewed fixed Debian pin and passing injection regression tests.
+[DEFAULT]
+__on_port_opt = (?: port \d+)?
+__suff = %(__on_port_opt)s(?: \[preauth\])?\s*

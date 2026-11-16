@@ -1,0 +1,16 @@
+---
+- name: Inspect disk identity and usage without writing to disks
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "-"
+      - --uuid
+      - "{{ foundation_backup_storage_uuid }}"
+    stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/probe.py') }}"
+  register: foundation_backup_storage_probe_command
+  changed_when: false
+  check_mode: false
+
+- name: Retain the accepted backup storage decision
+  ansible.builtin.set_fact:
+    foundation_backup_storage_probe: "{{ foundation_backup_storage_probe_command.stdout | from_json }}"

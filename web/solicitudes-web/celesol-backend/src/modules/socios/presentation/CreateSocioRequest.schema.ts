@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cbuSchema } from "../../solicitudes-core/presentation/cbu.schema";
 
 import { SOCIO_CATEGORIAS } from "../domain/SocioCategoria";
 
@@ -68,6 +69,7 @@ const personaFisicaSchema = z
     apellido: trimmedRequiredString,
     categoria: categoriaSchema,
     celular: normalizedOptionalString,
+    cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
     domicilioCodigoPostal: normalizedOptionalString,
@@ -80,6 +82,7 @@ const personaFisicaSchema = z
     observaciones: observacionesSchema,
     sexo: trimmedRequiredString,
     socAux: socAuxSchema,
+    solicitudId: z.string().uuid().optional(),
     tipoDocumento: trimmedRequiredString,
     tipoPersona: z.literal("FISICA"),
   })
@@ -89,6 +92,7 @@ const personaJuridicaSchema = z
   .object({
     categoria: categoriaSchema,
     celular: normalizedOptionalString,
+    cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
     domicilioCodigoPostal: normalizedOptionalString,
@@ -98,6 +102,7 @@ const personaJuridicaSchema = z
     observaciones: observacionesSchema,
     razonSocial: trimmedRequiredString,
     socAux: socAuxSchema,
+    solicitudId: z.string().uuid().optional(),
     tipoPersona: z.literal("JURIDICA"),
   })
   .strict();

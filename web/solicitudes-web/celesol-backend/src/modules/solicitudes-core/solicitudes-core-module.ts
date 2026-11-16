@@ -1,8 +1,12 @@
 import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
+import { addLoanReliquidationRoutes } from "./presentation/LoanReliquidationRoutes";
+import { LoanReliquidationService } from "./infrastructure/services/LoanReliquidationService";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
 import { createDocumentReviewRouter } from "../document-review/document-review-module";
+import { createPadronesRouter } from "../padrones/router";
+import { PadronesGateway } from "../padrones/PadronesGateway";
 import { InitialLoanGenerationService } from "./infrastructure/services/InitialLoanGenerationService";
 import { addInitialLoanGenerationRoutes } from "./presentation/InitialLoanGenerationRoutes";
 import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "./infrastructure/services/WorkflowFinancialGuard";
@@ -24,6 +28,8 @@ import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSo
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
+import { monthlyCutoffs } from "../monthly-cutoffs/module";
+import { businessDate } from "../monthly-cutoffs/domain";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
 import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
@@ -197,6 +203,7 @@ export function createSolicitudesCoreRouter(
   const prestamosSimulacionGateway = new PrestamosSimulacionGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    resolveDueDate: (id) => monthlyCutoffs.resolve(id),
   });
   const loanDiagnostics = createLoanDiagnosticWriter(prisma);
   const crearPrestamoGateway = new CrearPrestamoGateway({
@@ -371,10 +378,12 @@ export function createSolicitudesCoreRouter(
     db: prisma, repository: solicitudesCoreRepository, gateway: crearPrestamoGateway, linkedLoanReader,
     diagnostics: loanDiagnostics,
     loanSnapshot: loanGateways.loanSnapshot,
+    lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
     makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    monthlyCutoffs,
     linkedLoanReader, initialGeneration,
     diagnostics: loanDiagnostics,
     replaceCancelledLoan: async (input, solicitud) => {
@@ -400,7 +409,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
-    today: () => new Date().toISOString().slice(0, 10),
+    today: businessDate,
   });
   const listSolicitudTransitionsUseCase = new ListSolicitudTransitionsUseCase({
     repository: solicitudWorkflowRepository,
@@ -598,6 +607,10 @@ export function createSolicitudesCoreRouter(
       makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     });
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
+  addLoanReliquidationRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new LoanReliquidationService({ db: prisma,
+      lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct) }),
+  });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
   addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {
@@ -635,6 +648,14 @@ export function createSolicitudesCoreRouter(
   combined.use("/:id", crearVisibilidadVendedorGuard({ getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     repository: solicitudesCoreRepository, visibilidadVendedorResolver }));
   combined.use(createDocumentReviewRouter(dependencies.getCurrentUserUseCase));
+  combined.use(createPadronesRouter({
+    auth: dependencies.getCurrentUserUseCase,
+    gateway: new PadronesGateway({ url: env.PADRONES_API_URL, token: env.PADRONES_API_TOKEN }),
+    source: async (id, currentUser) => {
+      const solicitud = await getSolicitudByIdUseCase.execute({ id, currentUser });
+      return { dni: solicitud.titular.nroDocumento, cuit: solicitud.titular.cuit };
+    },
+  }));
   const configuracion = new ConfiguracionReconocimientoPrisma(prisma);
   combined.use("/reconocimiento-recibos", createReconocimientoRecibosRoutes({
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,

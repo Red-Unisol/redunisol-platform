@@ -19,7 +19,7 @@ def event(kind='FLOW', data=None):
 
 class EdnaReceiverTest(unittest.TestCase):
     def test_sales_scope_recognizes_direct_text_and_media_without_inventing_web_origin(self):
-        for kind in ("TEXT", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"):
+        for kind in ("TEXT", "BUTTON", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"):
             receipt, parsed = receiver.classify(event(kind, "Hola" if kind == "TEXT" else ""), "2423", entry_scope="sales_channel")
             self.assertEqual((receipt["kind"], receipt["reason"]), ("router_entry", "channel_entry"))
             self.assertEqual(parsed["wa_entry"], "whatsapp_directo")

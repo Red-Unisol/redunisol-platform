@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-11",
+  "target": "http://192.168.88.200:83",
+  "readOnly": true,
+  "cases": [
+    {
+      "documento": "99111124",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "max": 2,
+        "cmd": "[NroDoc] = 99111124 And [TipoDoc.Descripcion] = 'DNI'",
+        "campos": "ID;CuentaBancariaHabitual.CBU"
+      },
+      "httpStatus": 200,
+      "rows": [
+        [
+          152980,
+          "0110000699111100000248"
+        ]
+      ]
+    },
+    {
+      "documento": "99111123",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "max": 2,
+        "cmd": "[NroDoc] = 99111123 And [TipoDoc.Descripcion] = 'DNI'",
+        "campos": "ID;CuentaBancariaHabitual.CBU"
+      },
+      "httpStatus": 200,
+      "rows": [
+        [
+          152979,
+          null
+        ]
+      ]
+    },
+    {
+      "documento": "99111126",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "max": 2,
+        "cmd": "[NroDoc] = 99111126 And [TipoDoc.Descripcion] = 'DNI'",
+        "campos": "ID;CuentaBancariaHabitual.CBU"
+      },
+      "httpStatus": 200,
+      "rows": []
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+---
+- name: Verify selected local repository filesystem
+  ansible.builtin.include_tasks: validate-local.yml
+  when:
+    - foundation_backups_enabled
+    - foundation_backups_repository_kind == 'local'
+
+- name: Read published backup configuration metric
+  ansible.builtin.slurp:
+    src: "{{ foundation_backups_textfile_directory }}/foundation-backup-config.prom"
+  register: foundation_backups_configuration_metric
+
+- name: Require honest configured and enabled gauges
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_backups_configuration_metric.content | b64decode |
+        regex_findall('(?m)^foundation_backup_configured ([01])$')) ==
+        [('1' if foundation_backups_enabled else '0')]
+      - >-
+        (foundation_backups_configuration_metric.content | b64decode |
+        regex_findall('(?m)^foundation_backup_enabled ([01])$')) ==
+        [('1' if foundation_backups_enabled else '0')]
+
+- name: Require an honest offsite protection gauge
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_backups_configuration_metric.content | b64decode |
+        regex_findall('(?m)^foundation_backup_offsite_configured ([01])$')) ==
+        [('1' if foundation_backups_enabled and foundation_backups_repository_kind == 'offsite' else '0')]
+
+- name: Require an honest timer scheduling gauge
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_backups_configuration_metric.content | b64decode |
+        regex_findall('(?m)^foundation_backup_timers_enabled ([01])$')) ==
+        [('1' if foundation_backups_enabled and foundation_backups_timers_enabled else '0')]
+
+- name: Read backup timer activation
+  ansible.builtin.command:
+    argv: [systemctl, is-enabled, "{{ item }}"]
+  register: foundation_backups_timer_enabled
+  changed_when: false
+  failed_when: false
+  loop:
+    - redunisol-foundation-backup.timer
+    - redunisol-foundation-backup-check.timer
+  check_mode: false
+
+- name: Validate backup timer enablement
+  ansible.builtin.assert:
+    that:
+      - item.stdout == ('enabled' if foundation_backups_enabled and foundation_backups_timers_enabled else 'disabled')
+  loop: "{{ foundation_backups_timer_enabled.results }}"
+
+- name: Read backup timer run state
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  register: foundation_backups_timer_active
+  changed_when: false
+  failed_when: false
+  loop:
+    - redunisol-foundation-backup.timer
+    - redunisol-foundation-backup-check.timer
+  check_mode: false
+
+- name: Validate backup timer run state
+  ansible.builtin.assert:
+    that:
+      - item.stdout == ('active' if foundation_backups_enabled and foundation_backups_timers_enabled else 'inactive')
+  loop: "{{ foundation_backups_timer_active.results }}"
+
+- name: Read actual successful backup and check evidence
+  ansible.builtin.slurp:
+    src: "{{ foundation_backups_state_directory }}/{{ item }}.json"
+  register: foundation_backups_runtime_evidence
+  loop: [backup, check]
+  when: foundation_backups_enabled
+
+- name: Read server clock for backup evidence freshness
+  ansible.builtin.command:
+    argv: [date, "+%s"]
+  register: foundation_backups_now
+  changed_when: false
+  check_mode: false
+  when: foundation_backups_enabled
+
+- name: Require successful fresh runtime evidence when backup is enabled
+  ansible.builtin.assert:
+    that:
+      - (item.content | b64decode | from_json).exit_code == 0
+      - (item.content | b64decode | from_json).stage == 'complete'
+      - (item.content | b64decode | from_json).check_mode == foundation_backups_check_mode
+      - (item.content | b64decode | from_json).repository_kind == foundation_backups_repository_kind
+      - item.item != 'backup' or (item.content | b64decode | from_json).source_consistency_verified
+      - >-
+        item.item != 'backup' or
+        ((item.content | b64decode | from_json).source_catalog_sha256 is match('^[0-9a-f]{64}$'))
+      - >-
+        foundation_backups_now.stdout | int >=
+        (item.content | b64decode | from_json).finished_at | int
+      - >-
+        (foundation_backups_now.stdout | int -
+        (item.content | b64decode | from_json).finished_at | int) <=
+        ((foundation_monitoring_backup_max_age_seconds | default(90000) | int)
+        if item.item == 'backup' else
+        (foundation_monitoring_backup_check_max_age_seconds | default(691200) | int))
+    fail_msg: Backup is enabled but a successful recent backup/check has not yet been evidenced.
+  loop: "{{ foundation_backups_runtime_evidence.results | default([]) }}"
+  when: foundation_backups_enabled
+
+- name: Report unresolved backup
+  ansible.builtin.debug:
+    msg: >-
+      BACKUP INCOMPLETE: timers disabled and foundation_backup_configured=0.
+      No successful backup, real-data restore or external alert is claimed.
+  when: not foundation_backups_enabled

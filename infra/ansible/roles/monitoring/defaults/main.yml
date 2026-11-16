@@ -1,0 +1,13 @@
+---
+foundation_monitoring_enabled: true
+foundation_monitoring_package: prometheus-node-exporter=1.9.0-1+b4
+foundation_monitoring_listen_address: "127.0.0.1:9100"
+foundation_monitoring_textfile_directory: /var/lib/prometheus/node-exporter
+foundation_monitoring_health_interval: 60s
+foundation_monitoring_expected_services:
+  - docker.service
+  - ssh.service
+foundation_monitoring_backup_state_directory: /var/lib/redunisol-foundation/backup-state
+foundation_monitoring_backup_max_age_seconds: 90000
+foundation_monitoring_backup_check_max_age_seconds: 691200
+foundation_monitoring_health_max_age_seconds: 180

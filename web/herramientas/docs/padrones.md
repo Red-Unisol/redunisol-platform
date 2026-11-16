@@ -17,6 +17,19 @@ estructura requieren revisión. El historial permite retomar borradores y restau
 una versión publicada. Dos publicaciones concurrentes no se pisan: la segunda
 debe recargar y volver a validar contra la versión vigente.
 
+Administración usa inicialmente la fila **1** como encabezado (`CUIL`, `nombres`,
+`Neto`). El valor inicial se aplica al crear la fuente; una fuente existente
+conserva su configuración publicada. Para corregir una carga anterior con fila 2,
+volver a subir el mismo archivo y período, seleccionar fila 1, validar y publicar
+una versión nueva. Conservar la anterior para poder restaurarla. Comprobar que la
+primera persona se importe desde la fila 2 y que los campos mantengan sus títulos.
+
+La carga de Administración de noviembre de 2026 se reimportó por la API habitual
+el **12/11/2026**, conservando el archivo original y la versión anterior. Pasó de
+19.985 a **19.986 registros**, sin filas inválidas ni documentos eliminados. Se
+verificaron los valores de los 19.985 registros previos y la recuperación de la
+primera persona. Las otras fuentes publicadas conservaron sus versiones.
+
 Se crean cinco fuentes vacías con los formatos iniciales: Administración,
 Educación, Bajas de agentes, Senado y Organismos y dependencias. Los archivos
 reales deben cargarse por la interfaz; no se incluyen datos personales en Git.
@@ -54,3 +67,27 @@ compartido)”: no atribuye acciones a una persona porque no hay cuentas individ
 Las versiones publicadas son inmutables y la activación es una transacción SQLite.
 
 Pruebas: `php artisan test --filter=PadronesTest`; frontend: `npm run build`.
+
+## Consulta desde Beex
+
+`POST /api/internal/padrones/lookup` recibe `{"document":"12345678"}` y exige
+un bearer `PADRONES_SERVICE_TOKEN` de al menos 32 caracteres, distinto del acceso
+compartido de Análisis. La credencial sólo habilita esta consulta; las rutas de
+carga, publicación y administración siguen requiriendo su sesión habitual.
+Sin token configurado responde 503. Las respuestas son privadas y no se cachean.
+
+La lectura abre SQLite en modo de sólo lectura, no crea bases y toma un snapshot
+consistente. Devuelve `document`, `queried_at` y todas las fuentes, con nombre,
+tipo, período, `loaded_at`, estado y filas coincidentes (`row`, `data`). Cada fuente
+distingue `ready`, `unpublished` y `needs_review`. Los archivos de bajas conservan
+su tipo explícito. Una publicación con datos personales usados como encabezado
+de documento, estructura inválida o más de 500 coincidencias requiere revisión
+y no devuelve filas; no se interpreta como ausencia de empleo.
+
+Configurar el mismo token exclusivamente en los backends de Herramientas y Beex
+antes de habilitar la integración. El endpoint no modifica ni reimporta versiones.
+Los archivos de runtime cifrados de dev/prod incluyen credenciales distintas por
+ambiente; el consumidor de Beex está preparado con los valores correspondientes.
+La carga de Administración observada el 11/11/2026 debe revisarse desde la interfaz
+de padrones: tiene una fila de datos seleccionada como encabezado. Esta API la
+señala como `needs_review` hasta que se publique una versión corregida.

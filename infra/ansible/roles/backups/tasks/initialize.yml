@@ -1,0 +1,223 @@
+---
+- name: Require explicit local repository initialization authorization
+  ansible.builtin.assert:
+    that:
+      - foundation_apply_authorized | default(false) | bool
+      - foundation_backups_initialize_authorized | bool
+      - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+      - foundation_backups_repository_kind == 'local'
+      - foundation_backups_key_custody_confirmed | bool
+      - foundation_backups_password_file.startswith('/etc/redunisol-foundation/backup/')
+      - foundation_backups_password_file is match('^/[A-Za-z0-9_./-]+$')
+      - "'..' not in foundation_backups_password_file.split('/')"
+    fail_msg: Local initialization requires explicit approval and independent key custody.
+
+- name: Require a private supplied password without logging it
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_password is defined
+      - foundation_backups_password is string
+      - foundation_backups_password | length >= 32
+      - foundation_backups_password | trim == foundation_backups_password
+      - foundation_backups_password is not search('[\\r\\n\\x00]')
+    fail_msg: Supply the custodied password through a private extra-vars file.
+  no_log: true
+
+- name: Validate the mounted filesystem before any initialization writes
+  ansible.builtin.import_tasks: validate-local-mount.yml
+
+- name: Inspect the proposed repository directory
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_repository }}"
+    follow: false
+  register: foundation_backups_initialize_directory
+
+- name: Require an absent or regular nonsymlink repository directory
+  ansible.builtin.assert:
+    that:
+      - not foundation_backups_initialize_directory.stat.islnk | default(false)
+      - >-
+        not foundation_backups_initialize_directory.stat.exists or
+        foundation_backups_initialize_directory.stat.isdir | default(false)
+
+- name: Inspect existing repository initialization without modifying it
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_repository }}/config"
+    follow: false
+  register: foundation_backups_initialize_config
+
+- name: Require a regular existing repository config when present
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_initialize_config.stat.isreg | default(false)
+      - not foundation_backups_initialize_config.stat.islnk | default(false)
+  when: foundation_backups_initialize_config.stat.exists
+
+- name: Check existing repository authentication before installing any key
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/restic
+      - --repo
+      - "{{ foundation_backups_repository }}"
+      - --no-cache
+      - --no-lock
+      - snapshots
+      - --json
+  environment:
+    RESTIC_PASSWORD: "{{ foundation_backups_password }}"
+  changed_when: false
+  no_log: true
+  when: foundation_backups_initialize_config.stat.exists
+  check_mode: false
+
+- name: Resolve the intended password file without following an unexpected parent
+  ansible.builtin.command:
+    argv: [realpath, --canonicalize-missing, --, "{{ foundation_backups_password_file }}"]
+  register: foundation_backups_initialize_password_realpath
+  changed_when: false
+  check_mode: false
+
+- name: Refuse symlinked or noncanonical password parent paths
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_initialize_password_realpath.stdout == foundation_backups_password_file
+
+- name: Inspect the existing private password directory
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_password_file | dirname }}"
+    follow: false
+    get_checksum: false
+  register: foundation_backups_initialize_password_directory
+
+- name: Refuse to change ownership or mode of an unexpected password directory
+  ansible.builtin.assert:
+    that:
+      - not foundation_backups_initialize_password_directory.stat.islnk | default(false)
+      - >-
+        not foundation_backups_initialize_password_directory.stat.exists or
+        (foundation_backups_initialize_password_directory.stat.isdir | default(false) and
+         foundation_backups_initialize_password_directory.stat.uid | default(-1) == 0 and
+         foundation_backups_initialize_password_directory.stat.mode | default('') == '0700')
+    fail_msg: Password parent must be absent or a canonical private root-owned directory.
+
+- name: Inspect the existing password file without hashing or following links
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_password_file }}"
+    follow: false
+    get_checksum: false
+  register: foundation_backups_initialize_password
+  no_log: true
+
+- name: Require a private regular existing password file
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_initialize_password.stat.isreg | default(false)
+      - not foundation_backups_initialize_password.stat.islnk | default(false)
+      - foundation_backups_initialize_password.stat.uid | default(-1) == 0
+      - foundation_backups_initialize_password.stat.mode | default('') in ['0400', '0600']
+  when: foundation_backups_initialize_password.stat.exists
+  no_log: true
+
+- name: Read the existing password only for constant-content preservation
+  ansible.builtin.slurp:
+    src: "{{ foundation_backups_password_file }}"
+  register: foundation_backups_existing_password
+  when: foundation_backups_initialize_password.stat.exists
+  no_log: true
+
+- name: Refuse to replace an existing different repository password
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_backups_existing_password.content | b64decode) in
+        [foundation_backups_password, foundation_backups_password ~ '\n']
+    fail_msg: Existing password differs; initialization never rotates or replaces keys.
+  when: foundation_backups_initialize_password.stat.exists
+  no_log: true
+
+- name: Inspect contents of an existing uninitialized directory
+  ansible.builtin.find:
+    paths: "{{ foundation_backups_repository }}"
+    recurse: false
+    hidden: true
+    file_type: any
+  register: foundation_backups_initialize_contents
+  when:
+    - foundation_backups_initialize_directory.stat.exists
+    - not foundation_backups_initialize_config.stat.exists
+
+- name: Refuse initialization over unrelated existing files
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_initialize_contents.matched | int == 0
+    fail_msg: Existing uninitialized directory is not empty; no files are removed.
+  when:
+    - foundation_backups_initialize_directory.stat.exists
+    - not foundation_backups_initialize_config.stat.exists
+
+- name: Initialize only after approval outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Create the private password directory
+      ansible.builtin.file:
+        path: "{{ foundation_backups_password_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install the supplied key only when no password file exists
+      ansible.builtin.copy:
+        dest: "{{ foundation_backups_password_file }}"
+        content: "{{ foundation_backups_password }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+      when: not foundation_backups_initialize_password.stat.exists
+      no_log: true
+      diff: false
+
+    - name: Create only the selected repository directory
+      ansible.builtin.file:
+        path: "{{ foundation_backups_repository }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when: not foundation_backups_initialize_directory.stat.exists
+
+    - name: Initialize a new repository without replacing an existing one
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/restic
+          - --repo
+          - "{{ foundation_backups_repository }}"
+          - --password-file
+          - "{{ foundation_backups_password_file }}"
+          - --no-cache
+          - init
+        creates: "{{ foundation_backups_repository }}/config"
+      when: not foundation_backups_initialize_config.stat.exists
+      no_log: true
+
+    - name: Verify the selected repository with the preserved installed key
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/restic
+          - --repo
+          - "{{ foundation_backups_repository }}"
+          - --password-file
+          - "{{ foundation_backups_password_file }}"
+          - --no-cache
+          - --no-lock
+          - snapshots
+          - --json
+      changed_when: false
+      no_log: true
+
+- name: Explain initialization scope
+  ansible.builtin.debug:
+    msg: >-
+      Local repository initialization is separate from formatting, mounts,
+      backups, restores and timer enablement. No key value is reported.

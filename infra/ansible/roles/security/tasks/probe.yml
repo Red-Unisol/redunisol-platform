@@ -1,0 +1,20 @@
+---
+- name: Compare the loaded SSH policy with the reviewed inventory and filter
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ foundation_security_fail2ban_policy_tool }}"
+      - --policy-json
+      - >-
+        {{ {'jail': 'sshd', 'ports': foundation_security_fail2ban_ssh_ports,
+            'maxretry': foundation_security_fail2ban_maxretry,
+            'findtime': foundation_security_fail2ban_findtime,
+            'bantime': foundation_security_fail2ban_bantime,
+            'ignoreip': foundation_security_fail2ban_ignoreip,
+            'backend': 'systemd', 'action': 'nftables-multiport'} | to_json }}
+  register: foundation_security_policy_probe
+  changed_when: false
+  check_mode: false
+  retries: 5
+  delay: 1
+  until: foundation_security_policy_probe.rc == 0

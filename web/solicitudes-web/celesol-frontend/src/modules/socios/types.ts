@@ -108,6 +108,7 @@ export type CreateSocioRequest =
       apellido: string;
       categoria?: SocioCategoria;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;
@@ -121,6 +122,7 @@ export type CreateSocioRequest =
       razonSocial?: never;
       sexo: string;
       socAux?: CreateSocioSocAux;
+      solicitudId?: string;
       tipoDocumento: string;
       tipoPersona: "FISICA";
     }
@@ -128,6 +130,7 @@ export type CreateSocioRequest =
       apellido?: never;
       categoria?: SocioCategoria;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;
@@ -141,6 +144,7 @@ export type CreateSocioRequest =
       razonSocial: string;
       sexo?: never;
       socAux?: CreateSocioSocAux;
+      solicitudId?: string;
       tipoDocumento?: never;
       tipoPersona: "JURIDICA";
     };

@@ -1,0 +1,140 @@
+---
+- name: Validate the expected BCRA runtime contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Check the secret is available for authenticated verification
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_api_token is string
+      - bcra_file_api_api_token | length >= 24
+  no_log: true
+
+- name: Read the installed verifier fingerprint without executing it
+  ansible.builtin.stat:
+    path: "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+    checksum_algorithm: sha256
+    follow: false
+  register: bcra_file_api_verifier_stat
+
+- name: Require the verifier from the reviewed source
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_verifier_stat.stat.isreg
+      - not bcra_file_api_verifier_stat.stat.islnk
+      - bcra_file_api_verifier_stat.stat.uid == 0
+      - bcra_file_api_verifier_stat.stat.mode == '0755'
+      - >-
+        bcra_file_api_verifier_stat.stat.checksum ==
+        (lookup('ansible.builtin.file', role_path ~ '/files/bcra-contract.py', rstrip=false) | hash('sha256'))
+
+- name: Verify the provisioned migration report without modifying data
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+      - migration
+      - --manifest
+      - "{{ bcra_file_api_platform_dir }}/data-migration.json"
+      - --expected-sha256
+      - "{{ bcra_file_api_data_manifest_sha256 }}"
+      - --image
+      - "{{ bcra_file_api_image }}"
+  register: bcra_file_api_migration
+  changed_when: false
+  check_mode: false
+
+- name: Verify the initial cold backup still matches the migration cutoff
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+      - cold-backup
+      - --manifest
+      - "{{ bcra_file_api_platform_dir }}/data-migration.json"
+      - --expected-sha256
+      - "{{ bcra_file_api_data_manifest_sha256 }}"
+      - --receipt
+      - "{{ bcra_file_api_platform_dir }}/cold-backup.json"
+      - --receipt-sha256
+      - "{{ bcra_file_api_cold_backup_receipt_sha256 }}"
+      - --image
+      - "{{ bcra_file_api_image }}"
+  register: bcra_file_api_cold_backup
+  changed_when: false
+  check_mode: false
+
+- name: Verify the actual Docker image and confinement without reading container environment
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+      - runtime
+      - --image
+      - "{{ bcra_file_api_image }}"
+      - --data-dir
+      - "{{ bcra_file_api_data_dir }}"
+      - --revision
+      - "{{ bcra_file_api_revision }}"
+  register: bcra_file_api_runtime
+  changed_when: false
+  check_mode: false
+
+- name: Check local process health without credentials or redirects
+  ansible.builtin.uri:
+    url: http://127.0.0.1:18082/health
+    use_proxy: false
+    follow_redirects: none
+    return_content: true
+    status_code: 200
+  register: bcra_file_api_health
+  check_mode: false
+
+- name: Require the expected health response
+  ansible.builtin.assert:
+    that:
+      - "bcra_file_api_health.json == {'status': 'up'}"
+
+- name: Confirm the administrative status requires authentication
+  ansible.builtin.uri:
+    url: http://127.0.0.1:18082/status
+    use_proxy: false
+    follow_redirects: none
+    status_code: 401
+  check_mode: false
+
+- name: Check authenticated status without exposing token or response payload
+  ansible.builtin.uri:
+    url: http://127.0.0.1:18082/status
+    use_proxy: false
+    follow_redirects: none
+    headers:
+      Authorization: "Bearer {{ bcra_file_api_api_token }}"
+    return_content: true
+    status_code: 200
+  register: bcra_file_api_status
+  no_log: true
+  check_mode: false
+
+- name: Check the status contract and the optional dataset readiness requirement
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_status.json.ready is boolean
+      - bcra_file_api_status.json.history_ready is boolean
+      - bcra_file_api_status.json.check_stale is boolean
+      - not (bcra_file_api_require_current_ready | bool) or bcra_file_api_status.json.ready
+  no_log: true
+
+- name: Read the non-secret rendered configuration fingerprint
+  ansible.builtin.stat:
+    path: "{{ bcra_file_api_platform_dir }}/docker-compose.yml"
+    checksum_algorithm: sha256
+    follow: false
+  register: bcra_file_api_compose_stat
+
+- name: Verify private configuration file ownership
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_compose_stat.stat.isreg
+      - not bcra_file_api_compose_stat.stat.islnk
+      - bcra_file_api_compose_stat.stat.uid == 0
+      - bcra_file_api_compose_stat.stat.mode == '0600'

@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
+import { currentLoanCycleSince, reliquidation } from "../../domain/workflow/LoanReliquidation";
 import { actingContext } from "../../../auth/impersonation/context";
 import type { ChangeSolicitudStateUseCase } from "../../application/use-cases/ChangeSolicitudState.use-case";
 import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
@@ -35,7 +36,11 @@ export async function correctionBlockedReason(db: Prisma.TransactionClient, s: S
   if (s.desembolso || s.pagoExterno)
     return "La solicitud tiene una reserva de desembolso o un pago registrado.";
   const downstream = await db.solicitudEstadoHistorial.findFirst({
-    where: { solicitudId: s.id, toStateCodeSnapshot: { in: ["Liquidada", "VerificarFirmaYDocumentacion", "Transferir", "Pagada"] } },
+    where: { solicitudId: s.id, OR: [
+      { toStateCodeSnapshot: "Pagada" },
+      { toStateCodeSnapshot: { in: ["Liquidada", "VerificarFirmaYDocumentacion", "Transferir"] },
+        ...(currentLoanCycleSince(s.administrativeCoreControl) ? { changedAt: { gt: currentLoanCycleSince(s.administrativeCoreControl) } } : {}) },
+    ] },
     select: { id: true },
   });
   return downstream ? "La solicitud ya recorrió etapas de liquidación o pago y requiere una intervención específica." : null;
@@ -105,7 +110,7 @@ export class AdministrativeCorrectionService {
     return {
       canAdmin, updatedAt: s.updatedAt.toISOString(), state: s.estadoActual.code,
       replacementPending: Boolean((s.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending),
-      loanId: s.legacyOid, reconciliationRequired: coreReconciliationPending(s),
+      loanId: s.legacyOid, reconciliationRequired: coreReconciliationPending(s) && reliquidation(s.administrativeCoreControl)?.status !== "AWAITING_LOAN",
       blockedReason: canAdmin ? await correctionBlockedReason(this.deps.db, s) : null,
     };
   }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Red Unisol platform file backups
+
+[Timer]
+OnCalendar={{ foundation_backups_schedule }}
+RandomizedDelaySec={{ foundation_backups_randomized_delay }}
+Persistent=true
+Unit=redunisol-foundation-backup.service
+
+[Install]
+WantedBy=timers.target

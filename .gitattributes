@@ -1,0 +1,5 @@
+
+# The Linux infrastructure controller requires stable LF files.
+infra/ansible/** text eol=lf
+.github/workflows/validate-ansible.yml text eol=lf
+docs/dedicated-foundation.md text eol=lf

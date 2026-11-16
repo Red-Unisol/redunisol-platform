@@ -1,0 +1,212 @@
+---
+- name: Validate the BCRA application contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require explicit application authorization outside check mode
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or (bcra_file_api_apply_authorized | bool)
+    fail_msg: "BCRA application changes require bcra_file_api_apply_authorized=true."
+
+- name: Explain the preparation-only default
+  ansible.builtin.debug:
+    msg: >-
+      running=false prepares application files only; it does not pull, start or stop containers.
+      Activation requires a checksum-pinned copy and SQLite validation report.
+  when: ansible_check_mode
+
+- name: Prepare or activate BCRA only outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Validate the secret without exposing it
+      ansible.builtin.assert:
+        that:
+          - bcra_file_api_api_token is string
+          - bcra_file_api_api_token | length >= 24
+          - bcra_file_api_api_token | length <= 512
+          - bcra_file_api_api_token is match('^[!-~]+$')
+      no_log: true
+
+    - name: Inspect application paths without following links
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - "{{ bcra_file_api_platform_dir }}"
+        - "{{ bcra_file_api_data_dir }}"
+      register: bcra_file_api_paths
+
+    - name: Refuse symbolic links or non-directory application paths
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+      loop: "{{ bcra_file_api_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Preserve the identity and metadata of an existing copied data root
+      ansible.builtin.assert:
+        that:
+          - bcra_file_api_paths.results[1].stat.uid == 10001
+          - bcra_file_api_paths.results[1].stat.gid == 10001
+      when: bcra_file_api_paths.results[1].stat.exists
+
+    - name: Create the private application configuration directory
+      ansible.builtin.file:
+        path: "{{ bcra_file_api_platform_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Create the data root without changing copied files recursively
+      ansible.builtin.file:
+        path: "{{ bcra_file_api_data_dir }}"
+        state: directory
+        owner: "10001"
+        group: "10001"
+        mode: "0700"
+      when: not bcra_file_api_paths.results[1].stat.exists
+
+    - name: Install the read-only migration and runtime verifier
+      ansible.builtin.copy:
+        src: bcra-contract.py
+        dest: "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Declare the dedicated BCRA container
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ bcra_file_api_platform_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0600"
+      register: bcra_file_api_compose
+
+    - name: Declare the token outside Git and Compose output
+      ansible.builtin.template:
+        src: api.env.j2
+        dest: "{{ bcra_file_api_platform_dir }}/api.env"
+        owner: root
+        group: root
+        mode: "0600"
+      register: bcra_file_api_secret
+      no_log: true
+
+    - name: Check Compose supports literal environment files
+      ansible.builtin.command:
+        argv: [docker, compose, version, --short]
+      register: bcra_file_api_compose_version
+      changed_when: false
+
+    - name: Require Compose with raw env_file support
+      ansible.builtin.assert:
+        that:
+          - bcra_file_api_compose_version.stdout | regex_replace('^v', '') is version('2.30.0', '>=')
+
+    - name: Validate Compose without printing the effective environment
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, bcra-file-api, --file, "{{ bcra_file_api_platform_dir }}/docker-compose.yml", config, --quiet]
+      changed_when: false
+      no_log: true
+
+    - name: Activate only after verifying the immutable migration report
+      when: bcra_file_api_running | bool
+      block:
+        - name: Verify the copied data and SQLite reports before any image or container changes
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+              - migration
+              - --manifest
+              - "{{ bcra_file_api_platform_dir }}/data-migration.json"
+              - --expected-sha256
+              - "{{ bcra_file_api_data_manifest_sha256 }}"
+              - --image
+              - "{{ bcra_file_api_image }}"
+          register: bcra_file_api_migration
+          changed_when: false
+
+        - name: Require the real initial cold backup and restored manifest before startup
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - "{{ bcra_file_api_platform_dir }}/bcra-contract.py"
+              - cold-backup
+              - --manifest
+              - "{{ bcra_file_api_platform_dir }}/data-migration.json"
+              - --expected-sha256
+              - "{{ bcra_file_api_data_manifest_sha256 }}"
+              - --receipt
+              - "{{ bcra_file_api_platform_dir }}/cold-backup.json"
+              - --receipt-sha256
+              - "{{ bcra_file_api_cold_backup_receipt_sha256 }}"
+              - --image
+              - "{{ bcra_file_api_image }}"
+          register: bcra_file_api_cold_backup
+          changed_when: false
+
+        - name: Pull only the exact reviewed OCI digest
+          ansible.builtin.command:
+            argv: [docker, compose, --project-name, bcra-file-api, --file, "{{ bcra_file_api_platform_dir }}/docker-compose.yml", pull, --quiet]
+          environment: "{{ {'DOCKER_CONFIG': bcra_file_api_registry_config_dir} if bcra_file_api_registry_config_dir else {} }}"
+          changed_when: false
+          no_log: true
+
+        - name: Read whether the dedicated container is already running
+          ansible.builtin.command:
+            argv: [docker, container, inspect, --format, "{% raw %}{{.State.Running}}{% endraw %}", redunisol-bcra-file-api]
+          register: bcra_file_api_previous_running
+          changed_when: false
+          failed_when: false
+
+        - name: Converge the single verified BCRA service
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --project-name
+              - bcra-file-api
+              - --file
+              - "{{ bcra_file_api_platform_dir }}/docker-compose.yml"
+              - up
+              - --detach
+              - --wait
+              - --wait-timeout
+              - "90"
+              - --pull
+              - never
+              - --no-build
+          register: bcra_file_api_up
+          changed_when: >-
+            bcra_file_api_compose.changed or bcra_file_api_secret.changed or
+            bcra_file_api_previous_running.rc != 0 or bcra_file_api_previous_running.stdout | trim != 'true' or
+            ((bcra_file_api_up.stdout ~ '\n' ~ bcra_file_api_up.stderr) |
+             regex_search('(?i)\\b(created|recreated|started)\\b')) is not none
+          no_log: true
+
+        - name: Verify the active runtime without issuing refresh or business requests
+          ansible.builtin.include_tasks: verify.yml
+
+        - name: Store stable evidence of the applied revision and migration cutoff
+          ansible.builtin.copy:
+            dest: "/var/lib/redunisol-foundation/evidence/bcra-file-api.json"
+            owner: root
+            group: root
+            mode: "0600"
+            content: >-
+              {{ {'version': 1, 'git_revision': bcra_file_api_revision,
+                  'image': bcra_file_api_image, 'image_id': (bcra_file_api_runtime.stdout | from_json).image_id,
+                  'compose_sha256': bcra_file_api_compose_stat.stat.checksum,
+                  'data_manifest_sha256': bcra_file_api_data_manifest_sha256,
+                  'cold_backup_receipt_sha256': bcra_file_api_cold_backup_receipt_sha256,
+                  'cold_backup_snapshot_id': (bcra_file_api_cold_backup.stdout | from_json).snapshot_id,
+                  'repository_integrity_verified': true, 'read_data': true,
+                  'repository_integrity_verified_at':
+                    (bcra_file_api_cold_backup.stdout | from_json).repository_integrity_verified_at,
+                  'migration_tree_sha256': (bcra_file_api_migration.stdout | from_json).tree_sha256,
+                  'cutoff_at': (bcra_file_api_migration.stdout | from_json).cutoff_at,
+                  'runtime_verified': true} | to_nice_json }}

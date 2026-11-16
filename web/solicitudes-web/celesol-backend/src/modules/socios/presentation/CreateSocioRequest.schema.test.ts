@@ -4,6 +4,55 @@ import { describe, it } from "node:test";
 import { createSocioBodySchema } from "./CreateSocioRequest.schema";
 
 describe("createSocioBodySchema", () => {
+  it("accepts an optional CBU with valid check digits for either type of person", () => {
+    const bases = [
+      {
+        tipoPersona: "FISICA",
+        apellido: "Prueba",
+        nombre: "Socio",
+        nroDocumento: "99111124",
+        tipoDocumento: "DNI",
+        sexo: "Femenino",
+        fechaDeNacimiento: "1990-03-15",
+        cuit: "27991111242",
+        domicilioCalle: "Prueba",
+        domicilioLocalidad: "12",
+      },
+      {
+        tipoPersona: "JURIDICA",
+        razonSocial: "Empresa de prueba",
+        cuit: "30123456789",
+        domicilioCalle: "Prueba",
+        domicilioLocalidad: "12",
+      },
+    ];
+    for (const base of bases) {
+      assert.equal(
+        createSocioBodySchema.parse({
+          ...base,
+          cbu: " 0110000699111100000248 ",
+        }).cbu,
+        "0110000699111100000248",
+      );
+      assert.equal(
+        createSocioBodySchema.parse({ ...base, cbu: " " }).cbu,
+        undefined,
+      );
+      assert.equal(createSocioBodySchema.parse(base).cbu, undefined);
+      for (const cbu of [
+        "123",
+        "0110000699111100000249",
+        "x".repeat(22),
+        12345,
+      ]) {
+        assert.equal(
+          createSocioBodySchema.safeParse({ ...base, cbu }).success,
+          false,
+        );
+      }
+    }
+  });
+
   it("accepts and trims a valid persona fisica payload", () => {
     const parsed = createSocioBodySchema.parse({
       apellido: " Perez ",
@@ -486,4 +535,14 @@ describe("createSocioBodySchema", () => {
       false,
     );
   });
+  it("accepts a solicitud UUID but rejects client-supplied dates and categories", () => {
+    const base = { tipoPersona: "JURIDICA", razonSocial: "Empresa de prueba",
+      cuit: "30123456789", domicilioCalle: "Prueba", domicilioLocalidad: "12" };
+    const solicitudId = "a9358cdd-93f8-40f6-969d-a502b81de53f";
+    assert.equal(createSocioBodySchema.parse({ ...base, solicitudId }).solicitudId, solicitudId);
+    for (const extra of [{ solicitudId: "invalido" }, { fechaAlta: "2020-01-01" }, { categoria: 2 }]) {
+      assert.equal(createSocioBodySchema.safeParse({ ...base, ...extra }).success, false);
+    }
+  });
+
 });

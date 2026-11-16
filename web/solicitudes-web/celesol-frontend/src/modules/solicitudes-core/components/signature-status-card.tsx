@@ -32,6 +32,7 @@ export function SignatureStatusCard({
   analysisReady?: boolean;
 }) {
   const completed = signature.completedAttempts > 0;
+  const external = signature.evidenceType === "external" && signature.approved;
   const lastCompleted =
     signature.lastCompletedAt &&
     Number.isFinite(Date.parse(signature.lastCompletedAt))
@@ -66,14 +67,21 @@ export function SignatureStatusCard({
           <span
             className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ESTILO_ESTADO[signature.status]}`}
           >
-            {signatureStatusLabels[signature.status]}
+            {external
+              ? "Legajo validado"
+              : signatureStatusLabels[signature.status]}
           </span>
         </div>
         <div
           aria-label="Avance de la firma"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
         >
-          <Paso hecho={completed} texto={completed ? "Firmó" : "Sin firma"} />
+          <Paso
+            hecho={completed || external}
+            texto={
+              external ? "Legajo externo" : completed ? "Firmó" : "Sin firma"
+            }
+          />
           <span aria-hidden className="text-border">
             ·
           </span>
@@ -81,17 +89,25 @@ export function SignatureStatusCard({
             hecho={signature.approved}
             texto={signature.approved ? "Validada por Legajos" : "Sin validar"}
           />
-          <span aria-hidden className="text-border">
-            ·
-          </span>
-          <span className="text-foreground-secondary">
-            {signature.completedAttempts}{" "}
-            {signature.completedAttempts === 1 ? "intento" : "intentos"}
-            {lastCompleted ? ` · último ${lastCompleted}` : ""}
-          </span>
+          {!external && (
+            <span aria-hidden className="text-border">
+              ·
+            </span>
+          )}
+          {!external && (
+            <span className="text-foreground-secondary">
+              {signature.completedAttempts}{" "}
+              {signature.completedAttempts === 1 ? "intento" : "intentos"}
+              {lastCompleted ? ` · último ${lastCompleted}` : ""}
+            </span>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {signature.link ? (
+          {external ? (
+            <span className="text-sm text-foreground-secondary">
+              Documentación revisada por Legajos
+            </span>
+          ) : signature.link ? (
             <>
               <Button
                 onClick={() => void copiarEnlace()}

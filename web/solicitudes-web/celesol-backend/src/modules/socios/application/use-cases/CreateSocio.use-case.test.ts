@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { SocioCuitDuplicateError, SocioDocumentoDuplicateError } from "../../domain/socios-errors";
+import { InvalidSocioRequestError, SocioCuitDuplicateError, SocioDocumentoDuplicateError } from "../../domain/socios-errors";
 import type { SocioRepository } from "../../domain/repositories/SocioRepository";
 import type { Socio } from "../../domain/entities/Socio.entity";
-import type { CrearSocioMutualGateway } from "../../infrastructure/services/CrearSocioMutualGateway";
+import { CrearSocioMutualGateway } from "../../infrastructure/services/CrearSocioMutualGateway";
 import { CreateSocioUseCase } from "./CreateSocio.use-case";
 
 class InMemorySocioRepository implements SocioRepository {
@@ -136,7 +136,7 @@ describe("CreateSocioUseCase", () => {
         return { id: "999" };
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     const socio = await useCase.execute({
       apellido: "Perez",
@@ -149,6 +149,7 @@ describe("CreateSocioUseCase", () => {
       nombre: "Juan",
       nroDocumento: " 12.345.678 ",
       observaciones: "DEPOSITO MP",
+      cbu: "0110000699111100000248",
       sexo: "M",
       socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
       tipoDocumento: "DNI",
@@ -180,6 +181,7 @@ describe("CreateSocioUseCase", () => {
       nombre: "Juan",
       nroDocumento: "12345678",
       observaciones: "DEPOSITO MP",
+      cbu: "0110000699111100000248",
       sexo: "M",
       socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
     });
@@ -192,7 +194,7 @@ describe("CreateSocioUseCase", () => {
         throw new Error("legacy rejected");
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     await assert.rejects(
       () =>
@@ -221,7 +223,7 @@ describe("CreateSocioUseCase", () => {
         return { id: "152199" };
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     const socio = await useCase.execute({
       cuit: "30-71234567-1",
@@ -258,7 +260,7 @@ describe("CreateSocioUseCase", () => {
         throw new Error("legacy rejected");
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     await assert.rejects(
       () =>
@@ -303,7 +305,7 @@ describe("CreateSocioUseCase", () => {
         return { id: "999" };
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     await assert.rejects(
       () =>
@@ -353,7 +355,7 @@ describe("CreateSocioUseCase", () => {
         return { id: "999" };
       },
     });
-    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository });
+    const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway, repository, findSolicitudParaAlta: async () => null });
 
     await assert.rejects(
       () =>
@@ -372,4 +374,88 @@ describe("CreateSocioUseCase", () => {
     );
     assert.equal(gatewayCalled, false);
   });
+  const titularInput = {
+    tipoPersona: "FISICA" as const, apellido: "Perez", nombre: "Juan",
+    cuit: "20-12345678-3", nroDocumento: "12.345.678", tipoDocumento: "DNI",
+    fechaDeNacimiento: "1990-02-28", sexo: "Masculino", ...DOMICILIO_INPUT,
+    solicitudId: "a9358cdd-93f8-40f6-969d-a502b81de53f",
+  };
+
+  it("validates the solicitud titular and forwards the default category for either person type", async () => {
+    const inputs = [titularInput, {
+      tipoPersona: "JURIDICA" as const, cuit: "30-71234567-1",
+      razonSocial: "Empresa de prueba", ...DOMICILIO_INPUT,
+      solicitudId: titularInput.solicitudId,
+    }];
+    for (const input of inputs) {
+      const received: Parameters<CrearSocioMutualGateway["crear"]>[0][] = [];
+      const useCase = new CreateSocioUseCase({
+        repository: new InMemorySocioRepository(),
+        crearSocioMutualGateway: fakeGateway({ crear: async (value) => {
+          received.push(value); return { id: "999" };
+        } }),
+        findSolicitudParaAlta: async (id) => {
+          assert.equal(id, input.solicitudId);
+          return { createdAt: new Date("2026-10-09T01:30:00Z"),
+            titular: { cuit: input.cuit.replace(/-/g, ""), nroDocumento: null } };
+        },
+      });
+      await useCase.execute(input);
+      assert.equal(received.length, 1);
+      assert.equal(received[0].categoria, "ADHERENTE_CONVENIO");
+    }
+  });
+
+  it("rejects a missing solicitud or a different titular before writing to Vimarx", async () => {
+    for (const solicitud of [null,
+      { createdAt: new Date(), titular: null },
+      { createdAt: new Date(), titular: { cuit: "20987654321", nroDocumento: "12345678" } },
+    ]) {
+      let remoteCalls = 0;
+      const repository = new InMemorySocioRepository();
+      const useCase = new CreateSocioUseCase({ repository,
+        findSolicitudParaAlta: async () => solicitud,
+        crearSocioMutualGateway: fakeGateway({ crear: async () => {
+          remoteCalls++; return { id: "999" };
+        } }),
+      });
+      await assert.rejects(() => useCase.execute(titularInput), InvalidSocioRequestError);
+      assert.equal(remoteCalls, 0);
+      assert.equal(repository.socios.length, 0);
+    }
+  });
+
+  it("matches the titular by DNI when the solicitud does not yet have a CUIT", async () => {
+    const received: Parameters<CrearSocioMutualGateway["crear"]>[0][] = [];
+    const useCase = new CreateSocioUseCase({ repository: new InMemorySocioRepository(),
+      findSolicitudParaAlta: async () => ({ createdAt: new Date("2026-10-13T16:00:00Z"),
+        titular: { cuit: null, nroDocumento: "12345678" } }),
+      crearSocioMutualGateway: fakeGateway({ crear: async (input) => {
+        received.push(input); return { id: "999" };
+      } }),
+    });
+    await useCase.execute(titularInput);
+    assert.equal(received[0].categoria, "ADHERENTE_CONVENIO");
+  });
+
+  it("keeps Nico's category and today's Argentine date even for an older solicitud", async () => {
+    for (const [categoria, id] of [["ADHERENTE_CONVENIO", 9], ["AMEJUCA", 48], ["MUDON", 78]] as const) {
+      let body: { campos: { HistoriaCategorias: unknown; CuentasBancarias: unknown } } | undefined;
+      const gateway = new CrearSocioMutualGateway({ baseUrl: "https://legacy.example.com",
+        now: () => new Date("2026-11-12T02:00:00Z"), timeoutMs: 5000 },
+        async (_url, init) => {
+          body = JSON.parse(String(init?.body));
+          return { ok: true, json: async () => ({ Ok: true, ID: 999 }) };
+        });
+      const useCase = new CreateSocioUseCase({ crearSocioMutualGateway: gateway,
+        repository: new InMemorySocioRepository(),
+        findSolicitudParaAlta: async () => ({ createdAt: new Date("2026-10-09T15:00:00Z"),
+          titular: { cuit: "20123456783", nroDocumento: "12345678" } }),
+      });
+      await useCase.execute({ ...titularInput, categoria, cbu: "0110000699111100000248" });
+      assert.deepEqual(body?.campos.HistoriaCategorias, [{ Categoria: id, Fecha: "2026-11-11" }]);
+      assert.deepEqual(body?.campos.CuentasBancarias, [{ CBU: "0110000699111100000248" }]);
+    }
+  });
+
 });

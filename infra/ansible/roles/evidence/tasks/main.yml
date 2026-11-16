@@ -1,0 +1,49 @@
+---
+- name: Collect the installed foundation component versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Read foundation configuration fingerprints
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - /etc/docker/daemon.json
+    - /etc/apache2/ports.conf
+    - /etc/systemd/journald.conf.d/50-redunisol.conf
+  register: foundation_evidence_files
+
+- name: Keep only stable configuration fingerprints
+  ansible.builtin.set_fact:
+    foundation_evidence_fingerprints: >-
+      {{ foundation_evidence_fingerprints | default([]) +
+         [{'path': item.item, 'sha256': item.stat.checksum, 'mode': item.stat.mode}] }}
+  loop: "{{ foundation_evidence_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Store deterministic evidence of the applied Git revision
+  ansible.builtin.copy:
+    dest: "/var/lib/redunisol-foundation/evidence/{{ foundation_revision }}.json"
+    content: "{{ foundation_evidence_record | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  vars:
+    foundation_evidence_record:
+      schema_version: 1
+      git_revision: "{{ foundation_revision }}"
+      hostname: "{{ foundation_expected_hostname }}"
+      environment: "{{ foundation_environment }}"
+      os: "{{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}"
+      docker_requested: "{{ foundation_docker_package_versions }}"
+      installed_packages: "{{ ansible_facts.packages }}"
+      root_device: "{{ foundation_storage_root_source }}"
+      unmanaged_storage: "{{ foundation_storage_unmanaged_devices }}"
+      configuration_files: >-
+        {{ foundation_evidence_fingerprints }}
+      external_monitoring_configured: "{{ foundation_external_monitoring_configured | bool }}"
+      offsite_backups_configured: >-
+        {{ (foundation_backups_enabled | bool) and
+           (foundation_backups_repository_kind | default('offsite') == 'offsite') }}
+      application_migration_included: false

@@ -1,0 +1,82 @@
+#!/bin/bash
+# Restores only the backed-up foundation catalog into a NEW isolated local target.
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+readonly repository_kind={{ foundation_backups_repository_kind | quote }}
+readonly repository={{ foundation_backups_repository | quote }}
+readonly password_file={{ foundation_backups_password_file | quote }}
+readonly local_mountpoint={{ foundation_backups_local_mountpoint | quote }}
+readonly local_mount_uuid={{ foundation_backups_local_mount_uuid | quote }}
+readonly base={{ foundation_backups_restore_local_directory | quote }}
+readonly state_dir={{ foundation_backups_state_directory | quote }}
+readonly metrics_dir={{ foundation_backups_textfile_directory | quote }}
+readonly revision={{ foundation_revision | default('unassigned') | quote }}
+readonly catalog_tool=/usr/local/libexec/redunisol-foundation/backup-catalog
+if (( $# != 2 )) || [[ "$1" != --snapshot || ! "$2" =~ ^[0-9a-f]{64}$ ]]; then
+  printf 'Usage: restore-local-config --snapshot FULL_64_HEX_SNAPSHOT_ID\n' >&2; exit 64
+fi
+snapshot="$2"
+[[ "$repository_kind" == local && -n "$local_mountpoint" && -n "$local_mount_uuid" ]] || exit 78
+[[ "$(findmnt -rn --mountpoint "$local_mountpoint" -o UUID)" == "$local_mount_uuid" ]] || exit 78
+[[ "$(findmnt -rn --mountpoint "$local_mountpoint" -o TARGET)" == "$local_mountpoint" ]] || exit 78
+[[ "$(findmnt -rn --mountpoint "$local_mountpoint" -o MAJ:MIN)" != "$(findmnt -rn --target / -o MAJ:MIN)" ]] || exit 78
+[[ -d "$repository" && ! -L "$repository" && "$(readlink -f -- "$repository")" == "$local_mountpoint/"* ]] || exit 78
+[[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u' -- "$password_file")" == 0 ]] || exit 78
+case "$(stat -c '%a' -- "$password_file")" in 400|600) ;; *) exit 78;; esac
+[[ -d "$base" && ! -L "$base" && "$(stat -c '%u' -- "$base")" == 0 && "$(stat -c '%a' -- "$base")" == 700 ]] || exit 78
+[[ "$(readlink -f -- "$base")" == "$base" && "$base/" != "$repository/"* ]] || exit 78
+unset RESTIC_PASSWORD RESTIC_PASSWORD_COMMAND RESTIC_REPOSITORY RESTIC_REPOSITORY_FILE
+exec 9>"$state_dir/job.lock"
+flock -n 9 || exit 75
+run="$(mktemp -d -- "$base/run.XXXXXX")"
+started="$(date +%s)"
+finish() {
+  rc=$?
+  trap - EXIT
+  set +e
+  /usr/bin/python3 - "$run" "$state_dir" "$metrics_dir" "$snapshot" "$started" "$(date +%s)" "$rc" "$revision" <<'PY'
+import hashlib,json,os,pathlib,sys,tempfile
+run,state,metrics,snapshot,start,end,rc,revision=sys.argv[1:]
+root=pathlib.Path(run);rc=int(rc);end=int(end)
+catalog_path=root/"catalog.json"
+catalog=json.loads(catalog_path.read_text()) if rc==0 else {}
+record=dict(scope="real-local-foundation-config",repository_kind="local",offsite=False,
+            snapshot_id=snapshot,started_at=int(start),finished_at=end,exit_code=rc,
+            controller_revision=revision,source_revision=catalog.get("revision"),
+            verified_files=len(catalog.get("files",[])),restored_root=str(root/"files"),
+            source_catalog_sha256=hashlib.sha256(catalog_path.read_bytes()).hexdigest() if rc==0 else None)
+def atomic(path,text,mode):
+    path=pathlib.Path(path)
+    with tempfile.NamedTemporaryFile(mode="w",dir=str(path.parent),delete=False,encoding="utf-8") as f:
+        temporary=f.name;os.chmod(temporary,mode);f.write(text);f.flush();os.fsync(f.fileno())
+    os.replace(temporary,path)
+last=pathlib.Path(state)/"local-config-restore.last-success"
+if rc==0:atomic(last,str(end)+"\n",0o600)
+previous=last.read_text().strip() if last.exists() else "0"
+if not previous.isdigit():previous="0"
+text=json.dumps(record,sort_keys=True)+"\n"
+atomic(root/"evidence.json",text,0o600)
+atomic(pathlib.Path(state)/"local-config-restore.json",text,0o600)
+atomic(pathlib.Path(metrics)/"foundation-local-config-restore.prom",
+       "foundation_local_config_restore_success {}\nfoundation_local_config_restore_last_attempt_timestamp_seconds {}\nfoundation_local_config_restore_last_success_timestamp_seconds {}\nfoundation_local_config_restore_offsite 0\n".format(int(rc==0),start,previous),0o644)
+PY
+  evidence_rc=$?
+  printf 'Local foundation configuration restore: exit=%s snapshot=%s evidence=%s/evidence.json offsite=false\n' "$rc" "$snapshot" "$run"
+  if (( rc == 0 && evidence_rc != 0 )); then exit "$evidence_rc"; fi
+  exit "$rc"
+}
+trap finish EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+mkdir -m 0700 -- "$run/files" "$run/cache"
+common=(--repo "$repository" --password-file "$password_file" --cache-dir "$run/cache")
+/usr/bin/restic "${common[@]}" dump "$snapshot" "$state_dir/source-catalog.json" >"$run/catalog.json" 2>"$run/backend.log"
+"$catalog_tool" paths "$run/catalog.json" >"$run/paths"
+[[ -s "$run/paths" ]] || exit 78
+mapfile -d '' -t paths <"$run/paths"
+include_args=()
+for source in "${paths[@]}"; do include_args+=(--include "$source"); done
+/usr/bin/restic "${common[@]}" restore "$snapshot" --target "$run/files" --verify "${include_args[@]}" >"$run/backend.log" 2>&1
+"$catalog_tool" verify "$run/catalog.json" "$run/files"
+# Preserve evidence and restored files; no deletion or overwrite of original paths.

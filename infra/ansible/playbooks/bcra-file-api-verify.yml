@@ -1,0 +1,17 @@
+---
+- name: Verify the dedicated BCRA application using read-only requests
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm immutable dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify the BCRA data provenance and active service
+      ansible.builtin.import_role:
+        name: bcra_file_api
+        tasks_from: verify
+      tags: [bcra_file_api]

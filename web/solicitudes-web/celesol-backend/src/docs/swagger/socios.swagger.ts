@@ -116,11 +116,23 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             categoria:
+ *               type: string
+ *               enum: [ADHERENTE_CONVENIO, AMEJUCA, MUDON]
+ *               description: Categoria inicial. Por defecto ADHERENTE_CONVENIO (9). AMEJUCA usa 48 y MUDON usa 78.
+ *             solicitudId:
+ *               type: string
+ *               format: uuid
+ *               description: Solicitud del titular para validar su identidad. La fecha del alta es siempre el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [FISICA]
  *             cuit:
  *               type: string
+ *             cbu:
+ *               type: string
+ *               pattern: '^\d{22}$'
+ *               description: CBU opcional con dígitos verificadores válidos, enviado a la cuenta habitual del socio en Vimarx al darlo de alta.
  *             nombre:
  *               type: string
  *             apellido:
@@ -156,11 +168,23 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             categoria:
+ *               type: string
+ *               enum: [ADHERENTE_CONVENIO, AMEJUCA, MUDON]
+ *               description: Categoria inicial. Por defecto ADHERENTE_CONVENIO (9). AMEJUCA usa 48 y MUDON usa 78.
+ *             solicitudId:
+ *               type: string
+ *               format: uuid
+ *               description: Solicitud del titular para validar su identidad. La fecha del alta es siempre el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [JURIDICA]
  *             cuit:
  *               type: string
+ *             cbu:
+ *               type: string
+ *               pattern: '^\d{22}$'
+ *               description: CBU opcional con dígitos verificadores válidos, enviado a la cuenta habitual del socio en Vimarx al darlo de alta.
  *             razonSocial:
  *               type: string
  *             celular:
