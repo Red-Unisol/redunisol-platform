@@ -44,6 +44,25 @@ no borrar el corte ni reactivar solicitudes anteriores como forma de recuperaci�
 
 ## Alcance y escritor único
 
+### Restablecimiento de callbacks sin reprocesamiento
+
+Antes de restablecer una entrega detenida en Edna, desplegar el receptor con
+`edna:callback-reception` y ejecutar `php artisan edna:callback-reception arm`
+inmediatamente antes del cambio del proveedor. Guarda una frontera adicional
+append-only en `edna_intake_cutovers`; no altera el corte de intake nativo ni
+encola recuperaciones. Cada armado puede avanzar el límite, nunca retrocederlo.
+Los callbacks autenticados con fecha original anterior se acusan con HTTP200 e
+`ignored`, sin guardarlos ni despacharlos al bot. Las fechas no verificables se
+cuentan como `invalid`. Sólo se registran IDs técnicos y motivo de exclusión.
+`status` muestra el límite efectivo sin modificar datos. El deploy no arma
+automáticamente este filtro: se hace al restablecer deliberadamente el proveedor.
+
+No reemplazar los destinos de Edna sin releerlos: un webhook adicional puede
+reemplazar la entrega del principal para ese canal. Conservar Bitrix y el bot,
+el canal 2423, los tipos de evento y la autenticación existentes. No solicitar
+reenvío histórico. Verificar luego un mensaje nuevo por ID externo en el inbox
+y su procesamiento, preservando las comprobaciones de atención humana.
+
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se
 documentan en [ORG-23571](../kestra/automations/marketing-crm/docs/commercial-rules/ORGANIC_WHATSAPP_23571.md).

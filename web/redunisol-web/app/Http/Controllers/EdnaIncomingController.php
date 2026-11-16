@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\ReceiveEdnaInKestra;
+use App\Services\EdnaCallbackReception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,8 @@ class EdnaIncomingController extends Controller
         try {
             $counts = DB::transaction(function () use ($batch, $subjectId): array {
                 $counts = ['accepted' => 0, 'duplicates' => 0, 'ignored' => 0, 'invalid' => 0];
+                $reception = app(EdnaCallbackReception::class);
+                $floor = $reception->floor();
                 foreach ($batch as $event) {
                     if (! is_array($event) || ! $this->validId($event['subjectId'] ?? null)) {
                         $counts['invalid']++;
@@ -111,6 +114,18 @@ class EdnaIncomingController extends Controller
                         $counts['invalid']++;
 
                         continue;
+                    }
+                    if ($floor) {
+                        $age = $reception->classify($event['receivedAt'], $floor);
+                        if ($age !== 'new') {
+                            $counts[$age === 'old' ? 'ignored' : 'invalid']++;
+                            Log::notice('Edna incoming event excluded by reception boundary.', [
+                                'subject_id' => $subjectId, 'message_id' => (string) $event['id'],
+                                'reason' => $age === 'old' ? 'before_callback_reception_cutoff' : 'invalid_callback_timestamp',
+                            ]);
+
+                            continue;
+                        }
                     }
                     $payload = [
                         'id' => (string) $event['id'],

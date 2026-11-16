@@ -63,6 +63,43 @@ test('HEAD verifies availability without credentials, writes or jobs', function 
     $this->getJson('/api/webhooks/edna/incoming')->assertNotFound();
 });
 
+test('restored reception acknowledges old callbacks without storing or dispatching them', function (string $type) {
+    $this->travelTo(now()->setDate(2026, 11, 16)->setTime(22, 0));
+    $this->artisan('edna:callback-reception arm')->assertSuccessful();
+    sendEdna(ednaMessage(['receivedAt' => now()->subSecond()->toIso8601String(),
+        'messageContent' => ['type' => $type, 'text' => 'private-old-message']]))
+        ->assertOk()->assertJsonPath('ignored', 1)->assertJsonPath('accepted', 0);
+    expect(DB::table('edna_incoming_events')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+})->with(['TEXT', 'BUTTON', 'FLOW']);
+
+test('a mixed provider batch accepts only new callbacks and keeps deduplication', function () {
+    $this->travelTo(now()->setDate(2026, 11, 16)->setTime(22, 0));
+    $this->artisan('edna:callback-reception arm')->assertSuccessful();
+    $new = ednaMessage(['id' => '102', 'receivedAt' => now()->addSecond()->toIso8601String()]);
+    sendEdna([ednaMessage(['receivedAt' => now()->subMinute()->toIso8601String()]), $new, $new])
+        ->assertOk()->assertJsonPath('ignored', 1)->assertJsonPath('accepted', 1)->assertJsonPath('duplicates', 1);
+    expect(DB::table('edna_incoming_events')->sole()->message_id)->toBe('102')->and(DB::table('jobs')->count())->toBe(1);
+});
+
+test('a reception floor rejects missing or invalid timezones without altering existing inbox rows', function (string $timestamp) {
+    sendEdna(ednaMessage())->assertOk();
+    $before = DB::table('edna_incoming_events')->sole();
+    $this->artisan('edna:callback-reception arm')->assertSuccessful();
+    sendEdna(ednaMessage(['id' => '103', 'receivedAt' => $timestamp]))->assertOk()->assertJsonPath('invalid', 1);
+    expect(DB::table('edna_incoming_events')->sole())->toEqual($before)->and(DB::table('jobs')->count())->toBe(1);
+})->with(['not-a-dateZ', 'tomorrowZ', '2026-11-16T22:00:00']);
+
+test('reception arming is append only and leaves native intake activation unchanged', function () {
+    $this->artisan('edna:intake-cutover activate')->assertSuccessful();
+    $native = DB::table('edna_intake_cutovers')->where('name', 'native-v3-v1')->first();
+    $this->artisan('edna:callback-reception arm')->assertSuccessful();
+    $this->travel(1)->minutes();
+    $this->artisan('edna:callback-reception arm')->assertSuccessful();
+    expect(DB::table('edna_intake_cutovers')->where('name', 'like', 'callback-reception:%')->count())->toBe(2)
+        ->and(DB::table('edna_intake_cutovers')->where('name', 'native-v3-v1')->first())->toEqual($native)
+        ->and(DB::table('jobs')->count())->toBe(0);
+});
+
 test('receiver fails closed when disabled or incompletely configured', function (string $setting, mixed $value) {
     config()->set('edna.'.$setting, $value);
     sendEdna([ednaMessage()])->assertStatus(503);
