@@ -18,11 +18,11 @@ class BitrixRoutingConfig
         116561 => 'Julieta Aguilera',
         110059 => 'Agustín Villagra',
         53121 => 'Gloria Fernandez',
-        8057 => 'Stefania Salguero',
         128399 => 'Stefania Salguero (128399)',
         58913 => 'Ludmila Gallardo',
         127337 => 'Renato Rodriguez Barros',
         125693 => 'Saira Cardoso',
+        128877 => 'Patricia Barboza',
     ];
 
     public const BUCKETS = [
@@ -44,7 +44,7 @@ class BitrixRoutingConfig
         'policia_federal_caba' => [
             'label' => 'CABA — Policía Federal',
             'description' => 'Policía Federal residente en CABA, desde el 14/09/2026.',
-            'sellers' => [8057],
+            'sellers' => [],
         ],
         'catamarca_general' => [
             'label' => 'Catamarca — General',
@@ -163,6 +163,7 @@ class BitrixRoutingConfig
     private function normalizeSellers(array $sellers): array
     {
         return collect($sellers)
+            ->filter(fn (array $seller): bool => isset(self::SELLERS[(int) $seller['user_id']]))
             ->map(fn (array $seller): array => [
                 'user_id' => (int) $seller['user_id'],
                 'paused' => (bool) ($seller['paused'] ?? false),
