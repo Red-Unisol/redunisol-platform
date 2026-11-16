@@ -63,6 +63,28 @@ el canal 2423, los tipos de evento y la autenticación existentes. No solicitar
 reenvío histórico. Verificar luego un mensaje nuevo por ID externo en el inbox
 y su procesamiento, preservando las comprobaciones de atención humana.
 
+Configuración deseada del proveedor para Ventas: webhook `2508`,
+`Red Unisol Main`, sender `Red Unisol - Ventas` / subject `2423`, únicamente
+`IN_MESSAGE`, con autenticación habilitada y su clave existente conservada.
+La URL principal es
+`https://redunisol.bitrix24.es/bitrix/tools/messageservice/callback_ednaru.php`
+y la URL adicional es `https://redunisol.com.ar/api/webhooks/edna/incoming`.
+No regenerar la clave ni sustituir el destino de Bitrix al recuperar el bot.
+
+El 16/11/2026 se observó vacía esa URL adicional y se restableció después de
+desplegar el PR #742 (`f4520818365d365bc6cb2429ce381ba1a1f84d12`). No se
+confirmó quién ni cómo la había eliminado. El límite de recepción quedó en
+`2026-11-16T22:56:57Z` (19:56:57 ART), con inbox previo `37216`, sin mover
+`native-v3-v1`. Edna confirmó el guardado y comprobó el receptor con HEAD 200.
+El primer mensaje real posterior, `21038026201`, quedó en inbox `37217` a
+las `22:58:01Z` y fue procesado a las `22:58:03Z` como `unified_intake_entry`.
+El menú `2433` conservó la deduplicación de la sesión
+(`menu_already_reserved_for_session`); no se afirma un nuevo envío ni una
+transferencia por ese ingreso. Las huellas de las 575 solicitudes históricas
+en revisión/resultado incierto permanecieron iguales. Una prueba adicional
+con lote vacío autenticado dio HTTP200 con todos los contadores en cero;
+esa prueba técnica se distingue del mensaje real.
+
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se
 documentan en [ORG-23571](../kestra/automations/marketing-crm/docs/commercial-rules/ORGANIC_WHATSAPP_23571.md).
