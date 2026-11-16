@@ -1,0 +1,35 @@
+id: pago360_recuperar
+namespace: redunisol
+# This integration is deliberately inert until its contracts and rollout are approved.
+disabled: true
+concurrency:
+  limit: 1
+  behavior: QUEUE
+labels:
+  domain: cobranzas
+  integration: pago360
+  schedule_scope: prod_only
+description: Recupera pendientes a traves del mismo ejecutor; no reenvia escrituras inciertas.
+tasks:
+  - id: ejecutar
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - pago360/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install requests > /dev/null
+    env:
+      PAGO360_PORTAL_API_URL: "{{ envs.pago360_portal_api_url }}"
+      PAGO360_PORTAL_API_SECRET: "{{ secret('PAGO360_PORTAL_API_SECRET') }}"
+    commands:
+      - python -m pago360.entrypoint recover
+triggers:
+  - id: pendientes
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/10 * * * *"
+    timezone: America/Argentina/Buenos_Aires
+    disabled: true

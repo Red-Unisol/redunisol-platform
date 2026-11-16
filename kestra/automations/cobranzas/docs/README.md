@@ -72,3 +72,8 @@ Configuracion versionada del embudo:
 Pruebas unitarias del dominio:
 
 - `python -m unittest kestra.automations.cobranzas.tests.test_bitrix_crm_negociaciones`
+
+## Pago360 (preparacion deshabilitada)
+
+- `pago360_imputar` y `pago360_recuperar`: ejecutor unico y recuperacion con ledger en el portal. Ambos flows y sus triggers quedan deshabilitados.
+- [Contrato, configuracion y habilitacion pendiente](pago360.md).

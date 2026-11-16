@@ -24,6 +24,8 @@ siguen documentados junto a su aplicación.
 El catálogo es un punto de entrada común. No implica que todos los endpoints
 hayan sido probados ni constituye una especificación exhaustiva del proveedor.
 
+- [API de cobros: contratos vigentes y pendientes de Pago360](cobros.md).
+
 ## Niveles de evidencia
 
 1. **Verificado en vivo:** petición y respuesta fechadas; para escrituras, lectura
