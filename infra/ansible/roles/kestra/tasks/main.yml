@@ -92,6 +92,14 @@
   # In check mode the target directories are only simulated, so a link to them cannot be previewed.
   when: item.stat.exists or not ansible_check_mode
 
+- name: Install the reviewed Kestra Compose definition
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ kestra_platform_dir }}/docker-compose.yml"
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0644"
+
 - name: Explain the preparation-only default
   ansible.builtin.debug:
     msg: >-

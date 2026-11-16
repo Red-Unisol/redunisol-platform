@@ -42,6 +42,71 @@ class SafeDefaultsTests(unittest.TestCase):
         })
 
 
+VPS_COMPOSE = ROOT.parents[1] / "kestra/platform/infra/docker-compose.yml"
+DEDICATED_COMPOSE = ROLE / "templates/docker-compose.yml.j2"
+# The only lines the dedicated copy may change, as (VPS line, dedicated line).
+ALLOWED_COMPOSE_CHANGES = [
+    ("- ./data/postgres:/var/lib/postgresql/data", "- {{ kestra_data_dir }}/postgres:/var/lib/postgresql/data"),
+    ('- "8081:8081"', '- "{{ kestra_management_bind }}:8081:8081"'),
+    ("- ./data/storage:/app/storage", "- {{ kestra_data_dir }}/storage:/app/storage"),
+    ("- ./tmp:/tmp/kestra-wd", "- {{ kestra_data_dir }}/tmp:/tmp/kestra-wd"),
+    ("- /srv/redunisol-reports:/reports", "- {{ kestra_data_dir }}/reports:/reports"),
+]
+
+
+def compose_body(path):
+    lines = path.read_text(encoding="utf-8").replace("\r\n", "\n").splitlines()
+    return [line for line in lines if not line.startswith("#")]
+
+
+def kestra_variables(path):
+    names = set()
+    in_environment = False
+    for line in compose_body(path):
+        if line.strip() == "environment:" and line.startswith("    ") and not line.startswith("     "):
+            in_environment = True
+            continue
+        if in_environment:
+            if line.startswith("      ") and ":" in line:
+                names.add(line.strip().split(":", 1)[0])
+            elif line.strip() and not line.startswith("      "):
+                in_environment = False
+    return names
+
+
+class CopyOfVpsComposeTests(unittest.TestCase):
+    """While Kestra lives on both hosts, the dedicated Compose file must track the VPS one."""
+
+    def test_dedicated_compose_declares_exactly_the_same_variables_as_the_vps(self):
+        vps, dedicated = kestra_variables(VPS_COMPOSE), kestra_variables(DEDICATED_COMPOSE)
+        self.assertGreater(len(vps), 100)
+        self.assertEqual(sorted(vps - dedicated), [], "Variables missing in the dedicated compose")
+        self.assertEqual(sorted(dedicated - vps), [], "Variables missing in the VPS compose")
+
+    def test_dedicated_compose_only_differs_in_data_paths_and_the_management_port(self):
+        restored = []
+        for line in compose_body(DEDICATED_COMPOSE):
+            for vps_line, dedicated_line in ALLOWED_COMPOSE_CHANGES:
+                if line.strip() == dedicated_line:
+                    line = line.replace(dedicated_line, vps_line)
+            restored.append(line)
+        self.assertEqual(restored, compose_body(VPS_COMPOSE))
+
+    def test_each_allowed_change_is_really_applied(self):
+        body = [line.strip() for line in compose_body(DEDICATED_COMPOSE)]
+        for vps_line, dedicated_line in ALLOWED_COMPOSE_CHANGES:
+            with self.subTest(line=vps_line):
+                self.assertIn(dedicated_line, body)
+                self.assertNotIn(vps_line, body)
+
+    def test_the_management_port_is_local_only_by_default(self):
+        self.assertEqual(DEFAULTS["kestra_management_bind"], "127.0.0.1")
+
+    def test_the_copy_says_where_it_comes_from(self):
+        header = DEDICATED_COMPOSE.read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn("kestra/platform/infra/docker-compose.yml", header)
+
+
 class TargetAndOrderTests(unittest.TestCase):
     def test_only_the_dedicated_host_belongs_to_kestra_hosts(self):
         groups = load("inventories/production/hosts.yml")["all"]["children"]
@@ -82,8 +147,8 @@ class ExecutableRoleTests(unittest.TestCase):
         (self.repo / "kestra/platform/infra/application.yaml").write_text("reviewed: true\n", encoding="utf-8")
         for name in ("main", "verify"):
             play = [{"name": f"Run Kestra {name} tasks locally only", "hosts": "localhost", "connection": "local",
-                     "gather_facts": False, "become": False, "vars": DEFAULTS,
-                     "tasks": load(f"roles/kestra/tasks/{name}.yml")}]
+                     "gather_facts": False, "become": False,
+                     "tasks": [{"ansible.builtin.import_role": {"name": "kestra", "tasks_from": name}}]}]
             (self.playbooks / f"{name}.yml").write_text(yaml.safe_dump(play, sort_keys=False), encoding="utf-8")
         self.git("init", "-q")
         self.git("add", ".")
@@ -113,6 +178,7 @@ class ExecutableRoleTests(unittest.TestCase):
         extra = base / "extra.yml"
         extra.write_text(yaml.safe_dump({**self.paths, **changes}), encoding="utf-8")
         env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / "ansible.cfg"), ANSIBLE_NOCOLOR="1",
+                   ANSIBLE_ROLES_PATH=str(ROOT / "roles"),
                    ANSIBLE_LOCAL_TEMP=str(base / "local"), ANSIBLE_REMOTE_TEMP=str(base / "remote"))
         command = ["ansible-playbook", "-i", "localhost,", "--limit", "localhost",
                    "--extra-vars", f"@{extra}", str(self.playbooks / f"{tasks}.yml")]
@@ -204,6 +270,20 @@ class ExecutableRoleTests(unittest.TestCase):
         self.assertTrue(existing.is_dir() and not existing.is_symlink())
         self.assertEqual((existing / "report.csv").read_text(encoding="utf-8"), "keep\n")
 
+    # Compose definition
+
+    def test_apply_installs_the_compose_with_dedicated_paths_and_a_local_management_port(self):
+        self.assert_ok(self.apply())
+        installed = self.platform / "docker-compose.yml"
+        compose = yaml.safe_load(installed.read_text(encoding="utf-8"))
+        kestra = compose["services"]["kestra"]
+        self.assertEqual(kestra["ports"], ["127.0.0.1:8080:8080", "127.0.0.1:8081:8081"])
+        self.assertIn(f"{self.data}/storage:/app/storage", kestra["volumes"])
+        self.assertIn(f"{self.data}/reports:/reports", kestra["volumes"])
+        self.assertIn(f"{self.data}/postgres:/var/lib/postgresql/data", compose["services"]["postgres"]["volumes"])
+        self.assertIn("${SECRET_CREDIX_PASS}", installed.read_text(encoding="utf-8"))
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
+
     # Verification
 
     def test_verify_fails_before_the_apply_and_passes_after_it(self):
@@ -229,6 +309,16 @@ class ExecutableRoleTests(unittest.TestCase):
         wrong = self.run_tasks(tasks="verify")
         self.assertNotEqual(wrong.returncode, 0)
         self.assertIn("must be a link to", wrong.stdout)
+
+    def test_verify_detects_a_compose_edited_by_hand(self):
+        self.assert_ok(self.apply())
+        installed = self.platform / "docker-compose.yml"
+        installed.write_text(installed.read_text(encoding="utf-8").replace("127.0.0.1:8081", "0.0.0.0:8081"),
+                             encoding="utf-8")
+        edited = self.run_tasks(tasks="verify")
+        self.assertNotEqual(edited.returncode, 0)
+        self.assertIn("differs from the reviewed template", edited.stdout)
+        self.assertIn("0.0.0.0:8081", installed.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

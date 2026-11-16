@@ -10,6 +10,11 @@ kestra_data_dir: /srv/redunisol/state/kestra
 kestra_owner: root
 kestra_group: root
 
+# Puerto de administración (salud y métricas, sin login). En la VPS lo limita el firewall del panel
+# de DonWeb; el dedicado no lo tiene, así que por defecto queda solo para la propia máquina.
+# Cómo llega el monitoreo se resuelve al hacer el cambio.
+kestra_management_bind: 127.0.0.1
+
 # Carpetas de datos, dentro de kestra_data_dir.
 kestra_data_subdirs:
   - { path: postgres, mode: "0700" }
