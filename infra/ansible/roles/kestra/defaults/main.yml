@@ -1,0 +1,9 @@
+---
+# Interruptores: todo apagado por defecto.
+kestra_apply_authorized: false
+kestra_revision: ""
+kestra_running: false
+
+# Dónde vive Kestra en el dedicado (misma convención que BCRA).
+kestra_platform_dir: /srv/redunisol/platform/kestra
+kestra_data_dir: /srv/redunisol/state/kestra

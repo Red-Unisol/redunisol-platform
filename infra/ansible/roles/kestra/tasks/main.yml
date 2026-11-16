@@ -1,0 +1,39 @@
+---
+- name: Require explicit Kestra authorization outside check mode
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or (kestra_apply_authorized | bool)
+      - ansible_check_mode or (kestra_revision is match('^[0-9a-f]{40}$'))
+    fail_msg: "Kestra changes require kestra_apply_authorized=true and kestra_revision=<reviewed Git SHA>."
+
+- name: Prove the local checkout is exactly the reviewed revision
+  when: not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+  become: false
+  block:
+    - name: Read the local checkout revision and pending changes
+      ansible.builtin.command:
+        argv: "{{ ['git', '-C', playbook_dir] + item }}"
+      loop:
+        - [rev-parse, HEAD]
+        - [status, --porcelain, --untracked-files=no]
+        - [status, --porcelain, --untracked-files=all, --, ':/infra/ansible', ':/kestra/platform/infra']
+      register: kestra_checkout
+      changed_when: false
+
+    - name: Require the reviewed revision without local changes
+      ansible.builtin.assert:
+        that:
+          - kestra_checkout.results[0].stdout == kestra_revision
+          - kestra_checkout.results[1].stdout == ""
+          - kestra_checkout.results[2].stdout == ""
+        fail_msg: >-
+          The local checkout must be exactly kestra_revision with no pending changes:
+          HEAD is {{ kestra_checkout.results[0].stdout }}.
+
+- name: Explain the preparation-only default
+  ansible.builtin.debug:
+    msg: >-
+      running=false prepares Kestra files only; it does not pull, start or stop containers.
+  when: not (kestra_running | bool)

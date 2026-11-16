@@ -1,0 +1,6 @@
+---
+- name: Report that Kestra has nothing to verify yet
+  ansible.builtin.debug:
+    msg: >-
+      The kestra role does not manage files or containers yet; verification checks
+      are added together with each managed piece.
