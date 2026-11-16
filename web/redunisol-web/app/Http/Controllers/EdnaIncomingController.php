@@ -6,6 +6,7 @@ use App\Jobs\ReceiveEdnaInKestra;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use JsonException;
 use Symfony\Component\HttpFoundation\Response;
@@ -85,12 +86,19 @@ class EdnaIncomingController extends Controller
 
                         continue;
                     }
-                    $types = ['TEXT', 'FLOW'];
+                    $types = ['TEXT', 'FLOW', 'BUTTON'];
                     if (config('edna.out_of_hours_enabled') || config('edna.intake_entry_scope', 'website') === 'sales_channel') {
                         $types = array_merge($types, ['IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER']);
                     }
                     if (! in_array($content['type'], $types, true)) {
                         $counts['ignored']++;
+                        // Preserve diagnostic IDs before acknowledging an unsupported
+                        // callback. Never log its text, payload, recipient or headers.
+                        Log::notice('Edna incoming event ignored.', [
+                            'subject_id' => $subjectId, 'message_id' => (string) $event['id'],
+                            'message_type' => preg_match('/^[A-Z_]{1,32}$/D', $content['type']) ? $content['type'] : 'unrecognized',
+                            'reason' => 'unsupported_type',
+                        ]);
 
                         continue;
                     }
@@ -118,7 +126,10 @@ class EdnaIncomingController extends Controller
                     // callback. Never accept entry_context or a CRM binding here.
                     if (isset($content['referral']) && is_array($content['referral'])) {
                         $referral = [];
-                        foreach (['source_id', 'source_type', 'source_url', 'headline', 'body', 'ctwa_clid'] as $name) {
+                        // Edna documents camelCase source fields; keep legacy aliases
+                        // independently so conflicting evidence remains visible downstream.
+                        foreach (['source_id', 'sourceId', 'source_type', 'sourceType', 'source_url', 'sourceUrl',
+                            'headline', 'body', 'ctwa_clid', 'ctwaClid'] as $name) {
                             $value = $content['referral'][$name] ?? null;
                             if (is_string($value) && strlen($value) <= 2048) {
                                 $referral[$name] = $value;
@@ -161,7 +172,7 @@ class EdnaIncomingController extends Controller
                     $id = DB::table('edna_incoming_events')
                         ->where('subject_id', $subjectId)->where('message_id', $payload['id'])->value('id');
                     // Same database connection and transaction as the inbox: either both commit or neither.
-                    Queue::connection('edna')->push(new ReceiveEdnaInKestra((int) $id), '', 'edna');
+                    Queue::connection('edna')->push(new ReceiveEdnaInKestra((int) $id), '', 'edna-inbox');
                     $counts['accepted']++;
                 }
 

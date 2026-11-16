@@ -1,0 +1,12 @@
+---
+- name: Prepare or activate the reviewed BCRA application on the identified dedicated host
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: bcra_file_api
+      tags: [bcra_file_api]

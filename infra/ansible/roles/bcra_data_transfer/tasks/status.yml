@@ -1,0 +1,11 @@
+---
+- name: Read source-local transfer status without starting or changing it
+  ansible.builtin.script:
+    cmd: "{{ bcra_data_copy_helper | quote }} status"
+    executable: /usr/bin/python3
+  register: bcra_data_copy_status_result
+  changed_when: false
+
+- name: Report transfer phase without data or private credentials
+  ansible.builtin.debug:
+    msg: "{{ bcra_data_copy_status_result.stdout | from_json }}"

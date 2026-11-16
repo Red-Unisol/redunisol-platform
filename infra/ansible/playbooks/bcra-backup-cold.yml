@@ -1,0 +1,12 @@
+---
+- name: Create the real initial cold BCRA backup before first activation
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: bcra_backup
+      tags: [bcra_backup]

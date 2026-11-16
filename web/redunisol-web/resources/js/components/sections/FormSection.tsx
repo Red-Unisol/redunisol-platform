@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type SectionCta } from '@/components/section-cta';
 import { getJourneyPageId, trackJourney } from '@/utils/journey';
 import { trackEvent, trackMetaLead } from '@/utils/tracking';
+import { withWebFormReference } from '@/utils/webFormContinuation';
 
 import WhatsAppButton from '../WhatsAppButton';
 
@@ -797,12 +798,14 @@ function ResultModal({
     onClose,
     onReset,
     successCta,
+    webFormReference,
 }: {
     result: 'success' | 'error' | 'not_qualified';
     errorMessage: string | null;
     onClose: () => void;
     onReset: () => void;
     successCta?: SectionCta;
+    webFormReference: string | null;
 }) {
     const isSuccess = result === 'success';
     const isNotQualified = result === 'not_qualified';
@@ -910,7 +913,7 @@ function ResultModal({
                     {isSuccess ? (
                         successCta?.enabled && successCta.link ? (
                             <a
-                                href={successCta.link}
+                                href={withWebFormReference(successCta.link, webFormReference)}
                                 data-whatsapp-attribution="skip"
                                 className="block w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
                             >
@@ -1012,6 +1015,7 @@ export default function FormSection({
         'success' | 'error' | 'not_qualified' | null
     >(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [webFormReference, setWebFormReference] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<FormErrors>({});
     const [attemptedSteps, setAttemptedSteps] = useState<Set<number>>(
         () => new Set(),
@@ -1263,6 +1267,7 @@ export default function FormSection({
                 message?: string;
                 qualified?: boolean;
                 route_to_whatsapp?: boolean;
+                web_form_reference?: string | null;
             };
 
             if (responseData.qualified === false) {
@@ -1291,6 +1296,7 @@ export default function FormSection({
                 return;
             }
 
+            setWebFormReference(responseData.web_form_reference ?? null);
             setResult('success');
         } catch {
             setErrorMessage(
@@ -1337,6 +1343,7 @@ export default function FormSection({
         setFormErrors({});
         setAttemptedSteps(new Set());
         setLastSubmittedFingerprint(null);
+        setWebFormReference(null);
     };
 
     const handleSkipRecibo = () => {
@@ -1521,6 +1528,7 @@ export default function FormSection({
                         }}
                         onReset={handleReset}
                         successCta={cfg.success_cta}
+                        webFormReference={webFormReference}
                     />
                 )}
             </AnimatePresence>

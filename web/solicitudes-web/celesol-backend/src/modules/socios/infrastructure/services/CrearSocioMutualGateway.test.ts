@@ -34,6 +34,7 @@ describe("CrearSocioMutualGateway", () => {
       categoria: "MUDON",
       apellido: "Fernandez",
       celular: "3492654322",
+      cbu: "0110000699111100000248",
       cuit: "27398765430",
       domicilio: {
         calle: "San Martin",
@@ -59,6 +60,7 @@ describe("CrearSocioMutualGateway", () => {
         Apellido: "Fernandez",
         Celular: "3492654322",
         CUIT: "27398765430",
+        CuentasBancarias: [{ CBU: "0110000699111100000248" }],
         Domicilio: {
           Calle: "San Martin",
           CodigoPostal: "2300",

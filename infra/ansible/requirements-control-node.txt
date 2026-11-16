@@ -1,0 +1,3 @@
+# Control: Python 3.12-3.14 on Linux/WSL. Debian 13 target: Python 3.13.
+# https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html
+ansible-core==2.21.6

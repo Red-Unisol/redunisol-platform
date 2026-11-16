@@ -27,6 +27,10 @@ temp/*
 untracked/*
 composer
 composer-setup.php
-infra/
+/infra/*
+!/infra/ansible/
 local-notes/
 apps/metamap-platform/docs/*.csv
+
+/infra/ansible/.cache/
+/infra/ansible/.ansible/

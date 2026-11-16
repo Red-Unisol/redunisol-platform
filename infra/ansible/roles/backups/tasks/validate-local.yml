@@ -1,0 +1,29 @@
+---
+- name: Validate the reviewed local mount before inspecting the repository
+  ansible.builtin.import_tasks: validate-local-mount.yml
+
+- name: Inspect the existing local repository configuration
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_repository }}/config"
+    follow: false
+  register: foundation_backups_local_repository_config
+
+- name: Require an existing local restic repository
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_local_repository_config.stat.exists
+      - foundation_backups_local_repository_config.stat.isreg | default(false)
+      - not foundation_backups_local_repository_config.stat.islnk | default(false)
+    fail_msg: The local restic repository must already be initialized by a separately approved operation.
+
+- name: Resolve the existing repository path
+  ansible.builtin.command:
+    argv: [realpath, --canonicalize-existing, --, "{{ foundation_backups_repository }}"]
+  register: foundation_backups_local_repository_realpath
+  changed_when: false
+  check_mode: false
+
+- name: Require the canonical repository to remain within the intended filesystem
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_local_repository_realpath.stdout.startswith(foundation_backups_local_mountpoint ~ '/')

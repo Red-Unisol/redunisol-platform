@@ -1,0 +1,51 @@
+---
+- name: Create the empty validated mountpoint
+  ansible.builtin.file:
+    path: "{{ foundation_backup_storage_mountpoint }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Create the mount validation helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/redunisol-foundation
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the mount unit validator
+  ansible.builtin.copy:
+    src: validate_mount_unit.py
+    dest: /usr/local/libexec/redunisol-foundation/validate-backup-mount
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Validate and declare the persistent mount by UUID
+  ansible.builtin.template:
+    src: backup.mount.j2
+    dest: "/etc/systemd/system/{{ foundation_backup_storage_probe.mount_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      /usr/local/libexec/redunisol-foundation/validate-backup-mount
+      --unit {{ foundation_backup_storage_probe.mount_unit | quote }} %s
+  register: foundation_backup_storage_unit
+
+- name: Enable and start only the approved backup mount
+  ansible.builtin.systemd_service:
+    name: "{{ foundation_backup_storage_probe.mount_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: "{{ foundation_backup_storage_unit.changed }}"
+
+- name: Set private permissions on the mounted filesystem root
+  ansible.builtin.file:
+    path: "{{ foundation_backup_storage_mountpoint }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"

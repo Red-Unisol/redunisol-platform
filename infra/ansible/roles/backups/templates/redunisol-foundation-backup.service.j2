@@ -1,0 +1,25 @@
+[Unit]
+Description=Back up consistent Red Unisol platform files to existing selected restic repository
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/redunisol-foundation/backup backup
+{% if foundation_backups_environment_file | length > 0 %}
+EnvironmentFile={{ foundation_backups_environment_file }}
+{% endif %}
+User=root
+Group=root
+UMask=0077
+UnsetEnvironment=BASH_ENV ENV SHELLOPTS BASHOPTS CDPATH GLOBIGNORE LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH PYTHONHOME RESTIC_PASSWORD_COMMAND
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec={{ (foundation_backups_timeout_seconds | int * foundation_backups_max_attempts | int) + (foundation_backups_max_attempts | int * foundation_backups_retry_delay_seconds | int) + 60 }}
+SuccessExitStatus=75
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths={{ foundation_backups_state_directory }} {{ foundation_backups_log_directory }} {{ foundation_backups_textfile_directory }}{% if foundation_backups_repository_kind == 'local' and foundation_backups_repository | length > 0 %} {{ foundation_backups_repository }}{% endif %}

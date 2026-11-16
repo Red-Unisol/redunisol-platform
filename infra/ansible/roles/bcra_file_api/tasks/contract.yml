@@ -1,0 +1,23 @@
+---
+- name: Require reviewed BCRA paths, image and source revision
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_platform_dir == '/srv/redunisol/platform/bcra-file-api'
+      - bcra_file_api_data_dir == '/srv/redunisol/state/bcra-file-api'
+      - >-
+        bcra_file_api_image ==
+        'ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4'
+      - bcra_file_api_revision is match('^[0-9a-f]{40}$')
+      - bcra_file_api_running is boolean
+      - bcra_file_api_terms_accepted is boolean
+      - bcra_file_api_registry_config_dir == '' or bcra_file_api_registry_config_dir is match('^/[A-Za-z0-9_./-]+$')
+    fail_msg: "BCRA deployment requires the reviewed immutable image, fixed paths and an exact source revision."
+
+- name: Require a verified migration before activating BCRA
+  ansible.builtin.assert:
+    that:
+      - bcra_file_api_data_manifest_sha256 is match('^[0-9a-f]{64}$')
+      - bcra_file_api_cold_backup_receipt_sha256 is match('^[0-9a-f]{64}$')
+      - bcra_file_api_terms_accepted | bool
+    fail_msg: "BCRA activation requires verified copied data, an initial cold backup and acceptance of download terms."
+  when: bcra_file_api_running | bool

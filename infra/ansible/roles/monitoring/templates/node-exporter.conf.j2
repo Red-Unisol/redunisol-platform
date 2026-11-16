@@ -1,0 +1,4 @@
+# Managed by Ansible. No port is opened by this role.
+[Service]
+ExecStart=
+ExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={{ foundation_monitoring_listen_address }} --collector.textfile.directory={{ foundation_monitoring_textfile_directory }} --collector.systemd

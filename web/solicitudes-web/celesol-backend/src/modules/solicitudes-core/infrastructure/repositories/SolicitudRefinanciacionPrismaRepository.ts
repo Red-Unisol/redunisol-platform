@@ -3,6 +3,7 @@ import { administrativeSource } from "../services/AdministrativeCorrectionServic
 import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudRefinanciacionPrestamoGeneradoError, SolicitudRefinanciacionYaCobradaError } from "../../domain/solicitudes-core-errors";
 import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+import { reliquidation } from "../../domain/workflow/LoanReliquidation";
 import type {
   SolicitudRefinanciacion,
   SolicitudRefinanciacionCobro,
@@ -36,6 +37,8 @@ export class SolicitudRefinanciacionPrismaRepository
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${input.solicitudId}::uuid FOR UPDATE`;
       const solicitud = await administrativeSource(tx, input.solicitudId);
       assertNoLoanReplacementPending(solicitud);
+      if (reliquidation(solicitud.administrativeCoreControl)?.status === "AWAITING_LOAN")
+        throw new AdministrativeCorrectionError("Esta versión de reliquidación no admite agregar refinanciación. Requiere un circuito conciliado.");
       if (solicitud.legacyOid) throw new SolicitudRefinanciacionPrestamoGeneradoError();
       const actual = await this.load(tx, input.solicitudId);
       if (actual.prestamos.some(p => p.cobros.length > 0)) throw new SolicitudRefinanciacionYaCobradaError();

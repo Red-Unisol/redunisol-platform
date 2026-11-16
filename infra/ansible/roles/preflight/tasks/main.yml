@@ -1,0 +1,24 @@
+---
+- name: Require the expected OS and immutable identity declarations
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version == '13'
+      - ansible_facts.architecture == 'x86_64'
+      - foundation_expected_hostname | default('') | length > 0
+      - foundation_expected_machine_id | default('') is match('^[0-9a-f]{32}$')
+      - ansible_facts.nodename == foundation_expected_hostname
+      - ansible_port | default(22) | int == foundation_expected_ssh_port | default(2241) | int
+    fail_msg: "Unexpected host/OS/SSH port. Verify inventory against read-only discovery evidence."
+
+- name: Read the machine identity without modifying it
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: foundation_machine_identity
+  no_log: true
+
+- name: Match machine identity to inventory
+  ansible.builtin.assert:
+    that:
+      - foundation_machine_identity.content | b64decode | trim == foundation_expected_machine_id
+    fail_msg: "Machine identity does not match the reviewed inventory."

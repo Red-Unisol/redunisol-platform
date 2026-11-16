@@ -67,6 +67,10 @@ async function request(
       },
     } as never,
     datosRapidos: new GetDatosRapidosUseCase({
+      lookupCbuHabitual: async () => {
+        legacyCalls++;
+        return [{ id: "71", cbu: "0110000699111100000248" }];
+      },
       lookupSocioRapido: async () => {
         legacyCalls++;
         return [{ id: "71" }];
@@ -143,7 +147,15 @@ describe("Datos rápidos: autorización HTTP", () => {
       assert.equal(result.solicitudCalls, 1);
     });
   }
-  for (const parte of ["socio", "convenio", "creditos", "mora"]) {
+  for (const role of ["VENDEDORES", "RIESGO", "ADMIN"]) {
+    it(`devuelve el CBU sólo al usuario ${role} con acceso a la solicitud`, async () => {
+      const result = await request("cbu", { role });
+      assert.equal(result.status, 200);
+      assert.equal(result.cache, "no-store");
+      assert.deepEqual(result.body, { status: "available", cbu: "0110000699111100000248" });
+    });
+  }
+  for (const parte of ["socio", "convenio", "creditos", "mora", "cbu"]) {
     it(`protege ${parte} antes de consultar legacy`, async () => {
       for (const options of [
         { authenticated: false },

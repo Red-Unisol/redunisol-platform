@@ -9,6 +9,7 @@ export function buildSocioPrefillFromTitular(
   return {
     apellido: apellidoDenominacion,
     celular: titular.celular ?? "",
+    cbu: titular.cbu ?? "",
     cuit: titular.cuit ?? "",
     domicilioCalle: titular.domicilioCalle ?? "",
     // El alta del socio usa el ID de Vimarx. Las solicitudes anteriores al

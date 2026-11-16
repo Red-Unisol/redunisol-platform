@@ -3,6 +3,7 @@ import {
   ajustarCuotasTexto,
 } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
+import { isAmejucaLine } from "@/modules/monthly-cutoffs/api";
 import {
   parseMoneyValue,
   formatDecimalMoneyValue,
@@ -193,6 +194,13 @@ export function useSolicitudEditorForm(
             : "",
     );
   }, [form, calculo.data, calculo.isPending, calculo.error]);
+  useEffect(() => {
+    const nextDate = calculo.data?.fechaPrimerVencimiento?.slice(0, 10);
+    if (isAmejucaLine(selectedLinea?.oid) && nextDate &&
+        form.getValues("fechaPrimerVencimiento") !== nextDate) {
+      form.setValue("fechaPrimerVencimiento", nextDate);
+    }
+  }, [form, selectedLinea?.oid, calculo.data]);
   const currentEstado = currentEstadoValue?.trim() || "Sin estado";
   const cuotaVigenteTexto =
     cuotaVigente !== null ? formatDecimalMoneyValue(cuotaVigente) : "";

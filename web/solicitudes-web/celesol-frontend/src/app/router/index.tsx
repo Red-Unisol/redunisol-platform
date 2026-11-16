@@ -151,6 +151,9 @@ const NotificationsPage = lazy(() =>
     default: module.NotificationsPage,
   })),
 );
+const MonthlyCutoffsPage = lazy(() =>
+  import("@/modules/monthly-cutoffs/MonthlyCutoffsPage").then(module => ({ default: module.MonthlyCutoffsPage })),
+);
 function RouteFallback() {
   return <SolicitudesContentLoader />;
 }
@@ -387,6 +390,10 @@ export function AppRouter() {
               <SolicitudesDetallePage />
             </Suspense>
           }
+        />
+        <Route
+          path="/solicitudes/fechas-de-corte"
+          element={<RiesgoOnlyRoute><Suspense fallback={<RouteFallback />}><MonthlyCutoffsPage /></Suspense></RiesgoOnlyRoute>}
         />
         <Route
           path="/solicitudes/core/detalle/:id"

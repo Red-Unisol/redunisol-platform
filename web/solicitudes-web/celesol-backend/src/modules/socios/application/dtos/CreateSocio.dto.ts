@@ -10,9 +10,11 @@ export type CreateSocioSocAuxDto = {
 export type CreateSocioDto =
   | {
       tipoPersona: "FISICA";
+      solicitudId?: string;
       apellido: string;
       categoria?: SocioCategoria;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;
@@ -30,7 +32,9 @@ export type CreateSocioDto =
   | {
       tipoPersona: "JURIDICA";
       categoria?: SocioCategoria;
+      solicitudId?: string;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;

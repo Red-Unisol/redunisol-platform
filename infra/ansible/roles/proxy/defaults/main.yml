@@ -1,0 +1,5 @@
+---
+foundation_proxy_package_version: ""
+foundation_proxy_listen_address: 127.0.0.1
+foundation_proxy_listen_port: 8088
+foundation_proxy_document_root: /var/www/redunisol-foundation

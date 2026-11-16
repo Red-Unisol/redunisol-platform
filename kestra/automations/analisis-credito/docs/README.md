@@ -153,7 +153,7 @@ Notas:
 
 ## tope_descuento_caja_mensual
 
-Genera el reporte privado mensual de topes de Caja y lo publica para management.
+Genera el reporte privado de topes de Caja por fecha de consulta y lo publica para management.
 
 ### Universo
 
@@ -182,22 +182,66 @@ publicar archivos.
 
 ### Ejecucion
 
-- corre el dia 1 de cada mes a las 05:00, hora de Buenos Aires
+- consulta el primer dia habil del mes y, desde el lunes estrictamente siguiente,
+  cada lunes; los lunes feriados se trasladan al siguiente dia habil
+- los lunes de referencia no se desplazan por ese traslado: si el feriado
+  del lunes obliga a consultar el martes, la siguiente consulta vuelve al lunes siguiente
+- dia habil significa lunes a viernes sin feriados nacionales obligatorios
+  argentinos (`holidays==0.104`); no excluye Jueves Santo, dias turisticos no
+  laborables, feriados provinciales ni locales, igual que los otros reportes
+- incorpora el feriado nacional excepcional del 09/11/2026 que no trae esa
+  version de la libreria, confirmado por el [calendario oficial BCRA](https://www.bcra.gob.ar/consulta-feriados-bancarios/);
+  el 10/11 bancario/provincial no corresponde al criterio nacional acordado
+- Kestra evalua el calendario de lunes a viernes a las 05:00, Buenos Aires; fuera
+  de las fechas de consulta sale como `not_scheduled` antes de acceder a fuentes,
+  crear checkpoints o consultar Caja
+- un traslado que cruza de mes se conserva; si coincide con el primer habil del
+  nuevo mes se hace una sola consulta
 - el schedule solo se despliega en produccion
 - reutiliza una sesion CIDI/Caja y la renueva cada 40 minutos o ante `401/403`
 - espera 3 segundos entre consultas
 - reintenta fallos tecnicos y frena ante `429` u 8 fallos consecutivos
-- guarda cada resultado en un checkpoint mensual append-only
+- guarda cada resultado en un checkpoint append-only por fecha (`YYYY-MM-DD`)
+- cada nueva fecha vuelve a consultar todos los CUILs; reintentar la misma fecha
+  reanuda solo los pendientes, sin reutilizar respuestas de otra tanda
+- conserva los checkpoints e historicos mensuales anteriores
 - conserva los CUILs con digito verificador invalido como `invalid_cuil` en el
   checkpoint y en el Excel, sin enviarlos a Caja
 - una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
 
+### Diagnostico de CIDI y Caja
+
+Los eventos `caja_session_open_started/completed/failed` registran si el login es
+inicial, por antiguedad (`max_age`) o por `401/403`, la edad de la sesion y el
+numero de intento. Los eventos `caja_http_error` y `caja_network_error` conservan
+etapa, metodo, path sin query, duracion, estado HTTP o tipo de excepcion y un
+`diagnostic_id` para correlacionar el fallo con los reintentos.
+
+La respuesta de error incluye `error`, `error_description` y el `resultado`
+anidado de CIDI, o el texto si no es JSON. Se conservan los headers de tipo de
+contenido, fecha, `Retry-After` e identificadores de request/correlacion. Se
+redactan credenciales, tokens, cookies, payloads cifrados conocidos y campos
+personales reconocidos antes de emitir o persistir. Nunca se vuelcan los
+headers ni los cuerpos de las solicitudes. El cuerpo de error sanitizado tiene
+un limite de 32.768 caracteres serializados, con marca explicita de truncado.
+
+Cada intento fallido queda en los logs de Kestra (`caja_query_retry/failed`),
+incluso si el siguiente intento funciona. El fallo definitivo conserva
+`error_details` en el checkpoint, junto al error legible que aparece en el Excel.
+Los checkpoints anteriores sin ese campo siguen siendo compatibles. El resumen
+de una tanda cortada por errores consecutivos incluye el ultimo motivo.
+Estos eventos no cambian la renovacion, los reintentos ni el calendario.
+
 Inputs manuales opcionales:
 
-- `run_month`: mes de checkpoint e historico, `YYYY-MM`
+- `run_date`: fecha de checkpoint e historico, `YYYY-MM-DD`; por defecto fecha
+  local de la corrida (o fecha nominal del trigger). Identifica la tanda, no una
+  consulta historica a Caja; las respuestas reflejan el estado al consultarse
+- `run_month`: compatibilidad con checkpoints mensuales anteriores, `YYYY-MM`;
+  no combinar con `run_date`
 - `limit`: cantidad maxima para una prueba; impide la publicacion
 - `pause_seconds`: pausa entre consultas Caja
-- `rebuild_only`: reconstruye y publica el Excel de un checkpoint mensual ya
+- `rebuild_only`: reconstruye y publica el Excel de un checkpoint del periodo elegido ya
   completo, refrescando datos de contacto sin abrir una sesion ni consultar Caja.
   No admite `limit`, ignora CUILs nuevos y falla si falta en las fuentes algun
   CUIL presente en el checkpoint.
@@ -208,13 +252,21 @@ Inputs manuales opcionales:
 /reports/analisis-credito/tope-descuento-caja/
   ultimo.xlsx
   historico/
-    YYYY-MM.xlsx
+    YYYY-MM-DD.xlsx  # ademas de los YYYY-MM.xlsx anteriores
   .state/
-    YYYY-MM.jsonl
+    YYYY-MM-DD.jsonl # ademas de los YYYY-MM.jsonl anteriores
 ```
 
 El `.jsonl` no es visible en Filament. Los Excel se publican mediante reemplazo
-atomico solamente cuando no quedan CUILs pendientes.
+atomico solamente cuando no quedan CUILs pendientes. La regeneracion manual por
+omision usa la fecha actual; `rebuild_only` exige un checkpoint completo de la
+fecha elegida. No se borran historicos automaticamente.
+
+Como referencia medida el 12/11/2026, el reporte completo ocupaba 4 MB; el ultimo
+Excel 572.529 bytes y el checkpoint de noviembre 706.170 bytes. Unas 60 tandas al
+anio, con el mismo universo y sin reintentos adicionales, representan unos 77 MB
+anuales mas `ultimo.xlsx`. La pausa entre consultas y el tiempo de Caja pesan mas
+que el almacenamiento de esas salidas.
 
 ### Namespace files
 

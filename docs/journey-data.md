@@ -33,6 +33,8 @@ para inferir el momento del evento: un reintento o una extracción histórica ll
 | `form.persistence_result`, `form.persistence_failed`, `form.queue_failed` | Respuesta de Kestra con IDs de ejecución/contacto/lead o fallo de persistencia |
 | `whatsapp.kestra_processed` | Acuse de procesamiento Kestra y tipo de mensaje/Flow |
 | `whatsapp.job` | Estado de inbox, envío, reconciliación, asistencia, landing y sincronización CRM después de cada intento de job |
+| `whatsapp.web_chat_route` | Prueba técnica y fases de vínculo de la sesión nativa con la solicitud web/negociación; una fase observada no demuestra autoría automática de transferencia |
+| `whatsapp.organic_menu` / `whatsapp.organic_loan` | Bienvenida, elección, reutilización o solicitud de datos y fases de derivación por IDs técnicos; sin teléfono, CUIL ni respuestas del perfil |
 | `crm.snapshot` | Ficha cruda modificada de lead, contacto o deal, incluidos campos personalizados |
 | `crm.stage` | Transición real del historial de etapas de leads y deals |
 | `crm.catalog` | Metadatos de campos de leads/contactos/deals y catálogo de estados |

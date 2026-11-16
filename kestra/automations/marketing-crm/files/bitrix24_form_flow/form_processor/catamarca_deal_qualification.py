@@ -30,6 +30,7 @@ from .deal_service import (
     DEAL_DIRECT_FIELD_MAPPINGS,
     DEAL_ENTITY_TYPE_ID,
     NoOnlineSellersError,
+    active_open_line_owners,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
     notify_distribution_supervisor,
@@ -975,6 +976,52 @@ def _split_legacy_queue_bucket(client: Any, config: AppConfig, deal: dict[str, A
     deal[config.deal.routing_bucket_field] = key
 
 
+def _guard_queued_ownership(client, config, deal, logger, processed_at):
+    """Re-read live ownership; a queue entry never overrides a human handoff."""
+    fresh = _get_deal(client, _required_int(deal.get("id"), "id"))
+    if fresh.get("stageId") != config.deal.assignment_queue_stage_id:
+        return fresh, _queue_context_result(
+            client, config, fresh, logger, action="queue_skipped", reason="deal_left_queue",
+            processed_at=processed_at, stage_id=fresh.get("stageId"),
+            assigned_by_id=_optional_int(fresh.get("assignedById")),
+            assignment_strategy="manual_assignment_preserved",
+            message="La negociacion ya salio de la cola; no se modifica.",
+        )
+    lead_id = _required_int(fresh.get("leadId"), "leadId")
+    lead = get_lead(client, lead_id, logger)
+    owners = set(active_open_line_owners(
+        client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
+        deal_id=_required_int(fresh.get("id"), "id"),
+        distributable_open_line_ids=config.deal.distributable_open_line_ids,
+    ))
+    owners.update(owner for value in (fresh.get("assignedById"), lead.get("ASSIGNED_BY_ID"))
+                  if (owner := _optional_int(value)) is not None and owner > 0)
+    owners.discard(config.deal.provisional_user_id)
+    if not owners:
+        return fresh, None
+    conflict = len(owners) > 1
+    owner = _optional_int(fresh.get("assignedById")) if conflict else next(iter(owners))
+    stage = config.deal.manual_review_stage_id if conflict else str(
+        fresh.get(config.deal.queue_target_stage_field) or config.deal.manual_review_stage_id)
+    fields = {
+        "stageId": stage,
+        config.deal.queue_action_field: "", config.deal.queue_reason_field: "",
+        config.deal.queue_target_stage_field: "", config.deal.queue_enqueued_at_field: "",
+    }
+    if not conflict:
+        fields["assignedById"] = owner
+        _assign_lead_responsible(client, lead_id=lead_id, assigned_by_id=owner, logger=logger)
+    client.call("crm.item.update", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": fresh["id"], "fields": fields})
+    return fresh, _queue_context_result(
+        client, config, fresh, logger,
+        action="queue_closed" if conflict else "queue_distributed",
+        reason="manual_assignment_conflict" if conflict else "manual_assignment_preserved",
+        processed_at=processed_at, stage_id=stage, assigned_by_id=owner,
+        assignment_strategy="manual_assignment_preserved", chat_transfer_status="manual_owner_preserved",
+        message="Se conservan responsables distintos para revision manual." if conflict else "Se conserva la asignacion existente sin transferir chats.",
+    )
+
+
 def _retry_queued_deal(
     client: Any,
     config: AppConfig,
@@ -984,6 +1031,9 @@ def _retry_queued_deal(
     *,
     within_business_hours: bool = True,
 ) -> dict[str, object]:
+    deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
+    if preserved is not None:
+        return preserved
     deal_id = _required_int(deal.get("id"), "id")
     lead_id = _required_int(deal.get("leadId"), "leadId")
     contact_id = _optional_int(deal.get("contactId"))
@@ -1017,6 +1067,9 @@ def _retry_queued_deal(
             message="El bucket continúa sin vendedores disponibles.",
         )
 
+    deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
+    if preserved is not None:
+        return preserved
     assigned_by_id = assignment.assigned_by_id
     assigned_by_name = user_display_name(
         client, assigned_by_id=assigned_by_id, logger=logger
@@ -1052,6 +1105,8 @@ def _retry_queued_deal(
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=logger,
+        preserve_existing_ownership=True,
+        provisional_user_id=config.deal.provisional_user_id,
     )
     notify_distribution_supervisor(
         client, config, deal_id=deal_id,
@@ -1092,6 +1147,9 @@ def _close_queued_deal(
     logger: Logger,
     processed_at: datetime,
 ) -> dict[str, object]:
+    deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
+    if preserved is not None:
+        return preserved
     deal_id = _required_int(deal.get("id"), "id")
     lead_id = _required_int(deal.get("leadId"), "leadId")
     _assign_lead_responsible(

@@ -27,6 +27,7 @@ import { StaticInternationalPhoneField } from "@/shared/components/ui/internatio
 import { ApiError } from "@/shared/services/http/api-error";
 import { getBirthDateBounds } from "@/shared/utils/birth-date-bounds";
 import { cn } from "@/shared/utils/cn";
+import { esCbuValido } from "@/shared/utils/cbu";
 import {
   toDisplaySocioPhone,
   toStoredSocioPhone,
@@ -144,6 +145,7 @@ export type SocioFormState = {
   apellido: string;
   categoria: SocioCategoria;
   celular: string;
+  cbu: string;
   cuit: string;
   domicilioCalle: string;
   domicilioCodigoPostal: string;
@@ -172,6 +174,7 @@ function buildInitialState(
     apellido: socio?.tipoPersona === "FISICA" ? socio.apellido : "",
     categoria: "ADHERENTE_CONVENIO",
     celular: toDisplaySocioPhone(socio?.celular),
+    cbu: "",
     cuit: socio?.cuit ?? "",
     domicilioCalle: socio?.domicilioCalle ?? "",
     domicilioCodigoPostal: socio?.domicilioCodigoPostal ?? "",
@@ -240,6 +243,7 @@ function buildDatosConvenio(state: SocioFormState): {
 
 function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
   const cuit = state.cuit.trim();
+  const cbu = toTrimmedValue(state.cbu);
   const email = toTrimmedValue(state.email);
   const celular = toTrimmedValue(state.celular)
     ? toStoredSocioPhone(state.celular)
@@ -260,6 +264,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
   if (
     cuit.length === 0 ||
     !isValidCuit(cuit) ||
+    (cbu !== undefined && !esCbuValido(cbu)) ||
     !isValidEmail(state.email.trim()) ||
     domicilioCalle.length === 0 ||
     !isValidLocalidadId(domicilioLocalidad) ||
@@ -293,6 +298,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
       ...(email ? { email } : {}),
       ...domicilioOpcional,
       ...datosConvenio,
+      ...(cbu ? { cbu } : {}),
       apellido,
       categoria: state.categoria,
       cuit,
@@ -319,6 +325,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
     ...domicilioOpcional,
     ...datosConvenio,
     categoria: state.categoria,
+    ...(cbu ? { cbu } : {}),
     cuit,
     domicilioCalle,
     domicilioLocalidad,
@@ -588,6 +595,13 @@ function SocioFormDialogContent({
     !isSaving &&
     !cuitIsDuplicate &&
     !(isPhysical && documentoIsDuplicate);
+  const cbuError =
+    !isEditing &&
+    touched("cbu") &&
+    formState.cbu.trim() &&
+    !esCbuValido(formState.cbu)
+      ? "Ingresá un CBU válido de 22 dígitos."
+      : null;
   const emailError =
     touched("email") && trimmedEmail.length > 0 && !isValidEmail(trimmedEmail)
       ? "El email ingresado no es válido."
@@ -1089,6 +1103,7 @@ function SocioFormDialogContent({
               <div className="grid gap-4 md:grid-cols-2">
                 <ModalField label="Categoría *">
                   <StyledSelect
+                    ariaLabel="Categoría del socio"
                     disabled={isSaving || Boolean(categoriaDesdeLinea)}
                     onChange={(value) => {
                       const option = SOCIO_CATEGORIA_OPTIONS.find(
@@ -1114,6 +1129,34 @@ function SocioFormDialogContent({
                   </span>
                 </ModalField>
               </div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Cuenta bancaria
+              </h3>
+              <ModalField label="CBU">
+                <Input
+                  aria-label="CBU"
+                  aria-invalid={Boolean(cbuError)}
+                  autoComplete="off"
+                  disabled={isSaving}
+                  inputMode="numeric"
+                  maxLength={22}
+                  onBlur={() => markTouched("cbu")}
+                  onChange={(event) =>
+                    setFormState((currentState) => ({
+                      ...currentState,
+                      cbu: event.target.value,
+                    }))
+                  }
+                  value={formState.cbu}
+                />
+                <span className="block min-h-[1rem] text-xs text-destructive">
+                  {cbuError}
+                </span>
+              </ModalField>
+              <p className="text-xs text-foreground-muted">
+                Opcional. Se registra como cuenta habitual del nuevo socio en
+                Vimarx.
+              </p>
             </div>
           ) : null}
 

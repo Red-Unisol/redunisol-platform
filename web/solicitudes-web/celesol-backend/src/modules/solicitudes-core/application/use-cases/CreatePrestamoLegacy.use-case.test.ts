@@ -1020,6 +1020,19 @@ function buildLinkedUseCase(overrides: Partial<ConstructorParameters<typeof Crea
   });
 }
 
+it("requires reviewing a stale AMEJUCA date before creating or replacing a loan", async () => {
+  let created = false;
+  const useCase = buildLinkedUseCase({
+    repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: null, lineaPrestamoLegacyOid: "2519", fechaPrimerVencimiento: "2026-07-31" }) }),
+    monthlyCutoffs: { resolve: async () => ({ firstDueDate: "2026-08-31", record: { period: "2026-07", cutoffDate: "2026-07-08", note: null, version: 1, updatedAt: "", updatedBy: "Analista" } }) },
+    gateway: fakeGateway({ crear: async () => { created = true; return { id: "unused" }; } }),
+  });
+  const input = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } };
+  await assert.rejects(useCase.execute(input), /corte confirmado de AMEJUCA/);
+  await assert.rejects(useCase.prepareReplacement(input), /corte confirmado de AMEJUCA/);
+  assert.equal(created, false);
+});
+
 it("uses the saved due date for initial generation and replacement, omitting it only when absent", async () => {
   for (const fecha of ["2026-12-31", null]) {
     let sent: { fechaPrimerVencimiento?: string } | undefined;

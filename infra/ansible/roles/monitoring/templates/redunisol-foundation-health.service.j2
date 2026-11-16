@@ -1,0 +1,15 @@
+[Unit]
+Description=Collect Red Unisol foundation health and backup freshness
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/redunisol-foundation/health
+User=root
+Group=root
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ foundation_monitoring_textfile_directory }}

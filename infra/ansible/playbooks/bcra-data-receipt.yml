@@ -1,0 +1,80 @@
+---
+- name: Consolidate verified copy recovery and revocation reports without touching data
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require explicit receipt generation and the reviewed source image artifact
+      ansible.builtin.assert:
+        that:
+          - bcra_data_receipt_authorized | default(false) | bool
+          - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+          - bcra_data_source_image_file | default('') | length > 0
+          - ansible_host == '168.197.51.104'
+          - ansible_port | int == 2241
+  tasks:
+    - name: Install only the reviewed report helpers outside data
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../tools/{{ item }}"
+        dest: "/srv/redunisol/platform/bcra-file-api/{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - bcra-data-manifest.py
+        - bcra-data-receipt.py
+        - bcra-data-verify.py
+
+    - name: Stage the sanitized source image artifact without copying controller credentials
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /srv/redunisol/platform/bcra-file-api/bcra-data-verify.py
+          - stage-image
+          - --image-base64
+          - "{{ lookup('ansible.builtin.file', bcra_data_source_image_file, rstrip=false) | b64encode }}"
+      register: bcra_receipt_image
+      changed_when: (bcra_receipt_image.stdout | from_json).changed | bool
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: Inspect whether an identical migration receipt already exists
+      ansible.builtin.stat:
+        path: /srv/redunisol/platform/bcra-file-api/data-migration.json
+        follow: false
+      register: bcra_receipt_before
+
+    - name: Derive the migration receipt from the persisted JSON evidence
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /srv/redunisol/platform/bcra-file-api/bcra-data-receipt.py
+          - --source-manifest
+          - /srv/redunisol/platform/bcra-file-api/source-manifest.json
+          - --destination-manifest
+          - /srv/redunisol/platform/bcra-file-api/destination-manifest.json
+          - --comparison
+          - /srv/redunisol/platform/bcra-file-api/copy-comparison.json
+          - --sqlite-report
+          - /srv/redunisol/platform/bcra-file-api/sqlite-verification.json
+          - --post-recovery-manifest
+          - /srv/redunisol/platform/bcra-file-api/post-recovery-manifest.json
+          - --source-completion
+          - /srv/redunisol/platform/bcra-file-api/source-completion.json
+          - --source-image
+          - /srv/redunisol/platform/bcra-file-api/source-image.json
+          - --revocation
+          - /srv/redunisol/platform/bcra-file-api/transfer-revocation.json
+          - --source-key-cleanup
+          - /srv/redunisol/platform/bcra-file-api/source-key-cleanup.json
+          - --output
+          - /srv/redunisol/platform/bcra-file-api/data-migration.json
+      register: bcra_receipt_result
+      changed_when: not bcra_receipt_before.stat.exists
+      when: not ansible_check_mode
+
+    - name: Report the exact receipt checksum for the application and cold backup gates
+      ansible.builtin.debug:
+        msg: "{{ bcra_receipt_result.stdout | from_json }}"
+      when: not ansible_check_mode

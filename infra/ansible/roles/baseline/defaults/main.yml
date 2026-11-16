@@ -1,0 +1,14 @@
+---
+foundation_baseline_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - iproute2
+  - jq
+  - logrotate
+  - openssh-server
+  - python3-apt
+  - rsync
+foundation_journal_max_use: 512M
+foundation_journal_keep_free: 1G
+foundation_journal_max_retention: 30day

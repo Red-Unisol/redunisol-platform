@@ -1,0 +1,17 @@
+---
+# The exact DEB version (fail2ban=<version>) must be set in reviewed inventory;
+# empty or floating values are rejected by the role contract.
+foundation_security_fail2ban_package: ""
+# SSH ports watched by fail2ban. The dedicated currently serves SSH on both.
+foundation_security_fail2ban_ssh_ports: [22, 2241]
+# An address failing maxretry times within findtime is banned for bantime.
+foundation_security_fail2ban_maxretry: 5
+foundation_security_fail2ban_findtime: 10m
+foundation_security_fail2ban_bantime: 1h
+# Never banned. Add the office public address in the reviewed inventory before applying.
+foundation_security_fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - ::1
+foundation_security_fail2ban_jail_path: /etc/fail2ban/jail.d/redunisol-security.local
+foundation_security_fail2ban_filter_path: /etc/fail2ban/filter.d/sshd.local
+foundation_security_fail2ban_policy_tool: /usr/local/libexec/redunisol-foundation/fail2ban-policy

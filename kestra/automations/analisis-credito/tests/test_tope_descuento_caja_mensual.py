@@ -5,7 +5,7 @@ import os
 import sys
 import types
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,7 +38,8 @@ from tope_descuento_caja_mensual.contact_data import (
     observations,
 )
 from tope_descuento_caja_mensual import kestra_entrypoint as entrypoint
-from tope_descuento_caja_mensual.kestra_entrypoint import resolve_run_month
+from tope_descuento_caja_mensual.kestra_entrypoint import resolve_run_month, resolve_run_period
+from tope_descuento_caja_mensual.schedule import consultation_dates, is_consultation_date
 from tope_descuento_caja_mensual.report import atomic_publish, build_workbook, save_workbook
 from tope_descuento_caja_mensual.runner import run_candidates
 from tope_descuento_caja_mensual.sources import (
@@ -505,14 +506,113 @@ class ReportTests(unittest.TestCase):
             self.assertTrue(path.exists())
 
 
+class ConsultationCalendarTests(unittest.TestCase):
+    def test_first_business_day_then_strictly_following_mondays(self):
+        self.assertEqual(consultation_dates(2026, 6), frozenset({
+            date(2026, 6, 1), date(2026, 6, 8), date(2026, 6, 16),
+            date(2026, 6, 22), date(2026, 6, 29),
+        }))  # Monday 15 is a national holiday; the next anchor remains Monday 22.
+        self.assertIn(date(2027, 1, 4), consultation_dates(2027, 1))
+        self.assertNotIn(date(2027, 1, 1), consultation_dates(2027, 1))
+
+    def test_weekend_month_start_and_rolled_monday(self):
+        self.assertEqual(consultation_dates(2026, 11), frozenset({
+            date(2026, 11, 2), date(2026, 11, 10), date(2026, 11, 16),
+            date(2026, 11, 24), date(2026, 11, 30),
+        }))
+        self.assertFalse(is_consultation_date(date(2026, 11, 9)))
+        self.assertFalse(is_consultation_date(date(2026, 11, 23)))
+        self.assertTrue(is_consultation_date(date(2026, 11, 24)))
+        self.assertTrue(is_consultation_date(date(2026, 11, 30)))
+
+    def test_consecutive_holidays_roll_across_month_and_do_not_duplicate(self):
+        blocked = frozenset({date(2026, 8, 31), date(2026, 9, 1)})
+        with patch("tope_descuento_caja_mensual.schedule.national_holidays", return_value=blocked):
+            self.assertIn(date(2026, 9, 2), consultation_dates(2026, 8))
+            self.assertIn(date(2026, 9, 2), consultation_dates(2026, 9))
+            self.assertTrue(is_consultation_date(date(2026, 9, 2)))
+            self.assertFalse(is_consultation_date(date(2026, 9, 1)))
+            self.assertTrue(is_consultation_date(date(2026, 9, 7)))
+
+    def test_period_validation_and_legacy_month(self):
+        now = datetime(2026, 11, 16)
+        self.assertEqual(resolve_run_period("", "", now), ("2026-11-16", "2026-11", "2026-11-16"))
+        self.assertEqual(resolve_run_period("", "2026-10", now), ("", "2026-10", "2026-10"))
+        for value in ("2026-11-31", "2026-1-1", "bad"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                resolve_run_period(value, "", now)
+        with self.assertRaises(ValueError):
+            resolve_run_period("2026-11-16", "2026-11", now)
+
+    def test_non_scheduled_day_exits_without_sources_or_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "REPORTS_ROOT": directory, "REPORT_SCHEDULE_DATE": "2026-11-23T08:00:00Z",
+            "REPORT_RUN_DATE": "", "REPORT_RUN_MONTH": "",
+        }), patch.object(entrypoint, "collect_candidates") as sources, patch.object(entrypoint.CajaSession, "from_env") as factory:
+            result = entrypoint.generate(datetime(2026, 11, 23))
+            self.assertEqual(result["status"], "not_scheduled")
+            self.assertEqual(result["queried_count"], 0)
+            sources.assert_not_called()
+            factory.assert_not_called()
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_scheduled_run_uses_nominal_trigger_date_in_buenos_aires(self):
+        with tempfile.TemporaryDirectory() as directory:
+            caja = FakeCaja({"20111111112": [CajaResult("20111111112", "Ana", "Perez", 100, 20)]})
+            with (
+                patch.dict(os.environ, {
+                    "REPORTS_ROOT": directory, "REPORT_MIN_CANDIDATES": "1",
+                    "REPORT_RUN_DATE": "", "REPORT_RUN_MONTH": "",
+                    "REPORT_SCHEDULE_DATE": "2026-11-25T01:00:00Z",
+                    "REPORT_REBUILD_ONLY": "false", "REPORT_LIMIT": "",
+                }),
+                patch.object(entrypoint, "collect_candidates", return_value=(
+                    [Candidate("20111111112")], SourceStats()
+                )),
+                patch.object(entrypoint.CajaSession, "from_env", return_value=caja),
+            ):
+                result = entrypoint.generate(datetime(2026, 11, 25))
+            self.assertEqual(result["run_date"], "2026-11-24")
+            self.assertEqual(result["queried_count"], 1)
+
+    def test_new_date_refreshes_cupo_and_retry_same_date_resumes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "analisis-credito" / "tope-descuento-caja"
+            Checkpoint(report_dir / ".state" / "2026-11.jsonl").append(
+                ResultRow("20111111112", "completed", "2026-11-02", disponible=1)
+            )
+            caja = FakeCaja({"20111111112": [
+                CajaResult("20111111112", "Ana", "Perez", 100, 20),
+                CajaResult("20111111112", "Ana", "Perez", 200, 20),
+            ]})
+            with patch.dict(os.environ, {
+                "REPORTS_ROOT": directory, "REPORT_MIN_CANDIDATES": "1",
+                "REPORT_RUN_DATE": "", "REPORT_RUN_MONTH": "", "REPORT_SCHEDULE_DATE": "",
+                "REPORT_REBUILD_ONLY": "false", "REPORT_LIMIT": "", "REPORT_PAUSE_SECONDS": "0",
+            }), patch.object(entrypoint, "collect_candidates", return_value=(
+                [Candidate("20111111112")], SourceStats()
+            )), patch.object(entrypoint.CajaSession, "from_env", return_value=caja):
+                first = entrypoint.generate(datetime(2026, 11, 16))
+                retry = entrypoint.generate(datetime(2026, 11, 16))
+                following = entrypoint.generate(datetime(2026, 11, 24))
+            self.assertEqual([first["queried_count"], retry["queried_count"], following["queried_count"]], [1, 0, 1])
+            self.assertEqual(caja.calls, ["20111111112", "20111111112"])
+            self.assertEqual(Checkpoint(report_dir / ".state" / "2026-11-16.jsonl").latest()["20111111112"].disponible, 100)
+            self.assertEqual(Checkpoint(report_dir / ".state" / "2026-11-24.jsonl").latest()["20111111112"].disponible, 200)
+            self.assertTrue((report_dir / "historico" / "2026-11-16.xlsx").exists())
+            self.assertTrue((report_dir / "historico" / "2026-11-24.xlsx").exists())
+            self.assertEqual(first["run_date"], "2026-11-16")
+
+
 class FlowContractTests(unittest.TestCase):
-    def test_flow_is_monthly_prod_only_and_mounts_reports(self) -> None:
+    def test_flow_calendar_is_prod_only_and_mounts_reports(self) -> None:
         flow = (
             Path(__file__).resolve().parent.parent
             / "flows"
             / "tope_descuento_caja_mensual.yaml"
         ).read_text(encoding="utf-8")
-        self.assertIn('cron: "0 5 1 * *"', flow)
+        self.assertIn('cron: "0 5 * * 1-5"', flow)
+        self.assertIn("REPORT_SCHEDULE_DATE", flow)
         self.assertIn("schedule_scope: prod_only", flow)
         self.assertIn('"/srv/redunisol-reports:/reports"', flow)
         self.assertIn("timeout: PT5H", flow)

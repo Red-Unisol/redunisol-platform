@@ -1,0 +1,29 @@
+---
+- name: Configure only the restricted BCRA tunnel account on the dedicated host
+  hosts: bcra_file_api_hosts
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    bcra_private_link_side: server
+    bcra_private_link_expected_hostname: "{{ foundation_expected_hostname }}"
+    bcra_private_link_expected_machine_id: "{{ foundation_expected_machine_id }}"
+  tasks:
+    - name: Reconcile or verify the dedicated side without changing root SSH policy
+      ansible.builtin.include_role:
+        name: bcra_private_link
+      when: bcra_private_link_action | default('plan') != 'prepare_key'
+
+- name: Configure only the private tunnel and data-free BCRA proxy on the VPS
+  hosts: bcra_migration_origins
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    bcra_private_link_side: client
+    bcra_private_link_expected_hostname: "{{ bcra_origin_expected_hostname }}"
+    bcra_private_link_expected_machine_id: "{{ bcra_origin_expected_machine_id }}"
+  roles:
+    - role: bcra_private_link

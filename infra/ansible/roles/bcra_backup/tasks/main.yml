@@ -1,0 +1,130 @@
+---
+- name: Require the reviewed initial local cold backup contract
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or (bcra_backup_apply_authorized | bool)
+      - bcra_backup_revision is match('^[0-9a-f]{40}$')
+      - bcra_backup_platform_dir == '/srv/redunisol/platform/bcra-file-api'
+      - bcra_backup_data_dir == '/srv/redunisol/state/bcra-file-api'
+      - bcra_backup_state_dir == '/var/lib/redunisol-foundation/bcra-cold-backup'
+      - bcra_backup_data_manifest_sha256 is match('^[0-9a-f]{64}$')
+      - >-
+        bcra_backup_image ==
+        'ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4'
+      - bcra_backup_read_mib_per_second | float > 0
+      - bcra_backup_read_mib_per_second | float <= 128
+      - bcra_backup_timeout_seconds | int >= 60
+      - bcra_backup_timeout_seconds | int <= 21600
+      - foundation_backups_enabled | bool
+      - foundation_backups_repository_kind == 'local'
+      - foundation_backups_repository_initialized | bool
+      - foundation_backups_key_custody_confirmed | bool
+    fail_msg: "Cold BCRA backup needs an explicit apply and the existing initialized local repository/key custody."
+
+- name: Explain the limited backup scope in check mode
+  ansible.builtin.debug:
+    msg: >-
+      This operation backs up only a stopped, validated BCRA tree to the existing SATA repository.
+      It never initializes, prunes, forgets or schedules backups and does not establish offsite protection.
+  when: ansible_check_mode
+
+- name: Back up the validated cold BCRA data only outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Validate the existing foundation repository without changing its configuration
+      ansible.builtin.import_role:
+        name: backups
+        tasks_from: validate-local
+
+    - name: Create isolated BCRA backup evidence storage
+      ansible.builtin.file:
+        path: "{{ bcra_backup_state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install the cold backup coordinator from reviewed source
+      ansible.builtin.copy:
+        src: bcra-cold-backup.py
+        dest: "{{ bcra_backup_platform_dir }}/bcra-cold-backup.py"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the same reviewed data inventory implementation
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../tools/bcra-data-manifest.py"
+        dest: "{{ bcra_backup_platform_dir }}/bcra-data-manifest.py"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the reviewed migration and backup receipt verifier
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../bcra_file_api/files/bcra-contract.py"
+        dest: "{{ bcra_backup_platform_dir }}/bcra-contract.py"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create or reconcile the real cold snapshot and isolated manifest restoration
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ bcra_backup_platform_dir }}/bcra-cold-backup.py"
+          - --apply-authorized
+          - --revision
+          - "{{ bcra_backup_revision }}"
+          - --platform-dir
+          - "{{ bcra_backup_platform_dir }}"
+          - --data-dir
+          - "{{ bcra_backup_data_dir }}"
+          - --state-dir
+          - "{{ bcra_backup_state_dir }}"
+          - --manifest-sha256
+          - "{{ bcra_backup_data_manifest_sha256 }}"
+          - --image
+          - "{{ bcra_backup_image }}"
+          - --repository
+          - "{{ foundation_backups_repository }}"
+          - --password-file
+          - "{{ foundation_backups_password_file }}"
+          - --mountpoint
+          - "{{ foundation_backups_local_mountpoint }}"
+          - --mount-uuid
+          - "{{ foundation_backups_local_mount_uuid }}"
+          - --lock-file
+          - "{{ foundation_backups_state_directory }}/job.lock"
+          - --read-mib-per-second
+          - "{{ bcra_backup_read_mib_per_second }}"
+          - --timeout-seconds
+          - "{{ bcra_backup_timeout_seconds }}"
+      async: "{{ bcra_backup_timeout_seconds | int + 600 }}"
+      poll: 10
+      register: bcra_backup_result
+      changed_when: (bcra_backup_result.stdout | from_json).created | default(false)
+      no_log: true
+
+    - name: Read the private success receipt fingerprint
+      ansible.builtin.stat:
+        path: "{{ bcra_backup_platform_dir }}/cold-backup.json"
+        checksum_algorithm: sha256
+        follow: false
+      register: bcra_backup_receipt
+
+    - name: Require a private real cold backup receipt
+      ansible.builtin.assert:
+        that:
+          - bcra_backup_receipt.stat.isreg
+          - not bcra_backup_receipt.stat.islnk
+          - bcra_backup_receipt.stat.uid == 0
+          - bcra_backup_receipt.stat.mode == '0600'
+
+    - name: Report only the initial local backup proof
+      ansible.builtin.debug:
+        msg:
+          scope: initial-cold-bcra-local
+          receipt_sha256: "{{ bcra_backup_receipt.stat.checksum }}"
+          offsite: false
+          continuous_backup: false
