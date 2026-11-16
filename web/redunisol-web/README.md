@@ -697,3 +697,17 @@ La autenticación está manejada por **Laravel Fortify** e incluye:
 ## Licencia
 
 Este proyecto está bajo la licencia MIT.
+
+## Vendedores habilitados de Bitrix
+
+En **Configuración → Vendedores habilitados** (`/admin/vendedores-bitrix`) los administradores seleccionan cuentas de Bitrix por nombre y correo. El botón **Vendedores habilitados** en Distribución Bitrix lleva a la misma pantalla. El directorio consulta `user.get`, pagina los resultados y los conserva durante cinco minutos; **Actualizar desde Bitrix** fuerza su actualización. Las cuentas inactivas se muestran identificadas y no se pueden habilitar. La consulta reutiliza `EDNA_BITRIX_WEBHOOK_URL`, ya expuesta en el compose, con alcance de usuarios que permita leer el correo.
+
+Agregar una cuenta al catálogo no le asigna líneas. Al guardar se valida otra vez su actividad contra Bitrix. Antes de confirmar una baja se muestran las líneas afectadas; se conserva su orden y se pausan las entradas de esa cuenta, también cuando provenían de valores predeterminados o del grupo legado. Volver a habilitarla no reactiva esas líneas. Las negociaciones existentes conservan su responsable.
+
+La migración `2026_11_16_140000` crea `bitrix_routing_sellers` con el catálogo vigente como carga única. Los despliegues siguientes no sobrescriben las decisiones del panel. Los correos y nombres se actualizan al guardar una selección validada. `bitrix_routing_seller_changes` registra administrador, selección anterior y nueva, líneas pausadas y fecha. Los formularios abiertos antes de otro cambio del catálogo deben recargarse para evitar sobrescrituras.
+
+La API `/api/internal/bitrix-routing` conserva su contrato de listas de IDs por línea y consulta solo la base local; no depende de Bitrix para responder. Filtra el catálogo habilitado también para valores predeterminados y el alias legado. Si Bitrix falla al administrar la lista, se conserva el catálogo existente y no se aceptan cambios.
+
+Los consumidores de Kestra con `BITRIX24_ROUTING_CONFIG_URL` configurado detienen la ejecución ante una consulta inválida o fallida; no restauran listas fijas de vendedores. Los grupos ausentes en una respuesta válida quedan vacíos. Los reintentos usan nuevamente la configuración administrada. La compatibilidad de configuración sin URL se conserva para consumidores que todavía no usan este contrato.
+
+Validación focalizada: `php artisan test --filter=BitrixRoutingConfigTest`, `php artisan test --filter=BitrixSellerRegistryTest` y la suite de `kestra/automations/marketing-crm/files/bitrix24_form_flow/tests`. La revisión visual se realiza localmente con directorio y base de datos ficticios, sin usar producción como entorno de pruebas.
