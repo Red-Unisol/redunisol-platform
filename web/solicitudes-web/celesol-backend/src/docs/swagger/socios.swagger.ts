@@ -116,6 +116,10 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             solicitudId:
+ *               type: string
+ *               format: uuid
+ *               description: Solicitud del titular. El alta usa su fecha civil en Argentina y categoria ADHERENTE CONVENIO (9). Sin solicitud, usa el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [FISICA]
@@ -160,6 +164,10 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             solicitudId:
+ *               type: string
+ *               format: uuid
+ *               description: Solicitud del titular. El alta usa su fecha civil en Argentina y categoria ADHERENTE CONVENIO (9). Sin solicitud, usa el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [JURIDICA]

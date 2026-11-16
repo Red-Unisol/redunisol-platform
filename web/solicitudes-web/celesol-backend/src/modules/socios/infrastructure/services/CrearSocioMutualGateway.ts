@@ -36,6 +36,7 @@ export type CrearSocioMutualSocAux = {
 export type CrearSocioMutualInput =
   | {
       tipoPersona: "FISICA";
+      fechaAlta: string;
       apellido: string;
       celular?: string | null;
       cbu?: string | null;
@@ -51,6 +52,7 @@ export type CrearSocioMutualInput =
     }
   | {
       tipoPersona: "JURIDICA";
+      fechaAlta: string;
       celular?: string | null;
       cbu?: string | null;
       cuit: string;
@@ -66,7 +68,7 @@ export type CrearSocioMutualResult = {
 };
 
 const CREAR_SOCIO_MUTUAL_PATH = "/api/Simulador/CrearSocioMutual";
-const HISTORIA_CATEGORIAS_FIJA = [{ Categoria: 2, Fecha: "2020-01-01" }];
+const CATEGORIA_ADHERENTE_CONVENIO = 9;
 // El legado espera un codigo numerico de tipo de documento (ej. "96" para
 // DNI), no nuestros valores locales ("DNI", "LC", etc.). Por decision de
 // negocio siempre se manda DNI, sea cual sea el tipo de documento cargado
@@ -116,7 +118,10 @@ export class CrearSocioMutualGateway {
               CuentasBancarias: input.cbu ? [{ CBU: input.cbu }] : undefined,
               Domicilio: this.buildDomicilio(input.domicilio),
               Email: input.email ?? undefined,
-              HistoriaCategorias: HISTORIA_CATEGORIAS_FIJA,
+              HistoriaCategorias: [{
+                Categoria: CATEGORIA_ADHERENTE_CONVENIO,
+                Fecha: input.fechaAlta,
+              }],
               Observaciones: input.observaciones ?? undefined,
               SocAux: this.buildSocAux(input.socAux),
             },

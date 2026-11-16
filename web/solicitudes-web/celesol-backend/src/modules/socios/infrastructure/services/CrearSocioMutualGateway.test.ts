@@ -26,6 +26,7 @@ describe("CrearSocioMutualGateway", () => {
 
     const result = await gateway.crear({
       tipoPersona: "FISICA",
+      fechaAlta: "2026-10-09",
       apellido: "Fernandez",
       celular: "3492654322",
       cbu: "0110000699111100000248",
@@ -63,7 +64,7 @@ describe("CrearSocioMutualGateway", () => {
         },
         Email: "marina@email.com",
         FechaDeNacimiento: "1996-05-14",
-        HistoriaCategorias: [{ Categoria: 2, Fecha: "2020-01-01" }],
+        HistoriaCategorias: [{ Categoria: 9, Fecha: "2026-10-09" }],
         Nombre: "Marina",
         NroDoc: "39876543",
         Observaciones: "DEPOSITO MP",
@@ -90,6 +91,7 @@ describe("CrearSocioMutualGateway", () => {
     for (const sexo of ["0", "1", "3", "Masculino"]) {
       await gateway.crear({
         tipoPersona: "FISICA",
+      fechaAlta: "2026-10-09",
         apellido: "Fernandez",
         cuit: "27398765430",
         domicilio: { calle: "San Martin", codigoPostal: "", localidad: "12", nroPuerta: "" },
@@ -119,6 +121,7 @@ describe("CrearSocioMutualGateway", () => {
 
     const result = await gateway.crear({
       tipoPersona: "JURIDICA",
+      fechaAlta: "2026-10-09",
       celular: "3492987654",
       cuit: "30712345671",
       domicilio: {
@@ -144,7 +147,7 @@ describe("CrearSocioMutualGateway", () => {
           NroPuerta: "1500",
         },
         Email: "contacto@elalba.com.ar",
-        HistoriaCategorias: [{ Categoria: 2, Fecha: "2020-01-01" }],
+        HistoriaCategorias: [{ Categoria: 9, Fecha: "2026-10-09" }],
         Nombre: "",
         Sexo: "PersonaJuridica",
       },
@@ -168,6 +171,7 @@ describe("CrearSocioMutualGateway", () => {
 
     await gateway.crear({
       tipoPersona: "JURIDICA",
+      fechaAlta: "2026-10-09",
       cuit: "30712345671",
       domicilio: {
         calle: "Artigas 143 Alberdi",
@@ -199,6 +203,7 @@ describe("CrearSocioMutualGateway", () => {
     );
     const base = {
       tipoPersona: "JURIDICA" as const,
+      fechaAlta: "2026-10-09",
       cuit: "30712345671",
       domicilio: {
         calle: "Belgrano",
@@ -244,6 +249,7 @@ describe("CrearSocioMutualGateway", () => {
       () =>
         gateway.crear({
           tipoPersona: "FISICA",
+      fechaAlta: "2026-10-09",
           apellido: "Fernandez",
           cuit: "27398765430",
           domicilio: {
@@ -280,6 +286,7 @@ describe("CrearSocioMutualGateway", () => {
       () =>
         gateway.crear({
           tipoPersona: "FISICA",
+      fechaAlta: "2026-10-09",
           apellido: "Fernandez",
           cuit: "27398765430",
           domicilio: {
