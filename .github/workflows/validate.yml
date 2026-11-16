@@ -161,7 +161,7 @@ jobs:
         run: python -m unittest kestra.tools.tests.test_ci_image_tags
 
       - name: Run deploy tooling tests
-        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy
+        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy kestra.tools.tests.test_deploy_log_defaults
 
       - name: Run alert sweep tests
         run: python -m pytest kestra/tools/tests/test_alerta_barrido.py -q

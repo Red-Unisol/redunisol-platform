@@ -55,16 +55,22 @@ jobs:
           filters: |
             marketing-crm:
               - 'kestra/automations/marketing-crm/**'
+              - 'kestra/tools/deploy_kestra.py'
             analisis-credito:
               - 'kestra/automations/analisis-credito/**'
+              - 'kestra/tools/deploy_kestra.py'
             ahorros-amt:
               - 'kestra/automations/ahorros-amt/**'
+              - 'kestra/tools/deploy_kestra.py'
             cobranzas:
               - 'kestra/automations/cobranzas/**'
+              - 'kestra/tools/deploy_kestra.py'
             contabilidad:
               - 'kestra/automations/contabilidad/**'
+              - 'kestra/tools/deploy_kestra.py'
             system:
               - 'kestra/platform/system/**'
+              - 'kestra/tools/deploy_kestra.py'
 
   deploy-prod-marketing-crm:
     runs-on: ubuntu-latest
