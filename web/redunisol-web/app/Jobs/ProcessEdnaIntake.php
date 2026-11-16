@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Services\EdnaFreshIntake;
 use App\Services\EdnaIntake;
 use App\Services\EdnaIntakeBinding;
+use App\Services\EdnaNativeIntake;
 use App\Services\EdnaOrganicProfile;
 use App\Services\JourneyLedger;
 use Carbon\CarbonImmutable;
@@ -53,6 +55,18 @@ class ProcessEdnaIntake implements ShouldQueue
         $binding = null;
         $entryContext = null;
         if ($service->isChannelContract($send)) {
+            if (app(EdnaFreshIntake::class)->applies($send)) {
+                $binding = app(EdnaIntakeBinding::class)->verified($send);
+                if (! $binding) {
+                    $this->awaitBinding();
+
+                    return;
+                } elseif (($binding['version'] ?? null) === 2) {
+                    app(EdnaNativeIntake::class)->process($request, $send, $binding);
+
+                    return;
+                }
+            }
             $entryContext = $service->entryContext($send);
             try {
                 // Only the separate binding job may read Bitrix. Keeping this

@@ -1,5 +1,47 @@
 # Intake unificado de WhatsApp Ventas
 
+## Corrección de vinculación para ingresos nuevos (16/11/2026)
+
+El deploy productivo ejecuta `edna:intake-cutover activate` después de verificar
+las imágenes de todos los workers y la salud HTTP. El primer llamado conserva
+en `edna_intake_cutovers` el máximo ID del inbox y la fecha UTC. Los llamados
+posteriores no cambian ese corte ni encolan recuperaciones. Sólo los eventos con
+ID posterior y fecha original Edna posterior al corte usan la nueva resolución;
+un callback antiguo entregado tarde tampoco se considera nuevo. La migración
+crea tablas, sin modificar registros ni reencolar casos anteriores.
+
+Para esos ingresos, `EdnaMessageBinding` prueba mensaje, sesión y actividad
+nativos. Un prospecto original sin contacto ni caso anterior conserva el contrato
+de enriquecimiento habitual, incluyendo ahora el `activity_id` real que exige el
+control de pauta. Contactos y gestiones existentes usan una prueba local versión
+2, sin reservar nuevamente el `lead_id` único de un caso anterior.
+
+Una respuesta v3 real completada para una identidad existente se procesa mediante
+el contrato de perfil confirmado ya desplegado (`organic-profile-reuse-v1`), con
+proveniencia `edna_intake_request` y su fecha real. El transporte Flow y su respuesta
+siguen en sus registros originales: no se fabrica un menú, una elección ni otro
+envío. Se conserva la atribución del ingreso. El consumidor comprueba nuevamente
+CUIL, mensaje nativo, identidad y gestiones vigentes antes de cualquier escritura.
+Las ambigüedades y decisiones comerciales protegidas siguen en revisión.
+
+Si devuelve una única negociación ya asignada, `edna_intake_chat_routes` conserva
+prueba, destino, intención, acuse y resultado. La transferencia comparte el lock
+por chat con el menú y el puente web. Se releen negociación e identidad, y la
+atención humana se comprueba otra vez inmediatamente antes del único POST. Un
+resultado incierto sólo se concilia por lecturas; `observed` o `not_needed` no
+prueban autoría automática. El journal usa `whatsapp.native_intake_route` y exige
+la misma correlación con el evento nativo para atribuir una derivación.
+
+Un recibo web que sólo comparte teléfono ya no intercepta estos nuevos mensajes
+sin referencia: pasan al menú o a pauta y verifican la identidad por el recorrido
+correspondiente. Una referencia explícita inválida sigue en revisión. Esto no
+selecciona una solicitud por teléfono ni modifica los recibos históricos.
+
+El cambio no restablece callbacks que el proveedor no esté entregando. Para
+verificar el corte: `php artisan edna:intake-cutover status`. Un rollback debe
+conservar los consumidores nuevos mientras existan jobs `RouteEdnaIntakeChat`;
+no borrar el corte ni reactivar solicitudes anteriores como forma de recuperación.
+
 ## Alcance y escritor único
 
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
