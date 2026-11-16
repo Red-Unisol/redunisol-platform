@@ -49,6 +49,10 @@ export function createSociosRouter(
       repository: sociosRepository,
     });
   const createSocioUseCase = new CreateSocioUseCase({
+    findSolicitudParaAlta: (id) => prisma.solicitud.findUnique({
+      where: { id },
+      select: { createdAt: true, titular: { select: { cuit: true, nroDocumento: true } } },
+    }),
     crearSocioMutualGateway,
     repository: sociosRepository,
   });

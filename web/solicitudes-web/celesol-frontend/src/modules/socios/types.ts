@@ -91,6 +91,7 @@ export type CreateSocioRequest =
       razonSocial?: never;
       sexo: string;
       socAux?: CreateSocioSocAux;
+      solicitudId?: string;
       tipoDocumento: string;
       tipoPersona: "FISICA";
     }
@@ -111,6 +112,7 @@ export type CreateSocioRequest =
       razonSocial: string;
       sexo?: never;
       socAux?: CreateSocioSocAux;
+      solicitudId?: string;
       tipoDocumento?: never;
       tipoPersona: "JURIDICA";
     };

@@ -8,6 +8,7 @@ export type CreateSocioSocAuxDto = {
 export type CreateSocioDto =
   | {
       tipoPersona: "FISICA";
+      solicitudId?: string;
       apellido: string;
       celular?: string;
       cbu?: string;
@@ -27,6 +28,7 @@ export type CreateSocioDto =
     }
   | {
       tipoPersona: "JURIDICA";
+      solicitudId?: string;
       celular?: string;
       cbu?: string;
       cuit: string;

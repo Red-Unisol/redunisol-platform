@@ -76,6 +76,7 @@ const personaFisicaSchema = z
     observaciones: observacionesSchema,
     sexo: trimmedRequiredString,
     socAux: socAuxSchema,
+    solicitudId: z.string().uuid().optional(),
     tipoDocumento: trimmedRequiredString,
     tipoPersona: z.literal("FISICA"),
   })
@@ -94,6 +95,7 @@ const personaJuridicaSchema = z
     observaciones: observacionesSchema,
     razonSocial: trimmedRequiredString,
     socAux: socAuxSchema,
+    solicitudId: z.string().uuid().optional(),
     tipoPersona: z.literal("JURIDICA"),
   })
   .strict();

@@ -513,4 +513,14 @@ describe("createSocioBodySchema", () => {
       false,
     );
   });
+  it("accepts a solicitud UUID but rejects client-supplied dates and categories", () => {
+    const base = { tipoPersona: "JURIDICA", razonSocial: "Empresa de prueba",
+      cuit: "30123456789", domicilioCalle: "Prueba", domicilioLocalidad: "12" };
+    const solicitudId = "a9358cdd-93f8-40f6-969d-a502b81de53f";
+    assert.equal(createSocioBodySchema.parse({ ...base, solicitudId }).solicitudId, solicitudId);
+    for (const extra of [{ solicitudId: "invalido" }, { fechaAlta: "2020-01-01" }, { categoria: 2 }]) {
+      assert.equal(createSocioBodySchema.safeParse({ ...base, ...extra }).success, false);
+    }
+  });
+
 });

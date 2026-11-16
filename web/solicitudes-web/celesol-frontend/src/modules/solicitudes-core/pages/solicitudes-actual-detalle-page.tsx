@@ -4629,7 +4629,10 @@ export function SolicitudesActualDetallePage() {
   async function handleCreateSocio(
     payload: CreateSocioRequest | UpdateSocioRequest,
   ) {
-    await createSocioMutation.mutateAsync(payload as CreateSocioRequest);
+    await createSocioMutation.mutateAsync({
+      ...(payload as CreateSocioRequest),
+      solicitudId,
+    });
 
     await queryClient.invalidateQueries({
       queryKey: solicitudesCoreQueryKeys.transitions(solicitudId),
