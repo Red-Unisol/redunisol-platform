@@ -2,6 +2,10 @@
 
 Dominio para automatizaciones de cobranzas y mora.
 
+## Integraciones en preparación
+
+- [Pago360: cuotas vencidas](pago360-cuotas.md): plan coordinado con el portal y primer núcleo de controles, sin adaptadores ni escritura real habilitados.
+
 ## Flows
 
 - `bitrix_crm_negociaciones`: webhook principal que persiste las acciones futuras y programa un subflow para cada una.
