@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SocioFormDialog } from "@/modules/socios/components/socio-form-dialog";
 import { buildSocioPrefillFromTitular } from "@/modules/solicitudes-core/utils/build-socio-prefill-from-titular";
-import type {
-  CreateSocioRequest,
-  UpdateSocioRequest,
+import {
+  socioCategoriaPorLinea,
+  type CreateSocioRequest,
+  type UpdateSocioRequest,
 } from "@/modules/socios/types";
 import { PRODUCTION_SOLICITUD } from "./production-fixtures";
 
 export function App() {
+  const linea = new URLSearchParams(window.location.search).get("linea");
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<
@@ -51,6 +53,14 @@ export function App() {
         </pre>
       ) : null}
       <SocioFormDialog
+        categoriaDesdeLinea={
+          linea === null
+            ? undefined
+            : {
+                categoria: socioCategoriaPorLinea(linea),
+                lineaDescripcion: linea,
+              }
+        }
         initialValues={initialValues}
         isSaving={false}
         onOpenChange={setOpen}

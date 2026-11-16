@@ -6,7 +6,8 @@ export type CreateSolicitudTitularInput = {
   cuit?: string;
   domicilioCalle?: string;
   email?: string;
-  localidad?: string;
+  // ID de la localidad en Vimarx; el nombre lo resuelve el backend.
+  localidadId?: string;
   estadoCivil?: string;
   fechaNacimiento?: string;
   nacionalidad?: string;

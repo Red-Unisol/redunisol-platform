@@ -116,10 +116,14 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             categoria:
+ *               type: string
+ *               enum: [ADHERENTE_CONVENIO, AMEJUCA, MUDON]
+ *               description: Categoria inicial. Por defecto ADHERENTE_CONVENIO (9). AMEJUCA usa 48 y MUDON usa 78.
  *             solicitudId:
  *               type: string
  *               format: uuid
- *               description: Solicitud del titular. El alta usa su fecha civil en Argentina y categoria ADHERENTE CONVENIO (9). Sin solicitud, usa el dia actual de Argentina.
+ *               description: Solicitud del titular para validar su identidad. La fecha del alta es siempre el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [FISICA]
@@ -164,10 +168,14 @@
  *             - domicilioCalle
  *             - domicilioLocalidad
  *           properties:
+ *             categoria:
+ *               type: string
+ *               enum: [ADHERENTE_CONVENIO, AMEJUCA, MUDON]
+ *               description: Categoria inicial. Por defecto ADHERENTE_CONVENIO (9). AMEJUCA usa 48 y MUDON usa 78.
  *             solicitudId:
  *               type: string
  *               format: uuid
- *               description: Solicitud del titular. El alta usa su fecha civil en Argentina y categoria ADHERENTE CONVENIO (9). Sin solicitud, usa el dia actual de Argentina.
+ *               description: Solicitud del titular para validar su identidad. La fecha del alta es siempre el dia actual de Argentina.
  *             tipoPersona:
  *               type: string
  *               enum: [JURIDICA]

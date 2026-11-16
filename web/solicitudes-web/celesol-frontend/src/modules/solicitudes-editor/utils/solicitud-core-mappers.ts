@@ -107,7 +107,7 @@ export function mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
       email: toTrimmedString(values.email),
       estadoCivil: toTrimmedString(values.estadoCivil),
       fechaNacimiento: toTrimmedString(values.fechaNacimiento),
-      localidad: toTrimmedString(values.localidad),
+      localidadId: toTrimmedString(values.localidadId),
       nacionalidad: toTrimmedString(values.nacionalidad),
       nombre: toRequiredTrimmedString(values.nombre),
       nroDocumento: toRequiredTrimmedString(values.noDocumento),

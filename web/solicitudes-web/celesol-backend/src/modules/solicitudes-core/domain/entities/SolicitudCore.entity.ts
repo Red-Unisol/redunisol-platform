@@ -148,6 +148,9 @@ export type SolicitudCoreTitular = {
   domicilioCalle: string | null;
   email: string | null;
   localidad: string | null;
+  // ID de la localidad en Vimarx; `localidad` es su nombre. NULL en las
+  // solicitudes anteriores al 12/11/2026, que solo guardaban el nombre.
+  localidadId?: string | null;
   nombre: string | null;
   personaExpuestaPoliticamente?: boolean | null;
   nroDocumento: string | null;

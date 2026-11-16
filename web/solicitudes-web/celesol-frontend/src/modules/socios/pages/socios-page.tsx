@@ -9,7 +9,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
@@ -34,14 +34,23 @@ import type {
   Socio,
   UpdateSocioRequest,
 } from "@/modules/socios/types";
+import { ListaPaginacion } from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
+import { LISTA_HEADER_CELL } from "@/modules/solicitudes-core/utils/lista-solicitudes-formato";
+import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
 import { Button } from "@/shared/components/ui/button";
-import { Input } from "@/shared/components/ui/input";
-import { SolicitudesTablePagination } from "@/modules/solicitudes-shared/components/solicitudes-table-pagination";
-import { TableEmptyState } from "@/shared/components/ui/table-empty-state";
-import { TableLoader } from "@/shared/components/ui/table-loader";
 import { ApiError } from "@/shared/services/http/api-error";
+import { cn } from "@/shared/utils/cn";
 
-const PAGE_SIZE_OPTIONS = [10, 20, 30, 50];
+const PAGE_SIZE = 30;
+
+const BUSCADOR_ICONO =
+  "pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-foreground-muted";
+const BUSCADOR_INPUT =
+  "h-10 w-full rounded-full border border-border bg-surface pr-4 pl-10 text-sm outline-none placeholder:text-foreground-muted focus:border-input-focus focus:ring-2 focus:ring-input-focus/20";
+const BOTON_PRINCIPAL =
+  "h-10 rounded-full bg-verde px-5 font-semibold text-white hover:bg-verde/90";
+const ACCION_FILA =
+  "inline-flex size-7 items-center justify-center rounded-full border border-border bg-surface text-foreground-secondary transition hover:border-verde hover:text-verde focus-visible:ring-2 focus-visible:ring-verde/40 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50";
 
 type DialogState =
   | {
@@ -61,10 +70,6 @@ function getSocioDisplayName(socio: Socio) {
   return socio.tipoPersona === "FISICA"
     ? `${socio.apellido} ${socio.nombre}`.trim()
     : socio.razonSocial;
-}
-
-function getSocioTypeLabel(socio: Socio) {
-  return socio.tipoPersona === "FISICA" ? "Persona física" : "Persona jurídica";
 }
 
 // DNI (7 u 8 digitos) o CUIL/CUIT (11), sin separadores; null si no lo es.
@@ -101,18 +106,36 @@ function formatCivilDate(value: string) {
   }).format(parsed);
 }
 
+function ListaVacia({
+  titulo,
+  children,
+}: {
+  titulo: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex h-full min-h-64 flex-col items-center justify-center gap-3 px-6 text-center">
+      <span className="inline-flex size-12 items-center justify-center rounded-full bg-verde/10 text-verde">
+        <Users className="size-6" />
+      </span>
+      <p className="font-semibold text-foreground">{titulo}</p>
+      {children}
+    </div>
+  );
+}
+
 export function SociosPage() {
   const queryClient = useQueryClient();
   const [dialogState, setDialogState] = useState<DialogState | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
 
   const sessionQuery = useAuthSessionQuery();
   const canCreateNewSocio = canCreateSocio(sessionQuery.data);
   const canEditExistingSocio = canEditSocio(sessionQuery.data);
   const canDeleteExistingSocio = canDeleteSocio(sessionQuery.data);
+  const mostrarAcciones = canEditExistingSocio || canDeleteExistingSocio;
   // Un vendedor no ve el padron: busca un socio por DNI o CUIL/CUIT y ve
   // solo ese. El backend aplica la misma regla.
   const esVendedor = isVendedor(sessionQuery.data);
@@ -125,7 +148,7 @@ export function SociosPage() {
     enabled:
       sessionQuery.isSuccess && (!esVendedor || documentoBuscado !== null),
     page,
-    pageSize,
+    pageSize: PAGE_SIZE,
     search: esVendedor ? (documentoBuscado ?? undefined) : searchTerm,
   });
   const createSocioMutation = useMutation({
@@ -169,8 +192,6 @@ export function SociosPage() {
     updateSocioMutation.isPending ||
     deleteSocioMutation.isPending ||
     syncSociosMutation.isPending;
-
-  const pageCount = Math.max(1, Math.ceil(totalItems / pageSize));
 
   function handleSearchChange(value: string) {
     setSearchTerm(value);
@@ -245,7 +266,7 @@ export function SociosPage() {
       const message =
         error instanceof ApiError || error instanceof Error
           ? error.message
-          : "No se pudo actualizar los socios desde Vimax.";
+          : "No se pudieron actualizar los socios desde Vimarx.";
 
       toast.error(message, {
         duration: 3500,
@@ -291,227 +312,226 @@ export function SociosPage() {
   }
 
   return (
-    <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
-      <header className="border-b border-border px-4 py-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex size-12 items-center justify-center rounded-full bg-primary/12 text-primary">
-              <Users className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-[1.85rem] leading-none font-semibold text-foreground">
-                Socios
-              </h1>
-              <p className="max-w-2xl text-sm leading-6 text-foreground-secondary">
-                {esVendedor
-                  ? "Buscá un socio por su DNI o CUIL/CUIT."
-                  : "Administra personas físicas y jurídicas desde esta pantalla."}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {esVendedor ? null : (
-              <Button
-                disabled={isLoading || isMutating}
-                onClick={() => setConfirmState({ type: "sync-vimax" })}
-                type="button"
-                variant="outline"
-              >
-                <RefreshCw className="size-4" />
-                {syncSociosMutation.isPending
-                  ? "Actualizando... (puede tardar unos minutos)"
-                  : "Actualizar desde Vimax"}
-              </Button>
-            )}
-            {canCreateNewSocio ? (
-              <Button
-                disabled={isLoading || isMutating}
-                onClick={openCreateDialog}
-                type="button"
-              >
-                <Plus className="size-4" />
-                Nuevo socio
-              </Button>
-            ) : null}
-          </div>
-        </div>
+    <article className="flex h-full min-h-0 flex-col gap-3 p-2 md:p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {canCreateNewSocio ? (
+          <Button
+            className={BOTON_PRINCIPAL}
+            disabled={isLoading || isMutating}
+            onClick={openCreateDialog}
+            type="button"
+          >
+            <Plus className="size-4" />
+            Nuevo socio
+          </Button>
+        ) : null}
+        {esVendedor ? null : (
+          <Button
+            className="h-10 rounded-full bg-surface px-4 text-foreground"
+            disabled={isLoading || isMutating}
+            onClick={() => setConfirmState({ type: "sync-vimax" })}
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw
+              className={cn(
+                "size-4",
+                syncSociosMutation.isPending && "animate-spin",
+              )}
+            />
+            {syncSociosMutation.isPending
+              ? "Actualizando desde Vimarx…"
+              : "Actualizar desde Vimarx"}
+          </Button>
+        )}
 
         {esVendedor ? (
           <form
-            className="mt-3 flex max-w-md flex-col gap-1.5"
+            className="ml-auto flex w-full flex-col gap-1 sm:w-auto"
             onSubmit={(event) => {
               event.preventDefault();
               buscarDocumento();
             }}
           >
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-muted" />
-                <Input
-                  className="pl-8"
+            <div className="flex items-center gap-2">
+              <label className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
+                <span className="sr-only">DNI o CUIL/CUIT del socio</span>
+                <Search className={BUSCADOR_ICONO} />
+                <input
+                  className={BUSCADOR_INPUT}
                   inputMode="numeric"
                   onChange={(event) => handleSearchChange(event.target.value)}
                   placeholder="DNI o CUIL/CUIT del socio"
                   value={searchTerm}
                 />
-              </div>
-              <Button disabled={!searchTerm.trim()} type="submit">
+              </label>
+              <Button
+                className={BOTON_PRINCIPAL}
+                disabled={!searchTerm.trim()}
+                type="submit"
+              >
                 Buscar
               </Button>
             </div>
             {documentoError ? (
-              <p className="text-xs text-destructive">{documentoError}</p>
+              <p className="px-4 text-xs text-destructive">{documentoError}</p>
             ) : null}
           </form>
         ) : (
-          <div className="relative mt-3 max-w-sm">
-            <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-muted" />
-            <Input
-              className="pl-8"
-              onChange={(event) => handleSearchChange(event.target.value)}
-              placeholder="Buscar por nombre, razón social o DNI/CUIT..."
-              value={searchTerm}
-            />
+          <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+            <label className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
+              <span className="sr-only">
+                Buscar por nombre, razón social, DNI o CUIT
+              </span>
+              <Search className={BUSCADOR_ICONO} />
+              <input
+                className={BUSCADOR_INPUT}
+                onChange={(event) => handleSearchChange(event.target.value)}
+                placeholder="Buscar por nombre, DNI o CUIT"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
           </div>
         )}
-      </header>
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+      <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-surface shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {esVendedor && documentoBuscado === null ? (
-          <TableEmptyState message="Ingresá el DNI o CUIL/CUIT del socio para ver sus datos." />
+          <ListaVacia titulo="Ingresá el DNI o CUIL/CUIT del socio para ver sus datos" />
         ) : isLoading ? (
-          <TableLoader className="min-h-[240px]" label="Cargando socios..." />
+          <SolicitudesContentLoader />
         ) : hasLoadError ? (
-          <div className="flex flex-col items-start gap-3 rounded-md border border-border bg-background p-4">
-            <p className="text-sm text-destructive">
-              No se pudieron cargar los socios.
-            </p>
+          <ListaVacia titulo="No se pudieron cargar los socios">
             <Button
+              className="rounded-full"
               onClick={() => void sociosQuery.refetch()}
-              size="sm"
               type="button"
               variant="outline"
             >
               Reintentar
             </Button>
-          </div>
+          </ListaVacia>
         ) : socios.length === 0 ? (
-          <TableEmptyState
-            message={
+          <ListaVacia
+            titulo={
               esVendedor
-                ? "No encontramos un socio con ese DNI o CUIL/CUIT."
-                : "No hay socios para mostrar."
+                ? "No encontramos un socio con ese DNI o CUIL/CUIT"
+                : searchTerm.trim()
+                  ? "No hay socios que coincidan con la búsqueda"
+                  : "No hay socios para mostrar"
             }
           />
         ) : (
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="min-w-full divide-y divide-border text-sm">
-              <thead className="bg-background">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Tipo
+          <table className="w-full min-w-[46rem] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className={LISTA_HEADER_CELL}>Socio</th>
+                <th className={LISTA_HEADER_CELL}>CUIT</th>
+                <th className={LISTA_HEADER_CELL}>Nacimiento</th>
+                <th className={LISTA_HEADER_CELL}>Contacto</th>
+                {mostrarAcciones ? (
+                  <th className={LISTA_HEADER_CELL}>
+                    <span className="sr-only">Acciones</span>
                   </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    CUIT
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Nombre / razón social
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Documento
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Fecha nacimiento
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Email
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Celular
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {socios.map((socio) => (
-                  <tr className="bg-surface" key={socio.id}>
-                    <td className="px-3 py-2 text-foreground">
-                      {getSocioTypeLabel(socio)}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">{socio.cuit}</td>
-                    <td className="px-3 py-2 text-foreground">
-                      {getSocioDisplayName(socio)}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
+                ) : null}
+              </tr>
+            </thead>
+            <tbody>
+              {socios.map((socio) => (
+                <tr
+                  className="transition-colors hover:bg-verde/5 [&>td]:border-t [&>td]:border-border-soft [&:last-child>td]:border-b"
+                  key={socio.id}
+                >
+                  <td className="min-w-48 px-3 py-2.5">
+                    <p className="font-semibold text-foreground">
+                      {getSocioDisplayName(socio) || "Sin nombre"}
+                    </p>
+                    <p className="text-xs text-foreground-secondary tabular-nums">
                       {socio.tipoPersona === "FISICA"
                         ? `${socio.tipoDocumento} ${socio.nroDocumento}`
-                        : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
-                      {socio.tipoPersona === "FISICA"
-                        ? formatCivilDate(socio.fechaDeNacimiento)
-                        : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
-                      {socio.email ?? "-"}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
-                      {socio.celular ?? "-"}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
-                      <div className="flex flex-wrap gap-2">
+                        : "Persona jurídica"}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
+                    {socio.cuit || "—"}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
+                    {socio.tipoPersona === "FISICA" && socio.fechaDeNacimiento
+                      ? formatCivilDate(socio.fechaDeNacimiento)
+                      : "—"}
+                  </td>
+                  <td className="max-w-64 px-3 py-2.5">
+                    {socio.celular || socio.email ? (
+                      <>
+                        {socio.celular ? (
+                          <p className="text-foreground tabular-nums">
+                            {socio.celular}
+                          </p>
+                        ) : null}
+                        {socio.email ? (
+                          <p
+                            className="truncate text-xs text-foreground-secondary"
+                            title={socio.email}
+                          >
+                            {socio.email}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-foreground-muted">—</span>
+                    )}
+                  </td>
+                  {mostrarAcciones ? (
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
                         {canEditExistingSocio ? (
-                          <Button
+                          <button
+                            aria-label={`Editar a ${getSocioDisplayName(socio)}`}
+                            className={ACCION_FILA}
                             disabled={isMutating}
                             onClick={() => openEditDialog(socio)}
-                            size="sm"
+                            title="Editar"
                             type="button"
-                            variant="outline"
                           >
                             <Pencil className="size-3.5" />
-                            Editar
-                          </Button>
+                          </button>
                         ) : null}
                         {canDeleteExistingSocio ? (
-                          <Button
+                          <button
+                            aria-label={`Eliminar a ${getSocioDisplayName(socio)}`}
+                            className={cn(
+                              ACCION_FILA,
+                              "hover:border-destructive hover:text-destructive",
+                            )}
                             disabled={isMutating}
                             onClick={() =>
                               setConfirmState({ type: "delete-socio", socio })
                             }
-                            size="sm"
+                            title="Eliminar"
                             type="button"
-                            variant="destructive"
                           >
                             <Trash2 className="size-3.5" />
-                            Eliminar
-                          </Button>
+                          </button>
                         ) : null}
                       </div>
                     </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
       {esVendedor ? null : (
-        <SolicitudesTablePagination
-          currentPage={page}
-          itemLabel="socios"
+        <ListaPaginacion
+          nombres={{ singular: "socio", plural: "socios" }}
           onPageChange={setPage}
-          onPageSizeChange={(nextPageSize) => {
-            setPageSize(nextPageSize);
-            setPage(1);
-          }}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          totalItems={totalItems}
+          page={page}
+          pageSize={PAGE_SIZE}
+          rowsCount={socios.length}
+          total={totalItems}
         />
       )}
 
@@ -536,7 +556,7 @@ export function SociosPage() {
         description={
           confirmState?.type === "delete-socio"
             ? `Vas a eliminar a ${getSocioDisplayName(confirmState.socio)}. ¿Querés continuar?`
-            : "Puede tardar varios minutos, no cierres esta pestaña mientras se ejecuta."
+            : "Puede tardar varios minutos. No cierres esta pestaña mientras se ejecuta."
         }
         isConfirming={
           confirmState?.type === "delete-socio"
@@ -563,7 +583,7 @@ export function SociosPage() {
         title={
           confirmState?.type === "delete-socio"
             ? "Eliminar socio"
-            : "Actualizar desde Vimax"
+            : "Actualizar desde Vimarx"
         }
         variant={
           confirmState?.type === "delete-socio" ? "destructive" : "default"

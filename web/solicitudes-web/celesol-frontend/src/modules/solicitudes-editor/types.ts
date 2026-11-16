@@ -56,6 +56,8 @@ export type NuevaSolicitudFormValues = {
   lineaPrestamoLegacyOid: string;
 
   localidad: string;
+  // ID de Vimarx de la localidad (alta de solicitud nueva).
+  localidadId: string;
 
   localidadLaboral: string;
 

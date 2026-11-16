@@ -12,6 +12,8 @@ import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamo
 import type { WorkflowStateCatalog } from "../../domain/services/WorkflowStateCatalog";
 import type { ConsultarCredixsaAlCrearSolicitud } from "../services/ConsultarCredixsaAlCrearSolicitud";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
+import type { LocalidadCatalog } from "../../domain/services/LocalidadCatalog";
+import { resolveTitularLocalidad } from "../services/ResolveTitularLocalidad";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
@@ -19,6 +21,7 @@ type Dependencies = {
     ConsultarCredixsaAlCrearSolicitud,
     "execute"
   >;
+  localidadCatalog?: LocalidadCatalog;
   repository: SolicitudesCoreRepository;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
@@ -36,8 +39,10 @@ export class CreateSolicitudUseCase {
     "execute"
   >;
   private readonly workflowStateCatalog: WorkflowStateCatalog;
+  private readonly localidadCatalog?: LocalidadCatalog;
 
   constructor(dependencies: Dependencies) {
+    this.localidadCatalog = dependencies.localidadCatalog;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.consultarCredixsaAlCrearSolicitud =
       dependencies.consultarCredixsaAlCrearSolicitud;
@@ -93,6 +98,11 @@ export class CreateSolicitudUseCase {
       lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
       montoAFinanciar: efectivos.montoAFinanciar,
     });
+
+    const titularLocalidad = await resolveTitularLocalidad(
+      this.localidadCatalog,
+      input.titular.localidadId,
+    );
 
     const solicitud = await this.repository.create({
       createdBy: input.createdBy,
@@ -185,7 +195,8 @@ export class CreateSolicitudUseCase {
         email: input.titular.email ?? null,
         estadoCivil: input.titular.estadoCivil ?? null,
         fechaNacimiento: input.titular.fechaNacimiento ?? null,
-        localidad: input.titular.localidad ?? null,
+        localidad: titularLocalidad?.localidad ?? null,
+        localidadId: titularLocalidad?.localidadId ?? null,
         nacionalidad: input.titular.nacionalidad ?? null,
         nombre: input.titular.nombre,
         nroDocumento: input.titular.nroDocumento,

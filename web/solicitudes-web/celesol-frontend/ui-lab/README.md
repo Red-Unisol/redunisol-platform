@@ -57,6 +57,9 @@ queda en `.local/ui-lab-dist`; el build operativo continúa en `dist`.
 - `/socio-create`: formulario operativo de alta precargado desde un titular
   ficticio, incluyendo CBU y un CBU no habitual distinto. Permite comprobar
   validación, borrado opcional y payload enviado; Guardar sólo modifica memoria.
+  Sin parámetros permite elegir categoría. `?linea=AMEJUCA%20PREMIUM`,
+  `?linea=MUDON%20HABERES` y `?linea=NUEVOS%20CBU` prueban la categoría
+  determinada por la línea, bloqueada para edición, junto con el CBU.
   `node ui-lab/socio-create.browser-test.mjs` revisa escritorio y 390 px.
 
 - `/headers?layout=slim`: comparación de cabeceras Actual, A, B y C.

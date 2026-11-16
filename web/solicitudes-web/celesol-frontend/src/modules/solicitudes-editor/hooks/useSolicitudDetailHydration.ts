@@ -121,6 +121,7 @@ export function useSolicitudDetailHydration({
           linea: lineaDescripcion,
           lineaPrestamoLegacyOid: "",
           localidad: titular.localidad ?? "",
+          localidadId: "",
           localidadLaboral: economicosLaborales.domicilioLaboralLocalidad ?? "",
           montoAFinanciar: legacyMoneyToString(solicitud.montoAFinanciar),
           montoRecibo: legacyMoneyToString(

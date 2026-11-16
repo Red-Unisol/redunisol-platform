@@ -8,7 +8,8 @@ export type CreateSolicitudCoreTitularRequest = {
   email?: string;
   estadoCivil?: string;
   fechaNacimiento?: string;
-  localidad?: string;
+  // ID de la localidad en Vimarx; el nombre lo pone el backend.
+  localidadId?: string;
   nacionalidad?: string;
   nombre: string;
   nroDocumento: string;
@@ -340,7 +341,10 @@ export type SolicitudCoreTitularResponse = {
   email: string | null;
   estadoCivil: string | null;
   fechaNacimiento: string | null;
+  // Nombre para mostrar. El dato es localidadId (ID de Vimarx), NULL en las
+  // solicitudes anteriores al 12/11/2026, que solo tienen el nombre.
   localidad: string | null;
+  localidadId: string | null;
   nacionalidad: string | null;
   nombre: string | null;
   nroDocumento: string | null;

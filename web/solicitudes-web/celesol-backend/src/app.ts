@@ -18,7 +18,10 @@ import {
 } from "./modules/auth/auth-module";
 import { createRiesgoRouter } from "./modules/riesgo/riesgo-module";
 import { createNotificationsRouter } from "./modules/notifications/notifications-module";
-import { createSociosRouter } from "./modules/socios/socios-module";
+import {
+  createLocalidadesCatalog,
+  createSociosRouter,
+} from "./modules/socios/socios-module";
 import {
   createFinSolicitudRouter,
   createSolicitudesCoreAdminRouter,
@@ -28,6 +31,7 @@ import { createSolicitudesLegacyRouter } from "./modules/solicitudes/solicitudes
 import { createTransferenciasIntegrationRouter } from "./modules/transferencias-integration/transferencias-module";
 
 export const app = express();
+const localidadesCatalog = createLocalidadesCatalog();
 
 app.use(
   cors({
@@ -56,6 +60,7 @@ app.use(
   "/api/socios",
   createSociosRouter({
     getCurrentUserUseCase,
+    listLocalidadesUseCase: localidadesCatalog,
   }),
 );
 app.use(
@@ -74,6 +79,7 @@ app.use(
   "/solicitudes",
   createSolicitudesCoreRouter({
     getCurrentUserUseCase,
+    localidadCatalog: localidadesCatalog,
   }),
 );
 app.use(

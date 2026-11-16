@@ -1,4 +1,3 @@
-import { businessDate } from "../../../monthly-cutoffs/domain";
 import type { CreateSocioDto } from "../dtos/CreateSocio.dto";
 import { parseCivilDate } from "../services/SocioCivilDate";
 import {
@@ -10,6 +9,7 @@ import {
   SocioCuitDuplicateError,
   SocioDocumentoDuplicateError,
 } from "../../domain/socios-errors";
+import { SOCIO_CATEGORIA_POR_DEFECTO } from "../../domain/SocioCategoria";
 import type { SocioRepository } from "../../domain/repositories/SocioRepository";
 import type { CrearSocioMutualGateway } from "../../infrastructure/services/CrearSocioMutualGateway";
 
@@ -20,20 +20,17 @@ export type SolicitudParaAltaSocio = {
 
 type Dependencies = {
   findSolicitudParaAlta: (id: string) => Promise<SolicitudParaAltaSocio | null>;
-  now?: () => Date;
   crearSocioMutualGateway: CrearSocioMutualGateway;
   repository: SocioRepository;
 };
 
 export class CreateSocioUseCase {
   private readonly findSolicitudParaAlta: Dependencies["findSolicitudParaAlta"];
-  private readonly now: () => Date;
   private readonly crearSocioMutualGateway: CrearSocioMutualGateway;
   private readonly repository: SocioRepository;
 
   constructor(dependencies: Dependencies) {
     this.findSolicitudParaAlta = dependencies.findSolicitudParaAlta;
-    this.now = dependencies.now ?? (() => new Date());
     this.crearSocioMutualGateway = dependencies.crearSocioMutualGateway;
     this.repository = dependencies.repository;
   }
@@ -47,8 +44,8 @@ export class CreateSocioUseCase {
       throw new SocioCuitDuplicateError();
     }
 
-    const fechaAlta = await this.resolveFechaAlta(input, cuit);
-
+    const categoria = input.categoria ?? SOCIO_CATEGORIA_POR_DEFECTO;
+    await this.validateSolicitudTitular(input, cuit);
     const domicilio = {
       calle: input.domicilioCalle,
       codigoPostal: input.domicilioCodigoPostal ?? null,
@@ -68,8 +65,8 @@ export class CreateSocioUseCase {
 
       const legacyResult = await this.crearSocioMutualGateway.crear({
         tipoPersona: "FISICA",
-        fechaAlta,
         apellido: input.apellido,
+        categoria,
         celular: input.celular ?? null,
         ...(input.cbu ? { cbu: input.cbu } : {}),
         cuit,
@@ -105,7 +102,7 @@ export class CreateSocioUseCase {
 
     const legacyResult = await this.crearSocioMutualGateway.crear({
       tipoPersona: "JURIDICA",
-      fechaAlta,
+      categoria,
       celular: input.celular ?? null,
       ...(input.cbu ? { cbu: input.cbu } : {}),
       cuit,
@@ -136,9 +133,8 @@ export class CreateSocioUseCase {
     });
   }
 
-  private async resolveFechaAlta(input: CreateSocioDto, cuit: string) {
-    // El alta directa no tiene solicitud: usa el dia civil de Argentina.
-    if (!input.solicitudId) return businessDate(this.now());
+  private async validateSolicitudTitular(input: CreateSocioDto, cuit: string) {
+    if (!input.solicitudId) return;
 
     const solicitud = await this.findSolicitudParaAlta(input.solicitudId);
     if (!solicitud) {
@@ -152,7 +148,6 @@ export class CreateSocioUseCase {
     if (!sameCuit && !sameDocumento) {
       throw new InvalidSocioRequestError("El socio no coincide con el titular de la solicitud.");
     }
-    // Como el legacy: la fecha de la solicitud, aunque el alta se grabe despues.
-    return businessDate(solicitud.createdAt);
+    // La fecha del alta se calcula en el gateway: siempre el dia de Argentina.
   }
 }

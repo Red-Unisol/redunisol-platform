@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { cbuSchema } from "../../solicitudes-core/presentation/cbu.schema";
 
+import { SOCIO_CATEGORIAS } from "../domain/SocioCategoria";
+
 const trimmedRequiredString = z.string().trim().min(1);
 // ID de ClasesBase.Localidad en Vimarx (se elige del desplegable).
 const localidadIdString = z.string().trim().regex(/^\d+$/);
@@ -59,9 +61,13 @@ const observacionesSchema = normalizedOptionalString.pipe(
   z.string().max(500).optional(),
 );
 
+// Categoria del socio en Vimarx. Si no viene, ADHERENTE CONVENIO.
+const categoriaSchema = z.enum(SOCIO_CATEGORIAS).optional();
+
 const personaFisicaSchema = z
   .object({
     apellido: trimmedRequiredString,
+    categoria: categoriaSchema,
     celular: normalizedOptionalString,
     cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,
@@ -84,6 +90,7 @@ const personaFisicaSchema = z
 
 const personaJuridicaSchema = z
   .object({
+    categoria: categoriaSchema,
     celular: normalizedOptionalString,
     cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,

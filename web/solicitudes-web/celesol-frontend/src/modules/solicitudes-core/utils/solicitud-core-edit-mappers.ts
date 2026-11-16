@@ -41,7 +41,9 @@ type EditableTitularValues = {
   email: string;
   estadoCivil: string;
   fechaNacimiento: string;
+  // Nombre que se muestra; lo que se guarda es localidadId.
   localidad: string;
+  localidadId: string;
   nacionalidad: string;
   nombre: string;
   nroDocumento: string;
@@ -277,9 +279,17 @@ function buildTitularPatch(
     nextPatch.fechaNacimiento = titularFechaNacimiento;
   }
 
-  const localidad = toOptionalStringPatch(values.localidad, titular.localidad);
-  if (localidad !== undefined) {
-    nextPatch.localidad = localidad;
+  // La localidad viaja por su ID; el backend guarda el nombre. Una solicitud
+  // vieja tiene nombre sin ID: si se quita, se manda null para borrarlo.
+  const localidadId = values.localidadId.trim();
+  if (localidadId && localidadId !== (titular.localidadId ?? "")) {
+    nextPatch.localidadId = localidadId;
+  } else if (
+    !localidadId &&
+    !values.localidad.trim() &&
+    (titular.localidadId || titular.localidad)
+  ) {
+    nextPatch.localidadId = null;
   }
 
   const nacionalidad = toOptionalStringPatch(
@@ -628,6 +638,7 @@ export function mapSolicitudCoreToEditableValues(
       estadoCivil: toEditableString(solicitud.titular.estadoCivil),
       fechaNacimiento: toEditableDate(solicitud.titular.fechaNacimiento),
       localidad: toEditableString(solicitud.titular.localidad),
+      localidadId: toEditableString(solicitud.titular.localidadId),
       nacionalidad: toEditableString(solicitud.titular.nacionalidad),
       nombre: toEditableString(solicitud.titular.nombre),
       nroDocumento: toEditableString(solicitud.titular.nroDocumento),
