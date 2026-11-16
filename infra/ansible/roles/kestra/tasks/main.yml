@@ -32,6 +32,66 @@
           The local checkout must be exactly kestra_revision with no pending changes:
           HEAD is {{ kestra_checkout.results[0].stdout }}.
 
+- name: Create the private Kestra configuration directory
+  ansible.builtin.file:
+    path: "{{ kestra_platform_dir }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0700"
+
+- name: Create the Kestra data root
+  ansible.builtin.file:
+    path: "{{ kestra_data_dir }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0750"
+
+- name: Create the Kestra data directories without touching their contents
+  ansible.builtin.file:
+    path: "{{ kestra_data_dir }}/{{ item.path }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ kestra_data_subdirs }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Create the parents of the VPS-compatible paths
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0755"
+  loop: "{{ kestra_compat_links }}"
+  loop_control:
+    label: "{{ item.path | dirname }}"
+
+- name: Check which link targets already exist
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  loop: "{{ kestra_compat_links }}"
+  loop_control:
+    label: "{{ item.src }}"
+  register: kestra_link_targets
+
+- name: Link the VPS paths used by flows to the dedicated data directories
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    src: "{{ item.item.src }}"
+    state: link
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    force: false
+  loop: "{{ kestra_link_targets.results }}"
+  loop_control:
+    label: "{{ item.item.path }} -> {{ item.item.src }}"
+  # In check mode the target directories are only simulated, so a link to them cannot be previewed.
+  when: item.stat.exists or not ansible_check_mode
+
 - name: Explain the preparation-only default
   ansible.builtin.debug:
     msg: >-

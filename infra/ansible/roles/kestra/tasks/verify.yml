@@ -1,6 +1,52 @@
 ---
-- name: Report that Kestra has nothing to verify yet
-  ansible.builtin.debug:
-    msg: >-
-      The kestra role does not manage files or containers yet; verification checks
-      are added together with each managed piece.
+- name: List the Kestra directories that must exist
+  ansible.builtin.set_fact:
+    kestra_expected_dirs: >-
+      {%- set dirs = [{'path': kestra_platform_dir, 'mode': '0700'},
+                      {'path': kestra_data_dir, 'mode': '0750'}] -%}
+      {%- for item in kestra_data_subdirs -%}
+      {%- set _ = dirs.append({'path': kestra_data_dir ~ '/' ~ item.path, 'mode': item.mode}) -%}
+      {%- endfor -%}
+      {{ dirs }}
+
+- name: Inspect the Kestra directories
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ kestra_expected_dirs }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: kestra_dirs
+
+- name: Require each directory with its owner and mode
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - item.stat.pw_name == kestra_owner
+      - item.stat.gr_name == kestra_group
+      - item.stat.mode == item.item.mode
+    fail_msg: "{{ item.item.path }} must be a directory {{ kestra_owner }}:{{ kestra_group }} {{ item.item.mode }}."
+    quiet: true
+  loop: "{{ kestra_dirs.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Inspect the VPS-compatible links
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ kestra_compat_links }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: kestra_links
+
+- name: Require each link to point to its dedicated data directory
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.islnk
+      - item.stat.lnk_target == item.item.src
+    fail_msg: "{{ item.item.path }} must be a link to {{ item.item.src }}."
+    quiet: true
+  loop: "{{ kestra_links.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
