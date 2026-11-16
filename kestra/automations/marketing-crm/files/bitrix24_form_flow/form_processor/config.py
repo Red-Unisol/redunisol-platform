@@ -554,10 +554,10 @@ def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
         with urlopen(url, timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return {}
+        raise RuntimeError("No se pudo consultar la distribución administrada; reintentar sin asignar vendedores de respaldo.") from None
 
     if not isinstance(payload, dict):
-        return {}
+        raise RuntimeError("La configuración de distribución no es válida; reintentar sin asignar vendedores de respaldo.")
 
     pools: dict[str, tuple[int, ...]] = {}
     for key in (
@@ -571,19 +571,23 @@ def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
         "cordoba_unc",
         "cordoba_general",
     ):
-        values = payload.get(key)
+        values = payload.get(key, [])
         if not isinstance(values, list):
-            continue
+            raise RuntimeError("La configuración de distribución contiene un grupo inválido.")
 
         try:
             user_ids = tuple(int(value) for value in values)
         except (TypeError, ValueError):
-            continue
+            raise RuntimeError("La configuración de distribución contiene vendedores inválidos.") from None
 
         if any(user_id <= 0 for user_id in user_ids) or len(set(user_ids)) != len(user_ids):
-            continue
+            raise RuntimeError("La configuración de distribución contiene vendedores inválidos.")
 
         pools[key] = user_ids
+
+    for key in ("santa_fe", "mutual_paii"):
+        if key not in payload and "santa_fe_anses" in payload:
+            pools[key] = pools["santa_fe_anses"]
 
     return pools
 

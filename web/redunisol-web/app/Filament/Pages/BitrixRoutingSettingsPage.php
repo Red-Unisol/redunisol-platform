@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Support\BitrixRoutingConfig;
+use App\Support\BitrixSellerRegistry;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
@@ -13,6 +14,8 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use UnitEnum;
 
 class BitrixRoutingSettingsPage extends Page
@@ -33,8 +36,12 @@ class BitrixRoutingSettingsPage extends Page
 
     public ?array $data = [];
 
+    #[Locked]
+    public int $catalogRevision = 0;
+
     public function mount(BitrixRoutingConfig $config): void
     {
+        $this->catalogRevision = app(BitrixSellerRegistry::class)->revision();
         $this->form->fill($config->forForm());
     }
 
@@ -75,7 +82,15 @@ class BitrixRoutingSettingsPage extends Page
 
     public function save(BitrixRoutingConfig $config): void
     {
-        $config->save($this->form->getState());
+        $state = $this->form->getState();
+        try {
+            $config->save($state, $this->catalogRevision);
+        } catch (ValidationException) {
+            Notification::make()->warning()->title('Cambió la lista de vendedores')
+                ->body('Recargá la página y revisá las líneas antes de guardar.')->send();
+
+            return;
+        }
 
         Notification::make()
             ->title('Distribución actualizada')
@@ -87,6 +102,7 @@ class BitrixRoutingSettingsPage extends Page
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('sellers')->label('Vendedores habilitados')->url(BitrixSellersPage::getUrl())->color('gray'),
             Action::make('save')
                 ->label('Guardar cambios')
                 ->icon('heroicon-o-check')

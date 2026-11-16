@@ -3,28 +3,12 @@
 namespace App\Support;
 
 use App\Models\BitrixRoutingBucket;
+use App\Models\BitrixRoutingSeller;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class BitrixRoutingConfig
 {
-    public const SELLERS = [
-        68579 => 'Daniel Carrera',
-        10451 => 'Patricia Contendi',
-        29 => 'Susana Contenti',
-        90231 => 'Soledad Rojo Moyano',
-        71159 => 'Natalia Rojo Moyano',
-        113457 => 'Claudia Algarbe',
-        113455 => 'Daniela Arias',
-        116561 => 'Julieta Aguilera',
-        110059 => 'Agustín Villagra',
-        53121 => 'Gloria Fernandez',
-        128399 => 'Stefania Salguero (128399)',
-        58913 => 'Ludmila Gallardo',
-        127337 => 'Renato Rodriguez Barros',
-        125693 => 'Saira Cardoso',
-        128877 => 'Patricia Barboza',
-    ];
-
     public const BUCKETS = [
         'santa_fe' => [
             'label' => 'Santa Fe',
@@ -91,67 +75,71 @@ class BitrixRoutingConfig
             ? collect($this->normalizeSellers($legacy->sellers))
                 ->reject(fn (array $seller): bool => $seller['paused'])
                 ->pluck('user_id')->values()->all()
-            : self::BUCKETS['santa_fe']['sellers'];
+            : array_column($this->normalizeSellers(array_map(fn (int $id): array => ['user_id' => $id, 'paused' => false], self::BUCKETS['santa_fe']['sellers'])), 'user_id');
 
         return $pools;
     }
 
-    public function save(array $state): void
+    public function save(array $state, ?int $catalogRevision = null): void
     {
-        foreach (array_keys(self::BUCKETS) as $key) {
-            if (! array_key_exists($key, $state)) {
-                continue;
+        DB::transaction(function () use ($state, $catalogRevision): void {
+            app(BitrixSellerRegistry::class)->lock($catalogRevision);
+            $enabled = self::sellerOptions();
+            foreach (array_keys(self::BUCKETS) as $key) {
+                if (! array_key_exists($key, $state)) {
+                    continue;
+                }
+
+                $seen = [];
+                $sellers = collect($state[$key])
+                    ->map(function (array $seller) use (&$seen, $enabled): ?array {
+                        $userId = (int) ($seller['user_id'] ?? 0);
+
+                        if (! isset($enabled[$userId]) || isset($seen[$userId])) {
+                            return null;
+                        }
+
+                        $seen[$userId] = true;
+
+                        return [
+                            'user_id' => $userId,
+                            'paused' => (bool) ($seller['paused'] ?? false),
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                BitrixRoutingBucket::query()->updateOrCreate(
+                    ['key' => $key],
+                    ['sellers' => $sellers],
+                );
             }
-
-            $seen = [];
-            $sellers = collect($state[$key])
-                ->map(function (array $seller) use (&$seen): ?array {
-                    $userId = (int) ($seller['user_id'] ?? 0);
-
-                    if (! isset(self::SELLERS[$userId]) || isset($seen[$userId])) {
-                        return null;
-                    }
-
-                    $seen[$userId] = true;
-
-                    return [
-                        'user_id' => $userId,
-                        'paused' => (bool) ($seller['paused'] ?? false),
-                    ];
-                })
-                ->filter()
-                ->values()
-                ->all();
-
-            BitrixRoutingBucket::query()->updateOrCreate(
-                ['key' => $key],
-                ['sellers' => $sellers],
-            );
-        }
+        });
     }
 
     public static function sellerOptions(): array
     {
-        return self::SELLERS;
+        return BitrixRoutingSeller::query()->where('enabled', true)->orderBy('name')->get()
+            ->mapWithKeys(fn (BitrixRoutingSeller $seller): array => [$seller->bitrix_user_id => $seller->label()])->all();
     }
 
     private function buckets(): Collection
     {
+        $enabled = self::sellerOptions();
         $stored = BitrixRoutingBucket::query()
             ->whereIn('key', [...array_keys(self::BUCKETS), 'santa_fe_anses'])
             ->get()
             ->keyBy('key');
 
-        return collect(self::BUCKETS)->map(function (array $definition, string $key) use ($stored): array {
+        return collect(self::BUCKETS)->map(function (array $definition, string $key) use ($stored, $enabled): array {
             $row = $stored->get($key);
             if (! $row && in_array($key, ['santa_fe', 'mutual_paii'], true)) {
                 $row = $stored->get('santa_fe_anses');
             }
             $sellers = $row
-                ? $this->normalizeSellers($row->sellers)
-                : collect($definition['sellers'])
-                    ->map(fn (int $userId): array => ['user_id' => $userId, 'paused' => false])
-                    ->all();
+                ? $this->normalizeSellers($row->sellers, $enabled)
+                : $this->normalizeSellers(array_map(fn (int $id): array => ['user_id' => $id, 'paused' => false], $definition['sellers']), $enabled);
 
             return [
                 ...$definition,
@@ -160,10 +148,12 @@ class BitrixRoutingConfig
         });
     }
 
-    private function normalizeSellers(array $sellers): array
+    private function normalizeSellers(array $sellers, ?array $enabled = null): array
     {
+        $enabled ??= self::sellerOptions();
+
         return collect($sellers)
-            ->filter(fn (array $seller): bool => isset(self::SELLERS[(int) $seller['user_id']]))
+            ->filter(fn (array $seller): bool => isset($enabled[(int) $seller['user_id']]))
             ->map(fn (array $seller): array => [
                 'user_id' => (int) $seller['user_id'],
                 'paused' => (bool) ($seller['paused'] ?? false),
