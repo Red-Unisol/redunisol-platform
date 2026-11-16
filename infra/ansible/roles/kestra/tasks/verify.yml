@@ -67,3 +67,20 @@
       - not kestra_compose_drift.changed
     fail_msg: "{{ kestra_platform_dir }}/docker-compose.yml differs from the reviewed template."
     quiet: true
+
+- name: Compare the installed application configuration with the reviewed copy
+  ansible.builtin.copy:
+    src: application.yaml
+    dest: "{{ kestra_platform_dir }}/application.yaml"
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0644"
+  check_mode: true
+  register: kestra_config_drift
+
+- name: Require the installed application configuration to match the reviewed copy
+  ansible.builtin.assert:
+    that:
+      - not kestra_config_drift.changed
+    fail_msg: "{{ kestra_platform_dir }}/application.yaml differs from the reviewed copy."
+    quiet: true

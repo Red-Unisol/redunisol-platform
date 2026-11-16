@@ -100,6 +100,15 @@
     group: "{{ kestra_group }}"
     mode: "0644"
 
+# files/application.yaml is a byte-for-byte copy of kestra/platform/infra/application.yaml (tests enforce it).
+- name: Install the reviewed Kestra application configuration
+  ansible.builtin.copy:
+    src: application.yaml
+    dest: "{{ kestra_platform_dir }}/application.yaml"
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0644"
+
 - name: Explain the preparation-only default
   ansible.builtin.debug:
     msg: >-

@@ -107,6 +107,21 @@ class CopyOfVpsComposeTests(unittest.TestCase):
         self.assertIn("kestra/platform/infra/docker-compose.yml", header)
 
 
+VPS_CONFIG = ROOT.parents[1] / "kestra/platform/infra/application.yaml"
+DEDICATED_CONFIG = ROLE / "files/application.yaml"
+
+
+class CopyOfVpsApplicationConfigTests(unittest.TestCase):
+    """The dedicated application.yaml needs no changes, so it must stay identical to the VPS one."""
+
+    def test_dedicated_application_config_is_identical_to_the_vps_one(self):
+        vps = VPS_CONFIG.read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(DEDICATED_CONFIG.read_bytes(), vps)
+
+    def test_dedicated_application_config_uses_unix_line_endings(self):
+        self.assertNotIn(b"\r", DEDICATED_CONFIG.read_bytes())
+
+
 class TargetAndOrderTests(unittest.TestCase):
     def test_only_the_dedicated_host_belongs_to_kestra_hosts(self):
         groups = load("inventories/production/hosts.yml")["all"]["children"]
@@ -284,6 +299,12 @@ class ExecutableRoleTests(unittest.TestCase):
         self.assertIn("${SECRET_CREDIX_PASS}", installed.read_text(encoding="utf-8"))
         self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
 
+    def test_apply_installs_the_application_config_unchanged(self):
+        self.assert_ok(self.apply())
+        installed = self.platform / "application.yaml"
+        self.assertEqual(installed.read_bytes(), DEDICATED_CONFIG.read_bytes())
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
+
     # Verification
 
     def test_verify_fails_before_the_apply_and_passes_after_it(self):
@@ -319,6 +340,14 @@ class ExecutableRoleTests(unittest.TestCase):
         self.assertNotEqual(edited.returncode, 0)
         self.assertIn("differs from the reviewed template", edited.stdout)
         self.assertIn("0.0.0.0:8081", installed.read_text(encoding="utf-8"))
+
+    def test_verify_detects_an_application_config_edited_by_hand(self):
+        self.assert_ok(self.apply())
+        installed = self.platform / "application.yaml"
+        installed.write_text(installed.read_text(encoding="utf-8") + "# local tweak\n", encoding="utf-8")
+        edited = self.run_tasks(tasks="verify")
+        self.assertNotEqual(edited.returncode, 0)
+        self.assertIn("application.yaml differs from the reviewed copy", edited.stdout)
 
 
 if __name__ == "__main__":
