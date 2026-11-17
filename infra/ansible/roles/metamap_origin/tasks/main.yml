@@ -29,6 +29,25 @@
     - metamap_origin_enabled
     - not ansible_check_mode
   block:
+    - name: Inspect the existing application activation marker
+      ansible.builtin.stat:
+        path: "{{ metamap_origin_document_root }}/health.json"
+        get_checksum: false
+      register: metamap_origin_existing_health
+
+    - name: Read existing nonsecret origin health metadata
+      ansible.builtin.slurp:
+        src: "{{ metamap_origin_document_root }}/health.json"
+      register: metamap_origin_existing_health_json
+      when: metamap_origin_existing_health.stat.exists
+
+    - name: Refuse preparation after the application has been activated
+      ansible.builtin.assert:
+        that:
+          - not ((metamap_origin_existing_health_json.content | b64decode | from_json).backend_enabled | default(false))
+        fail_msg: MetaMap is active; preparation must not replace its live proxy with the former 503 configuration.
+      when: metamap_origin_existing_health.stat.exists
+
     - name: Read the existing Apache package version without installing anything
       ansible.builtin.package_facts:
         manager: apt

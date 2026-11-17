@@ -1,11 +1,34 @@
-# MetaMap webhook shadow trial
+# MetaMap primary routing and webhook shadow
 
-This Worker makes an asynchronous, signed copy of the existing webhook. It never
-selects a new primary backend or activates the MetaMap application on the dedicated
-server. The desired active trial is declared here; deployment evidence and the
-receiver revision are recorded in `docs/metamap-dedicated-migration.md`.
+Since the authorized 2026-11-17 recent-data cutover, `wrangler.jsonc` declares
+`PRIMARY_MODE=dedicated` and routes only
+`https://kestra.redunisol.com.ar/metamap-platform/*` to
+`metamap-origin.redunisol.com.ar`. The old exact webhook route points to the
+same Worker. Method, path, query, authentication, raw body and Range semantics
+are preserved. Unrelated Kestra paths remain outside the route.
+Public responses identify this mode with `X-Metamap-Cutover: dedicated`.
 
-`wrangler.jsonc` has `workers_dev=false`, `preview_urls=false`, one narrow route and
+Modes are explicit: `vps` preserves the original request target; `hold`
+durably queues signed webhooks before acknowledging them and temporarily rejects
+other writes with 503/Retry-After; `dedicated` proxies the entire scoped prefix.
+Unknown modes fail closed. The bounded, signed asynchronous shadow capture and
+queue consumer remain active independently of the operational SQLite database.
+
+Cloudflare routes retain fail-open behavior. The old VPS listener on port3031
+is now a data-free fallback proxy to the same dedicated origin; the old application
+writer is stopped. Route fail-open therefore does not create two active databases.
+Returning service to the old database requires reconciling new dedicated data.
+
+The following sections describe the original shadow trial and its delivery
+contract. Their original-target behavior applies specifically to `PRIMARY_MODE=vps`.
+Current runtime evidence, backups and cutover recovery are recorded in
+`docs/metamap-dedicated-migration.md`.
+
+
+The original trial made an asynchronous signed copy without moving the primary.
+The current primary mode is declared above; the delivery contract remains below.
+
+`wrangler.jsonc` has `workers_dev=false`, `preview_urls=false`, scoped routes and
 `SHADOW_CAPTURE_ENABLED="true"`. `manifest.json` records the resource identities
 and observed route fail-open setting; it is not an executable API payload. Its
 `required_request_limit_failure_mode` is a review requirement, not a Wrangler key.

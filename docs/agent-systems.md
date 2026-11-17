@@ -11,8 +11,9 @@ Este documento sirve para ubicar rapidamente el sistema correcto, su fuente de v
 | Bitrix24 | CRM, tareas, chats y actividad comercial | Bitrix24 | MCP o webhook, segun la operacion |
 | VPS | Docker, Apache y servicios publicados | Compose/configuracion Git mas estado runtime | SSH |
 | Dedicado `dedicated_prod_01` | Base de host y servicio de archivos BCRA | `infra/ansible`, inventario y roles por servicio | SSH canonico `[DEDICATED_PRODUCTION_SSH]`; apply/verify Ansible separados |
+| MetaMap / Transferencias | Webhooks, validaciones recientes y actualizador firmado | Backend y SQLite del dedicado; historico anterior conservado en VPS | API bajo kestra.redunisol.com.ar/metamap-platform; [estado operativo](metamap-dedicated-migration.md) |
 | BCRA desde archivos | API interna e importacion de archivos; distinto de la API oficial usada por consumidores comerciales | Imagen por digest, datos del dedicado y [contrato de migracion](bcra-dedicated-migration.md) | API privada; Kestra conserva alias Docker mediante enlace SSH y relay VPS |
-| Datos de recorrido web/WhatsApp/CRM | Eventos crudos para Marketing, management e IA | Volumen `/srv/redunisol-tracking`, por ambiente; [contrato y operación](journey-data.md) | Export API autenticada; credenciales `JOURNEY_EXPORT_*` |
+| Datos de recorrido web/WhatsApp/CRM | Eventos crudos para Marketing, management e IA | Volumen `/srv/redunisol-tracking`, por ambiente; [contrato y operaciÃ³n](journey-data.md) | Export API autenticada; credenciales `JOURNEY_EXPORT_*` |
 | Core, CredixSA y servicios financieros | Datos transaccionales | API propietaria correspondiente | endpoint y credencial local |
 | Google Sheets | Planillas compartidas | Google Drive/Sheets | service account u OAuth |
 | Informes y Excels | Resultados de analisis | proceso y datos fuente que los generaron | `.local/artifacts/` |
@@ -67,10 +68,10 @@ Antes de escribir, confirmar tipo de destino e identificador. Despues, releer el
 
 Separar estas preguntas:
 
-1. ¿El codigo correcto fue mergeado?
-2. ¿El workflow ejecuto las etapas relevantes?
-3. ¿La revision o imagen nueva quedo activa?
-4. ¿El comportamiento publico o la API responden correctamente?
+1. Â¿El codigo correcto fue mergeado?
+2. Â¿El workflow ejecuto las etapas relevantes?
+3. Â¿La revision o imagen nueva quedo activa?
+4. Â¿El comportamiento publico o la API responden correctamente?
 
 Una falla posterior, como limpieza de imagenes, puede dejar un workflow rojo aunque la aplicacion haya sido desplegada. Verificar el efecto real antes de diagnosticar rollback o repetir el deploy.
 

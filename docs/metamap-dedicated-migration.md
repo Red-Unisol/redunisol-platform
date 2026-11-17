@@ -1,4 +1,105 @@
-# MetaMap: preparacion de la migracion al dedicado
+# MetaMap: operacion en el dedicado
+
+## Estado verificado el 17/11/2026
+
+Desde las **10:33 ART (13:33 UTC)**, el backend operativo atiende desde
+`dedicated_prod_01`. Se conservan las URLs bajo
+`https://kestra.redunisol.com.ar/metamap-platform/`, los dos clientes
+autenticados y el actualizador firmado **2.3.1**. No se distribuyo otra version
+del cliente ni se migro el historico completo.
+
+La sombra no era una copia operativa completa: conserva webhooks crudos aislados.
+Para el corte se transmitieron por SSH, sin archivos intermedios en la VPS,
+las validaciones cuyo `last_received_at >= 2026-11-13T03:00:00Z`, sus campos
+enriquecidos y estado de revision, las trazas recientes y los clientes.
+El lote final contenia **184 validaciones, 9.224 trazas y 2 clientes**:
+6.058.608 bytes, SHA256
+`4b13e0224c1cd810df8d07f5761d9227e003983df91012077fcfb50d301e6148`.
+El lector SQLite se cerro antes de transmitir los bytes. No se generaron
+snapshots, bundles ni copias del historico en la VPS.
+
+Durante la pausa, el Worker confirmo los webhooks solo despues de guardarlos en
+la cola durable. Los **4 eventos retenidos** (3 reales y una prueba con una
+validacion ya existente) se recuperaron en el dedicado; la segunda pasada
+no repitio ninguno. Los recibos de recuperacion quedan bajo
+`/var/lib/redunisol-metamap-cutover/`.
+
+### Estado deseado y recuperacion
+
+- Backend: proyecto Compose `metamap-server`, puerto `127.0.0.1:18083`,
+  especificacion en `/srv/redunisol/platform/metamap-server/compose.yml`.
+- Datos: `/srv/redunisol/state/metamap-server/data/metamap_platform_server.db`.
+  Solo el dedicado es escritor operativo; la base historica queda en la VPS
+  y su contenedor anterior esta detenido.
+- Origen HTTPS independiente: `metamap-origin.redunisol.com.ar`, proxy al backend.
+  `metamap-active.py` registra la activacion y el parche acotado de Apache.
+- Worker: `PRIMARY_MODE=dedicated`; el prefijo completo se dirige al dedicado.
+  La captura paralela sigue aislada para auditoria.
+- Si la ruta Cloudflare falla abierta, Apache de la VPS llega a un proxy ligero
+  en `127.0.0.1:3031`. Ese proxy no monta datos ni contiene credenciales y vuelve
+  a dirigir al mismo dedicado. No se modifico el Apache compartido de la VPS.
+  Sus archivos estan en `/opt/metamap-platform-fallback`; el Compose deseado
+  esta en `roles/metamap_server/templates/fallback-compose.yml.j2`.
+- Imagen inicial conservada por digest:
+  `ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5`,
+  codigo `a86be2de266029cd1ec4479b8bdfb7f74378e943`.
+
+La vuelta a la VPS requiere reconciliar primero los nuevos datos del dedicado.
+Cambiar solo el modo del Worker no restaura un escritor antiguo actualizado.
+No ejecutar los antiguos playbooks de preparacion sobre el servicio activo:
+el origen ahora rechaza esa preparacion al detectar `backend_enabled=true`.
+
+### Backup activo
+
+`metamap-recent-backup.timer` ejecuta cada hora una copia consistente de SQLite
+y el directorio de actualizaciones firmadas. Se almacena cifrada en el disco
+independiente del dedicado, repositorio `/srv/redunisol-backups/restic/metamap`.
+No es una copia fuera del host. La clave existente permanece privada.
+El helper comprueba la identidad UUID del disco antes de escribir.
+
+La restauracion posterior al corte se verifico con **187 validaciones,
+9.264 trazas y 2 clientes**, misma suma SHA256 de SQLite, integridad de base
+y repositorio correctas. Snapshot:
+`0e91f5cb67d4c3399945e17213fc65d42cc0309c341ebdfe207b8fb5cb355999`.
+El mantenimiento declarativo separado es
+`infra/ansible/playbooks/metamap-live-backup.yml`; exige
+`metamap_live_backup_authorized=true` y `metamap_revision=<SHA40>`.
+No aplica el rol de preparacion ni reinicia el backend.
+
+### Validacion publica y despliegues
+
+Se comprobaron por la URL publica: salud y revision, ambos clientes (HTTP200),
+rechazo anonimo (401), firma del manifiesto, descarga parcial (206),
+tamano y SHA256 del ejecutable completo. Las 80 validaciones completadas
+estaban indexadas con solicitud; ninguna de las 125 validaciones reales
+observadas en la sombra faltaba en la base operativa al verificar.
+
+Los workflows antiguos de deploy y publicacion estan **pausados** para evitar
+escrituras en la VPS. Este cambio prepara ambos para el dedicado, usando
+los secretos de environment `METAMAP_SSH_HOST`, `METAMAP_SSH_PORT`,
+`METAMAP_SSH_USER`, `METAMAP_SSH_PRIVATE_KEY` y la variable de host key
+fijada `METAMAP_SSH_KNOWN_HOSTS`. El environment conserva su nombre historico
+`vps-infra`; los secretos `VPS_SSH_*` de otros servicios no se modifican.
+
+El deploy conserva el `runtime.env` privado ya probado en el dedicado,
+resuelve la imagen a digest, hace backup consistente y verifica la revision
+local y publica. Los archivos cifrados existentes siguen bajo custodia;
+cambiar credenciales/configuracion requiere una intervencion explicita aparte.
+El publisher usa `TRANSFERENCIAS_UPDATE_ROOT` para el directorio
+`/srv/redunisol/state/metamap-server/updates/transferencias` y conserva
+firma, promocion atomica y versiones inmutables.
+
+**Pendiente de autorizacion puntual:** la revision automatica rechazo agregar
+la clave CI canonica como acceso root restringido al dedicado y custodiar esa
+clave en los secretos de GitHub. Esa accion no se ejecuto. Mantener pausados
+ambos workflows hasta contar con ese acceso y con el codigo integrado en main.
+
+## Antecedente: preparacion y ensayo del 13/11/2026
+
+El resto del documento registra la etapa anterior; sus estados inactivos y
+pasos pendientes corresponden a ese checkpoint y estan reemplazados por el
+estado operativo anterior.
+
 
 ## Alcance de este cambio
 
@@ -446,7 +547,7 @@ prueba y egreso controlado; la preparacion actual no inicia ese clon.
 
 La preparacion, migracion de datos, copia cifrada, activacion y sus recibos son
 etapas diferentes. Quedan pendientes completar el inventario de escritores,
-los recibos de datos reales y el corte. El rediseño historico de MetaMap no se
+los recibos de datos reales y el corte. El rediseÃ±o historico de MetaMap no se
 toma como evidencia de una arquitectura ya desplegada.
 
 ## Checkpoint de preparacion: 13 de noviembre de 2026

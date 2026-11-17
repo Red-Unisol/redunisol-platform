@@ -174,6 +174,28 @@ class ExecutableOriginContractTests(unittest.TestCase):
                            "Require origin authorization and immutable inputs before applying")
         self.assert_rejected(dict(metamap_origin_enabled=True), tasks=[guard])
 
+    def test_preparation_refuses_to_replace_an_active_backend(self):
+        tasks = read_yaml("roles/metamap_origin/tasks/main.yml")
+        block = next(item["block"] for item in tasks if item["name"].startswith("Prepare only"))
+        with tempfile.TemporaryDirectory(prefix="active-origin-") as directory:
+            document = Path(directory)
+            health = document / "health.json"
+            configuration = document / "apache.conf"
+            configuration.write_text("live proxy", encoding="utf-8")
+            guarded = copy.deepcopy(block[:3]) + [{
+                "name": "Represent the subsequent preparation write",
+                "ansible.builtin.copy": {"dest": str(configuration), "content": "preparation 503"},
+            }]
+            for enabled in (True, False):
+                health.write_text(json.dumps({"backend_enabled": enabled}), encoding="utf-8")
+                code, output = self.run_tasks(guarded, {"metamap_origin_document_root": str(document)})
+                if enabled:
+                    self.assertNotEqual(code, 0, output)
+                    self.assertEqual(configuration.read_text(), "live proxy")
+                else:
+                    self.assertEqual(code, 0, output)
+                    self.assertEqual(configuration.read_text(), "preparation 503")
+
     def test_check_mode_with_pending_tls_never_reaches_origin_mutations(self):
         code, output = self.run_tasks(overrides=dict(metamap_origin_enabled=True), check=True, role=True)
         self.assertEqual(code, 0, output)

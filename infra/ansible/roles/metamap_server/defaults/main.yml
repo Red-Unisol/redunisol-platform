@@ -26,3 +26,4 @@ metamap_backup_bundle_dir: ""
 metamap_restore_bundle_dir: ""
 metamap_bundle_manifest_sha256: ""
 metamap_restore_directory: ""
+metamap_live_backup_authorized: false
