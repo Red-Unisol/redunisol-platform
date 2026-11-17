@@ -1,0 +1,149 @@
+---
+- name: Validate the MetaMap backup preparation contract
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require explicit preparation and external key custody outside check mode
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or metamap_backup_prepare_authorized
+      - ansible_check_mode or metamap_backup_key_custody_confirmed
+    fail_msg: Preparing the MetaMap repository requires explicit approval and independently retained key custody.
+
+- name: Explain the synthetic scope in check mode
+  ansible.builtin.debug:
+    msg: >-
+      Contracts only; no key, repository, snapshot or restore is created.
+      This preparation does not protect production data or enable timers.
+  when: ansible_check_mode
+
+- name: Prepare and prove only synthetic recovery outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Validate the dedicated filesystem and canonical paths
+      ansible.builtin.import_tasks: validate.yml
+
+    - name: Require the private custodied password supplied by the controller
+      ansible.builtin.assert:
+        that:
+          - metamap_backup_password is defined
+          - metamap_backup_password is string
+          - metamap_backup_password | length >= 32
+          - metamap_backup_password | length <= 1024
+          - metamap_backup_password | trim == metamap_backup_password
+          - metamap_backup_password.splitlines() | length == 1
+          - metamap_backup_password is not search('\x00')
+        fail_msg: Supply the independently custodied key through a private extra-vars file.
+      no_log: true
+
+    - name: Inspect the private key parent without adopting other directories
+      ansible.builtin.stat:
+        path: "{{ metamap_backup_password_file | dirname }}"
+        follow: false
+      register: metamap_backup_key_parent
+
+    - name: Require an absent or private root-owned key parent
+      ansible.builtin.assert:
+        that:
+          - >-
+            not metamap_backup_key_parent.stat.exists or
+            (metamap_backup_key_parent.stat.isdir | default(false) and
+             not metamap_backup_key_parent.stat.islnk | default(false) and
+             metamap_backup_key_parent.stat.uid | default(-1) == 0 and
+             metamap_backup_key_parent.stat.mode | default('') == '0700')
+
+    - name: Inspect the existing password without hashing its value
+      ansible.builtin.stat:
+        path: "{{ metamap_backup_password_file }}"
+        follow: false
+        get_checksum: false
+      register: metamap_backup_key
+      no_log: true
+
+    - name: Require existing keys to remain private regular root-owned files
+      ansible.builtin.assert:
+        that:
+          - metamap_backup_key.stat.isreg | default(false)
+          - not metamap_backup_key.stat.islnk | default(false)
+          - metamap_backup_key.stat.uid | default(-1) == 0
+          - metamap_backup_key.stat.mode | default('') in ['0400', '0600']
+      when: metamap_backup_key.stat.exists
+      no_log: true
+
+    - name: Read existing key only to compare the custodied copy
+      ansible.builtin.slurp:
+        src: "{{ metamap_backup_password_file }}"
+      register: metamap_backup_existing_key
+      when: metamap_backup_key.stat.exists
+      no_log: true
+
+    - name: Never replace a different existing MetaMap key
+      ansible.builtin.assert:
+        that:
+          - >-
+            (metamap_backup_existing_key.content | b64decode) in
+            [metamap_backup_password, metamap_backup_password ~ '\n']
+        fail_msg: Existing key differs from the supplied custodied copy; preparation never rotates keys.
+      when: metamap_backup_key.stat.exists
+      no_log: true
+
+    - name: Require initialization approval before installing any new key
+      ansible.builtin.assert:
+        that:
+          - metamap_backup_key.stat.exists or metamap_backup_initialize_authorized
+
+    - name: Create only private MetaMap-owned evidence and restore directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - "{{ metamap_backup_password_file | dirname }}"
+        - "{{ metamap_backup_state_dir }}"
+        - "{{ metamap_backup_restore_dir }}"
+
+    - name: Install a new key only when absent without exposing it
+      ansible.builtin.copy:
+        dest: "{{ metamap_backup_password_file }}"
+        content: "{{ metamap_backup_password }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+      when: not metamap_backup_key.stat.exists
+      no_log: true
+      diff: false
+
+    - name: Install the separate synthetic recovery coordinator
+      ansible.builtin.copy:
+        src: metamap-backup.py
+        dest: "{{ metamap_backup_tool }}"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Record the future retention contract without enabling deletion or timers
+      ansible.builtin.copy:
+        src: retention-policy.json
+        dest: "{{ metamap_backup_state_dir }}/retention-policy.json"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Initialize only when separately approved and ensure one synthetic recovery proof
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/python3', metamap_backup_tool, 'prepare',
+              '--revision', metamap_backup_revision,
+              '--mountpoint', metamap_backup_mountpoint, '--mount-uuid', metamap_backup_mount_uuid,
+              '--repository', metamap_backup_repository, '--password-file', metamap_backup_password_file,
+              '--state-dir', metamap_backup_state_dir, '--restore-dir', metamap_backup_restore_dir,
+              '--timeout-seconds', metamap_backup_timeout_seconds | string] +
+             (['--initialize-authorized'] if metamap_backup_initialize_authorized else []) }}
+      register: metamap_backup_preparation
+      changed_when: (metamap_backup_preparation.stdout | from_json).created
+
+    - name: Report only the synthetic scope and nonsecret repository proof
+      ansible.builtin.debug:
+        msg: "{{ metamap_backup_preparation.stdout | from_json }}"

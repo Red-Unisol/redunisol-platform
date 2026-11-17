@@ -114,13 +114,20 @@ class EdnaOrganicAttention
         }
     }
 
-    public function canTransfer(array $snapshot, int $targetId): bool
+    public function canTransfer(array $snapshot, int $targetId, bool $otherInquiry = false): bool
     {
         if ($targetId < 1 || ! $this->validSnapshot($snapshot)
             || ! in_array($snapshot['dialog_tuple']['owner'], ['', '0', '57', '74827', (string) $targetId], true)) {
             return false;
         }
         foreach ($snapshot['records'] as $record) {
+            // An explicit non-loan inquiry routes the chat, not the contact's
+            // commercial responsibility. Live human attention is checked by inspect.
+            // Leads, deals and companies retain their existing ownership policy.
+            if ($otherInquiry && $targetId === (int) config('edna.organic_other_operator_id', 5737)
+                && $record['entity'] === 'contact') {
+                continue;
+            }
             if (! in_array($record['owner'], ['', '0', (string) $targetId], true) && ! $this->provisionalLead($record)) {
                 return false;
             }
@@ -158,9 +165,9 @@ class EdnaOrganicAttention
         }
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false): bool
     {
-        if (! $this->canTransfer($before, $targetId) || ! $this->validSnapshot($after)) {
+        if (! $this->canTransfer($before, $targetId, $otherInquiry) || ! $this->validSnapshot($after)) {
             return false;
         }
         if (! $afterTransfer) {

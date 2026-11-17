@@ -1,5 +1,6 @@
 services:
   server:
+    profiles: [manual-recovery]
     image: ${APP_IMAGE}
     pull_policy: always
     ports:
@@ -9,7 +10,7 @@ services:
     volumes:
       - metamap_platform_server_data:/data
       - /srv/redunisol-updates:/updates:ro
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   metamap_platform_server_data:

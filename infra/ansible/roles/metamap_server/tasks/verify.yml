@@ -1,0 +1,81 @@
+---
+- name: Verify preparation-only declarations
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require concrete immutable preparation evidence to verify
+  ansible.builtin.assert:
+    that:
+      - metamap_image | length > 0
+      - metamap_revision is match('^[0-9a-f]{40}$')
+    fail_msg: Preparation is pending; verify needs the selected image digest and applied Git SHA40.
+
+- name: Confirm this is still an inactive preparation
+  ansible.builtin.import_tasks: target-guard.yml
+
+- name: Require all private preparation directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.mode == '0750'
+  loop: "{{ metamap_path_inspections.results[4:] }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect the prepared files without following symbolic links
+  ansible.builtin.stat:
+    path: "{{ metamap_platform_dir }}/{{ item }}"
+    follow: false
+  loop: [compose.yml, runtime.env.example, preparation.json]
+  register: metamap_prepared_files
+
+- name: Require private root-owned regular preparation files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid == 0
+      - item.stat.mode == '0640'
+  loop: "{{ metamap_prepared_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Read the nonsecret preparation files
+  ansible.builtin.slurp:
+    src: "{{ metamap_platform_dir }}/{{ item }}"
+  loop: [compose.yml, runtime.env.example, preparation.json]
+  register: metamap_prepared_contents
+
+- name: Compare the complete preparation to the reviewed revision and image
+  ansible.builtin.assert:
+    that:
+      - item.content | b64decode == lookup('ansible.builtin.template', role_path ~ '/templates/' ~ item.item ~ '.j2')
+    fail_msg: Prepared MetaMap files differ from the reviewed input; verify does not repair them.
+  loop: "{{ metamap_prepared_contents.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate the closed Compose profile without reading credentials
+  ansible.builtin.import_tasks: compose-check.yml
+
+- name: Verify staged private settings without loading them into a runtime
+  ansible.builtin.import_tasks: runtime-staging-verify.yml
+  when: metamap_stage_runtime_env
+
+- name: Inspect an explicitly prefetched image
+  ansible.builtin.import_tasks: image-inspect.yml
+  when: metamap_prefetch_image
+
+- name: Require the requested immutable image to be present when prefetch was selected
+  ansible.builtin.assert:
+    that:
+      - metamap_image_inspection.rc == 0
+      - metamap_image in (metamap_image_inspection.stdout | from_json)
+    fail_msg: The reviewed image is absent; verify never pulls it implicitly.
+  when: metamap_prefetch_image
+
+- name: Report the remaining activation boundary
+  ansible.builtin.debug:
+    msg: >-
+      Preparation verified: no MetaMap container or API is active. No data migration,
+      runtime credentials, proxy route, DNS change, client update or service recovery is claimed.

@@ -696,7 +696,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.policia_federal_caba_user_ids, (8057,))
         self.assertEqual(config.deal.cordoba_general_user_ids, (116561, 110059))
 
-    def test_config_keeps_existing_pools_when_remote_config_is_unavailable(self) -> None:
+    def test_config_does_not_restore_fixed_sellers_when_remote_config_is_unavailable(self) -> None:
         env = {
             **self.env,
             "BITRIX24_ROUTING_CONFIG_URL": "https://redunisol.test/api/internal/bitrix-routing",
@@ -707,9 +707,26 @@ class BusinessLogicTests(unittest.TestCase):
             "bitrix24_form_flow.form_processor.config.urlopen",
             side_effect=OSError("unavailable"),
         ):
-            config = load_config(env)
+            with self.assertRaisesRegex(RuntimeError, "sin asignar vendedores de respaldo"):
+                load_config(env)
 
-        self.assertEqual(config.deal.round_robin_user_ids, (29, 10451))
+    def test_config_missing_remote_pool_stays_empty_instead_of_restoring_fixed_sellers(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"catamarca_general": [128877]}'
+        with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+            config = load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"})
+        self.assertEqual(config.deal.round_robin_user_ids, (128877,))
+        self.assertEqual(config.deal.policia_federal_caba_user_ids, ())
+        self.assertEqual(config.deal.cordoba_general_user_ids, ())
+
+    def test_config_invalid_remote_response_never_restores_fixed_sellers(self) -> None:
+        for payload in (b"not-json", b"[]", b'{"catamarca_general": [0]}', b'{"catamarca_general": "invalid"}'):
+            with self.subTest(payload=payload):
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = payload
+                with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+                    with self.assertRaises(RuntimeError):
+                        load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"})
 
     def test_prequalification_cutover_dry_run_and_apply(self) -> None:
         client = FakeBitrixClient()
@@ -1551,7 +1568,7 @@ class BusinessLogicTests(unittest.TestCase):
         client.deals[990] = self._pending_deal(990, 990)
         client.deals[991] = self._pending_deal(991, 991)
         response = MagicMock()
-        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": []}'
+        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": [], "cordoba_general": [10451]}'
         env = {**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"}
         now = datetime.fromisoformat("2026-09-14T12:00:00-03:00")
         with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
@@ -1581,7 +1598,7 @@ class BusinessLogicTests(unittest.TestCase):
                                  ufCrmKqStage=load_config(self.env).deal.manual_review_stage_id)
         before = dict(client.deals[990])
         response = MagicMock()
-        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": []}'
+        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": [], "cordoba_general": [10451]}'
         env = {**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"}
         with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
             result = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),

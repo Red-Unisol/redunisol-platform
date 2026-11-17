@@ -1,0 +1,10 @@
+---
+metamap_running: false
+metamap_backup_authorized: false
+metamap_writers_stopped_confirmed: false
+metamap_source_expected_hostname: vps-5779267-x.dattaweb.com
+metamap_source_expected_machine_id: 38fb3a47ef83df9ec5ef8e3c71e5560d
+metamap_source_container: metamap-platform-server-dev-server-1
+metamap_source_image_id: sha256:1c664fb180bd1c4de6ace104b6b305897a5cec8dcd670579a19d8ad42338b4f7
+metamap_source_data_dir: /var/lib/docker/volumes/metamap-platform-server-dev_metamap_platform_server_data/_data
+metamap_source_updates_dir: /srv/redunisol-updates

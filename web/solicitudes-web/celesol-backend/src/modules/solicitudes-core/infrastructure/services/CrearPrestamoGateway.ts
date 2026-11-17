@@ -67,6 +67,14 @@ export type CrearPrestamoResult = {
 
 const CREAR_PRESTAMO_PATH = "/api/Simulador/CrearPrestamo";
 
+/** Only thrown while the gateway can prove fetch has never been invoked. */
+export class PrestamoLegacyNotSentError extends PrestamoLegacyUnavailableError {
+  constructor() {
+    super();
+    this.name = "PrestamoLegacyNotSentError";
+  }
+}
+
 export class CrearPrestamoGateway {
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
@@ -80,7 +88,7 @@ export class CrearPrestamoGateway {
     this.diagnostics = config.diagnostics ?? (async () => undefined);
   }
 
-  async crear(input: CrearPrestamoInput, context?: LoanDiagnosticContext): Promise<CrearPrestamoResult> {
+  async crear(input: CrearPrestamoInput, context?: LoanDiagnosticContext, beforeSend?: () => Promise<void>): Promise<CrearPrestamoResult> {
     const diagnosticContext: LoanDiagnosticContext = context ?? { operationId: randomUUID(), operation: "loan_generation" };
     const callId = randomUUID();
     const startedAt = Date.now();
@@ -128,6 +136,14 @@ export class CrearPrestamoGateway {
       endpointPath: CREAR_PRESTAMO_PATH, url: new URL(CREAR_PRESTAMO_PATH, this.baseUrl).toString(),
       method: "POST", headers, body: requestBody,
     }, true);
+
+    // Revalidate the durable reservation after the trace write, immediately
+    // before handing the request to the transport. A recovery may have fenced it.
+    try { await beforeSend?.(); }
+    catch (error) {
+      await this.record(diagnosticContext, callId, startedAt, "NOT_SENT", { error, remoteRequestSent: false });
+      throw new PrestamoLegacyNotSentError();
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -207,7 +223,7 @@ export class CrearPrestamoGateway {
     try {
       await this.diagnostics(context, { stage, callId, elapsedMs: Math.max(0, Date.now() - startedAt), data }, required);
     } catch {
-      if (required) throw new PrestamoLegacyUnavailableError();
+      if (required) throw new PrestamoLegacyNotSentError();
     }
   }
 

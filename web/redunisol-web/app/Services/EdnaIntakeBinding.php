@@ -38,6 +38,21 @@ class EdnaIntakeBinding
             return null;
         }
         $proof = json_decode($row->proof, true, 16, JSON_THROW_ON_ERROR);
+        if (is_array($proof) && ($proof['version'] ?? null) === 2 && app(EdnaFreshIntake::class)->applies($send)) {
+            if (($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
+                || ($proof['evidence'] ?? '') !== 'external_message_id'
+                || ($proof['entry_event_id'] ?? null) !== (int) $send->entry_event_id
+                || ! ($proof['native_lead_id'] ?? $proof['contact_id'] ?? null)) {
+                throw new RuntimeException('Invalid fresh intake proof.');
+            }
+            foreach (['chat_id', 'session_id', 'activity_id', 'message_id', 'entry_message_id'] as $key) {
+                if (! preg_match('/^[1-9][0-9]{0,18}$/D', (string) ($proof[$key] ?? ''))) {
+                    throw new RuntimeException('Incomplete fresh intake proof.');
+                }
+            }
+
+            return $proof;
+        }
         if (! is_array($proof) || ($proof['version'] ?? null) !== 1 || ($proof['verified'] ?? null) !== true
             || ($proof['source'] ?? '') !== 'bitrix_openline_session' || ($proof['evidence'] ?? '') !== 'external_message_id'
             || ($proof['entry_event_id'] ?? null) !== (int) $send->entry_event_id
@@ -50,6 +65,9 @@ class EdnaIntakeBinding
 
     public function resolve(object $send): ?array
     {
+        if (app(EdnaFreshIntake::class)->applies($send)) {
+            return $this->resolveFresh($send);
+        }
         $this->deadline = microtime(true) + 40;
         if ((string) $send->subject_id !== (string) config('edna.subject_id')) {
             throw new RuntimeException('Intake binding belongs to another channel.');
@@ -143,6 +161,59 @@ class EdnaIntakeBinding
 
             return $proof;
         });
+    }
+
+    private function resolveFresh(object $send): ?array
+    {
+        if ((string) $send->subject_id !== (string) config('edna.subject_id')) {
+            throw new RuntimeException('Fresh binding belongs to another channel.');
+        }
+        $existing = DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)->first();
+        if ($existing && ($existing->case_id !== $send->request_id || (int) $existing->entry_event_id !== (int) $send->entry_event_id)) {
+            throw new RuntimeException('Fresh binding requires reconciliation.');
+        }
+        if ($existing?->state === 'verified') {
+            return $this->verified($send);
+        }
+        if ($existing?->state === 'review') {
+            return null;
+        }
+        DB::table('edna_intake_bindings')->insertOrIgnore([
+            'flow_send_id' => $send->id, 'case_id' => $send->request_id, 'entry_event_id' => $send->entry_event_id,
+            'state' => 'pending', 'reason' => 'crm_binding_pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
+        $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
+        if (! hash_equals(Crypt::decryptString($send->recipient), (string) ($payload['subscriber']['identifier'] ?? ''))) {
+            throw new RuntimeException('Fresh binding recipient changed.');
+        }
+        $proof = app(EdnaMessageBinding::class)->resolveCurrent($entry, $payload);
+        if (! $proof) {
+            return $this->pending($send, 'crm_binding_pending');
+        }
+        $snapshot = app(EdnaOrganicAttention::class)->snapshot($proof);
+        $contact = $snapshot['dialog_tuple']['bindings']['contact'] ?? null;
+        if (! ($proof['native_lead_id'] ?? null) && ! $contact) {
+            return $this->pending($send, 'native_crm_identity_pending');
+        }
+        $proof['version'] = 2;
+        $proof['contact_id'] = $contact;
+        $lead = $proof['native_lead_id'] ?? null;
+        $original = $lead && ! $contact && ! DB::table('edna_intake_bindings')->where('lead_id', $lead)
+            ->where('flow_send_id', '<>', $send->id)->exists();
+        if ($original) {
+            $proof['version'] = 1;
+            $proof['lead_id'] = $lead;
+        }
+        // The legacy lead_id uniqueness is intentionally untouched. A new inquiry
+        // proves its own session; the CRM consumer decides if existing management wins.
+        DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)->where('state', 'pending')->update([
+            'state' => 'verified', 'reason' => null, 'lead_id' => $original ? $lead : null,
+            'proof' => json_encode($proof, JSON_THROW_ON_ERROR),
+            'verified_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return $this->verified($send);
     }
 
     private function proofs(object $send, object $entry, string $leadId): array

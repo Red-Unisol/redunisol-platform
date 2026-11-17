@@ -1,0 +1,10 @@
+---
+# Reviewed from the existing operational container on 2026-11-13; preparation
+# preserves its image and SQLite engine. No activation is included.
+metamap_image: ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5
+metamap_running: false
+metamap_prepare_authorized: false
+metamap_prefetch_image: true
+metamap_stage_runtime_env: true
+metamap_backup_authorized: false
+metamap_restore_authorized: false

@@ -85,6 +85,7 @@ def normalize_flow_source(
     labels["env"] = environment
     payload["labels"] = labels
     _normalize_triggers(payload, labels, environment)
+    _normalize_log_levels(payload)
 
     return yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
 
@@ -94,6 +95,25 @@ def _normalize_triggers(payload: dict, labels: dict, environment: str) -> None:
     if ((environment != "prod" and schedule_scope == "prod_only")
             or (environment != "dev" and schedule_scope == "dev_only")):
         payload.pop("triggers", None)
+
+
+def _normalize_log_levels(node: object) -> None:
+    """Default task/trigger logs to INFO without rewriting explicit levels or data."""
+    if isinstance(node, list):
+        for item in node:
+            _normalize_log_levels(item)
+    elif isinstance(node, dict):
+        plugin_type = node.get("type")
+        if (node.get("id") and isinstance(plugin_type, str)
+                and plugin_type.startswith("io.kestra.") and node.get("logLevel") is None):
+            node["logLevel"] = "INFO"
+        for key in ("tasks", "errors", "finally", "afterExecution", "triggers", "listeners",
+                    "then", "else", "defaults", "task"):
+            _normalize_log_levels(node.get(key))
+        cases = node.get("cases")
+        if isinstance(cases, dict):
+            for branch in cases.values():
+                _normalize_log_levels(branch)
 
 
 def build_session(kestra_url: str, username: str, password: str) -> requests.Session:

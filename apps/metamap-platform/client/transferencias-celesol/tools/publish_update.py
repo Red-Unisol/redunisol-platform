@@ -1,4 +1,4 @@
-"""Publish an already signed, code-only release to the VPS using pinned SSH trust."""
+"""Publish an already signed, code-only release using pinned SSH trust."""
 import argparse
 import base64
 import hashlib
@@ -13,6 +13,13 @@ import paramiko
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 ROOT = "/srv/redunisol-updates/transferencias"
+DEDICATED_ROOT = "/srv/redunisol/state/metamap-server/updates/transferencias"
+
+def update_root():
+    root = os.environ.get("TRANSFERENCIAS_UPDATE_ROOT", ROOT)
+    if root not in (ROOT, DEDICATED_ROOT):
+        raise ValueError("Unsupported update destination")
+    return root
 
 
 def verified(envelope: bytes, public_key: bytes) -> dict:
@@ -24,6 +31,7 @@ def verified(envelope: bytes, public_key: bytes) -> dict:
 
 
 def publish(directory: Path, public_key_path: Path) -> None:
+    root = update_root()
     public_key = base64.b64decode(public_key_path.read_text().strip(), validate=True)
     latest = (directory / "latest.json").read_bytes()
     manifest = verified(latest, public_key)
@@ -40,14 +48,14 @@ def publish(directory: Path, public_key_path: Path) -> None:
     client.connect(os.environ["SSH_HOST"], port=int(os.environ["SSH_PORT"]),
                    username=os.environ["SSH_USER"], allow_agent=True,
                    look_for_keys=False, timeout=15)
-    stage = ROOT + "/.upload-" + uuid.uuid4().hex
+    stage = root + "/.upload-" + uuid.uuid4().hex
     try:
-        _, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(ROOT))
+        _, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(root))
         if stdout.channel.recv_exit_status():
             raise RuntimeError(stderr.read().decode())
         with client.open_sftp() as sftp:
             try:
-                with sftp.open(ROOT + "/latest.json", "rb") as stream:
+                with sftp.open(root + "/latest.json", "rb") as stream:
                     previous_envelope = stream.read()
                     previous = verified(previous_envelope, public_key)
                 if version == previous["version"]:
@@ -62,9 +70,9 @@ def publish(directory: Path, public_key_path: Path) -> None:
                 pass
             existing = None
             try:
-                with sftp.open(ROOT + "/" + version + "/manifest.json", "rb") as stream:
+                with sftp.open(root + "/" + version + "/manifest.json", "rb") as stream:
                     raw = stream.read()
-                with sftp.open(ROOT + "/" + version + "/manifest.sig", "r") as stream:
+                with sftp.open(root + "/" + version + "/manifest.sig", "r") as stream:
                     signature = stream.read().decode().strip()
                 original_envelope = json.dumps({"manifest": base64.b64encode(raw).decode(),
                                                 "signature": signature}).encode()
@@ -82,7 +90,7 @@ def publish(directory: Path, public_key_path: Path) -> None:
                 # Explicit allowlist: no archive, environment, key, or workspace upload.
                 for name in ("transferencias-celesol.exe", "manifest.json", "manifest.sig"):
                     sftp.put(str(directory / version / name), stage + "/" + name)
-            candidate = ROOT + "/" + version if existing else stage
+            candidate = root + "/" + version if existing else stage
             with sftp.open(candidate + "/transferencias-celesol.exe", "rb") as stream:
                 remote_hash = hashlib.sha256()
                 while block := stream.read(1024 * 1024):
@@ -91,11 +99,11 @@ def publish(directory: Path, public_key_path: Path) -> None:
                 raise ValueError("Uploaded binary hash mismatch")
             # SFTP rename fails if this immutable release directory already exists.
             if existing is None:
-                sftp.rename(stage, ROOT + "/" + version)
-            temporary_latest = ROOT + "/.latest-" + uuid.uuid4().hex
+                sftp.rename(stage, root + "/" + version)
+            temporary_latest = root + "/.latest-" + uuid.uuid4().hex
             with sftp.open(temporary_latest, "wb") as stream:
                 stream.write(latest)
-            sftp.posix_rename(temporary_latest, ROOT + "/latest.json")
+            sftp.posix_rename(temporary_latest, root + "/latest.json")
     finally:
         client.close()
     print(f"Published signed Transferencias {version}; no application configuration uploaded")
