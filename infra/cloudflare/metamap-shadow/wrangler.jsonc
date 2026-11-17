@@ -16,7 +16,7 @@
     }
   ],
   "vars": {
-    "SHADOW_CAPTURE_ENABLED": "true",
+    "SHADOW_CAPTURE_ENABLED": "false",
     "PRIMARY_MODE": "dedicated"
   },
   "observability": {

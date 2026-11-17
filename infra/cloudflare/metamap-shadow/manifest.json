@@ -9,7 +9,9 @@
   "dead_letter_queue_id": "a1747a9d4e9e409e9837bdd92278d4c7",
   "dead_letter_consumer": null,
   "workers_dev": false,
-  "capture_enabled": true,
+  "capture_enabled": false,
+  "shadow_disabled_utc": "2026-11-17T14:50:24Z",
+  "vps_shutdown_utc": "2026-11-17T14:56:27Z",
   "route": {
     "enabled": true,
     "id": "7110b09ffbd442728da1448ee32606d2",
@@ -42,7 +44,7 @@
   "primary_origin": "metamap-origin.redunisol.com.ar",
   "data_since_utc": "2026-11-13T03:00:00Z",
   "cutover_utc": "2026-11-17T13:33:03Z",
-  "fallback": "localhost:3031 forwards only to dedicated; historical database unmounted",
+  "fallback": "disabled by request; both VPS MetaMap containers stopped with restart=no; historical data retained",
   "primary_route": {
     "id": "97e3b8caa9f0494dbc12abd46a6bb2a5",
     "pattern": "https://kestra.redunisol.com.ar/metamap-platform/*",

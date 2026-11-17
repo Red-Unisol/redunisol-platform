@@ -309,7 +309,9 @@ test("committed prepared or active configuration agrees with its manifest and ke
     assert.equal(actual.name, "metamap-webhook-shadow"); assert.equal(desired.worker, actual.name);
     assert.equal(actual.workers_dev, false); assert.equal(actual.preview_urls, false); assert.equal(desired.workers_dev, false);
     assert.equal(Object.hasOwn(actual, "route"), false, "Only the reviewed routes array may configure routing");
-    assert.equal(actual.vars.SHADOW_CAPTURE_ENABLED, String(active)); assert.equal(desired.capture_enabled, active);
+    assert.equal(typeof desired.capture_enabled, "boolean");
+    assert.equal(actual.vars.SHADOW_CAPTURE_ENABLED, String(desired.capture_enabled));
+    if (desired.status !== "dedicated-primary") assert.equal(desired.capture_enabled, active);
     assert.equal(desired.route.enabled, active); assert.equal(desired.route.pattern, pattern);
     assert.equal(desired.route.zone_name, "redunisol.com.ar");
     assert.equal(desired.route.required_request_limit_failure_mode, "open");
@@ -342,7 +344,16 @@ test("committed prepared or active configuration agrees with its manifest and ke
   }
   validate(config, manifest);
 
-  // Exercise both supported states without editing or activating the committed configuration.
+  // Routing and capture are independent after cutover. Validate both capture states.
+  for (const enabled of [true, false]) {
+    const routedConfig = structuredClone(config);
+    const routedManifest = structuredClone(manifest);
+    routedConfig.vars.SHADOW_CAPTURE_ENABLED = String(enabled);
+    routedManifest.capture_enabled = enabled;
+    validate(routedConfig, routedManifest);
+  }
+
+  // Exercise historical prepared and trial states without activating them.
   const preparedConfig = structuredClone(config);
   const preparedManifest = structuredClone(manifest);
   preparedConfig.routes = []; preparedConfig.vars.SHADOW_CAPTURE_ENABLED = "false";

@@ -34,12 +34,15 @@ no repitio ninguno. Los recibos de recuperacion quedan bajo
 - Origen HTTPS independiente: `metamap-origin.redunisol.com.ar`, proxy al backend.
   `metamap-active.py` registra la activacion y el parche acotado de Apache.
 - Worker: `PRIMARY_MODE=dedicated`; el prefijo completo se dirige al dedicado.
-  La captura paralela sigue aislada para auditoria.
-- Si la ruta Cloudflare falla abierta, Apache de la VPS llega a un proxy ligero
-  en `127.0.0.1:3031`. Ese proxy no monta datos ni contiene credenciales y vuelve
-  a dirigir al mismo dedicado. No se modifico el Apache compartido de la VPS.
-  Sus archivos estan en `/opt/metamap-platform-fallback`; el Compose deseado
-  esta en `roles/metamap_server/templates/fallback-compose.yml.j2`.
+  Por pedido del operador, `SHADOW_CAPTURE_ENABLED=false` deshabilita las nuevas
+  copias shadow. Se conservan las rutas, el codigo y los demas bindings del Worker;
+  las colas y el receptor existentes pueden terminar las copias anteriores.
+- Tambien por pedido del operador, el backend antiguo y su proxy de respaldo en
+  la VPS quedan detenidos, con `restart=no` y perfil `manual-recovery` en Compose.
+  El puerto `127.0.0.1:3031` deja de escuchar. Los datos historicos se conservan;
+  no hay escritores activos sobre su volumen. Se mantienen los demas servicios
+  de la VPS y las reglas de Cloudflare, por lo que ya no hay respaldo funcional
+  en la VPS si el Worker falla abierto o es omitido.
 - Imagen inicial conservada por digest:
   `ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5`,
   codigo `a86be2de266029cd1ec4479b8bdfb7f74378e943`.
@@ -48,6 +51,21 @@ La vuelta a la VPS requiere reconciliar primero los nuevos datos del dedicado.
 Cambiar solo el modo del Worker no restaura un escritor antiguo actualizado.
 No ejecutar los antiguos playbooks de preparacion sobre el servicio activo:
 el origen ahora rechaza esa preparacion al detectar `backend_enabled=true`.
+
+Verificacion posterior al apagado, **17/11/2026 11:58 ART**: ambos contenedores
+MetaMap de la VPS estan `exited`, PID0, `restart=no`, sin listener en3031 ni
+escritores activos del volumen antiguo. Los tamanos y fechas de modificacion de
+sus cuatro archivos historicos permanecieron iguales entre11:56 y11:58 ART.
+Los dos clientes siguen leyendo validaciones por la API publica del dedicado;
+Transferencias consulta trazas, el acceso anonimo se rechaza y el actualizador
+firmado2.3.1 conserva su descarga parcial206. El cambio de Cloudflare fue solo
+`SHADOW_CAPTURE_ENABLED: true -> false`, sin subir codigo ni alterar rutas,
+secretos, colas o el modo primario.
+
+El test CI `test_operational_metamap_is_main_only_and_preserves_its_runtime`
+ahora valida el contrato del dedicado: secretos SSH separados, puerto18083,
+volumenes existentes y `runtime.env` local en formato raw. La expectativa anterior
+de un paso llamado `Decrypt runtime env` quedo obsoleta al integrar la migracion.
 
 ### Backup activo
 

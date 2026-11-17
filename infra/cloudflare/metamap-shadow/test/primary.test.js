@@ -60,6 +60,28 @@ test("dedicated routing never moves unrelated Kestra paths",async()=>{
   const instance=createWorker({fetchImpl:async upstream=>{assert.equal(upstream,request);return response;},log:()=>{}});
   assert.equal(await instance.fetch(request,{PRIMARY_MODE:"dedicated"},context()),response);
 });
+
+test("disabled shadow forwards a signed webhook once to dedicated without a copy",async()=>{
+  const request=await signed();
+  const body=await request.clone().text();
+  let calls=0;
+  const instance=createWorker({cryptoImpl:webcrypto,log:()=>{},fetchImpl:async upstream=>{
+    calls++;
+    assert.equal(new URL(upstream.url).hostname,PRIMARY_ORIGIN);
+    assert.equal(new URL(upstream.url).pathname,SOURCE_PATH);
+    assert.equal(upstream.method,"POST");
+    assert.equal(upstream.headers.get("x-signature"),request.headers.get("x-signature"));
+    assert.equal(await upstream.text(),body);
+    return new Response("stored",{status:200});
+  }});
+  const env={PRIMARY_MODE:"dedicated",SHADOW_CAPTURE_ENABLED:"false",
+    METAMAP_WEBHOOK_SECRET:SECRET,SHADOW_QUEUE:{send(){throw Error("shadow must stay disabled");}}};
+  const response=await instance.fetch(request,env,{waitUntil(){throw Error("no background copy expected");}});
+  assert.equal(response.status,200);
+  assert.equal(await response.text(),"stored");
+  assert.equal(response.headers.get("X-Metamap-Cutover"),"dedicated");
+  assert.equal(calls,1);
+});
 test("unknown primary mode fails closed",async()=>{
   const instance=createWorker({fetchImpl:()=>{throw Error("unexpected");},log:()=>{}});
   const response=await instance.fetch(new Request("https://"+SOURCE_HOST+"/metamap-platform/health"),{PRIMARY_MODE:"typo"},context());
