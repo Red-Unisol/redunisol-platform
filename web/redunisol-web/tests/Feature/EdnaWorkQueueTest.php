@@ -100,7 +100,7 @@ test('bounded menu polls skip held work before selecting the next batch', functi
 
 test('web route polls cannot multiply queued or reserved work and remain fair', function () {
     for ($id = 1; $id <= 27; $id++) {
-        DB::table('web_form_chat_routes')->insert(['entry_event_id' => $id, 'state' => 'waiting',
+        DB::table('web_form_chat_routes')->insert(['entry_event_id' => $id, 'state' => 'waiting', 'attempts' => 1,
             'reason' => 'native_message_pending', 'available_at' => now()->subMinute(),
             'created_at' => now()->subMinute(), 'updated_at' => now()->subMinute()]);
     }

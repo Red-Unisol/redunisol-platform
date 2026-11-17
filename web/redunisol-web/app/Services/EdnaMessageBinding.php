@@ -19,6 +19,9 @@ class EdnaMessageBinding
 
     private int $calls = 0;
 
+    /** Read snapshots belong to one resolution only, never to an ownership guard. */
+    private array $reads = [];
+
     public function __construct(?EdnaBitrix $crm = null)
     {
         $this->crm = $crm ?? new EdnaBitrix;
@@ -29,6 +32,7 @@ class EdnaMessageBinding
     {
         $this->deadline = microtime(true) + 30;
         $this->calls = 0;
+        $this->reads = [];
         $phoneHash = $this->entryPhone($event, $payload);
         if ($knownChatId !== null) {
             if ($knownChatId < 1) {
@@ -129,6 +133,7 @@ class EdnaMessageBinding
     {
         $this->deadline = microtime(true) + 30;
         $this->calls = 0;
+        $this->reads = [];
         $phoneHash = $this->entryPhone($event, $payload);
         if ($knownChatId !== null && $knownChatId < 1) {
             throw new RuntimeException('Invalid known message chat.');
@@ -445,6 +450,17 @@ class EdnaMessageBinding
             'imopenlines.session.history.get', 'imopenlines.dialog.get', 'imopenlines.crm.chat.get'], true)) {
             throw new RuntimeException('Unsupported message binding operation.');
         }
+        // Multiple CRM activities can point at the same native session. Reuse
+        // their read snapshot without dropping any candidate proof or ambiguity.
+        // resolve()/resolveCurrent() clear it before each new message/attempt;
+        // the caller's live ownership checks use EdnaBitrix directly.
+        if (microtime(true) >= $this->deadline) {
+            throw new RuntimeException('Message binding read budget exhausted.');
+        }
+        $key = hash('sha256', $method."\0".serialize($payload));
+        if (array_key_exists($key, $this->reads)) {
+            return $this->reads[$key];
+        }
         $wait = max(0, $this->lastCall + 0.5 - microtime(true));
         if (++$this->calls > 32 || microtime(true) + $wait + 5 >= $this->deadline) {
             throw new RuntimeException('Message binding read budget exhausted.');
@@ -454,7 +470,7 @@ class EdnaMessageBinding
         }
         $this->lastCall = microtime(true);
         try {
-            return $this->crm->call($method, $payload);
+            return $this->reads[$key] = $this->crm->call($method, $payload);
         } catch (Throwable) {
             throw new RuntimeException('Message binding read failed.');
         }

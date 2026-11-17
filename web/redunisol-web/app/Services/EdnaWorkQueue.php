@@ -43,7 +43,13 @@ class EdnaWorkQueue
     {
         $this->identity($job);
 
-        return $job::class === LinkWebFormChat::class ? 'edna-web-reconcile' : 'edna';
+        if ($job::class === LinkWebFormChat::class) {
+            $attempts = DB::table('web_form_chat_routes')->where('entry_event_id', $job->entryEventId)->value('attempts');
+
+            return $attempts !== null && (int) $attempts === 0 ? 'edna-web-new' : 'edna-web-reconcile';
+        }
+
+        return 'edna';
     }
 
     /** Holds must be excluded before a bounded poll selects its next batch. */
@@ -117,7 +123,7 @@ class EdnaWorkQueue
         } catch (Throwable) {
             throw new RuntimeException('Edna work payload is unavailable.');
         }
-        $allowedQueues = $job::class === LinkWebFormChat::class ? ['edna', 'edna-web-reconcile'] : ['edna'];
+        $allowedQueues = $job::class === LinkWebFormChat::class ? ['edna', 'edna-web-new', 'edna-web-reconcile'] : ['edna'];
         if (! $row || ! in_array($row->queue, $allowedQueues, true)
             || ($expectedQueue !== null && $row->queue !== $expectedQueue) || ! is_array($payload)
             || ($payload['displayName'] ?? null) !== $job::class

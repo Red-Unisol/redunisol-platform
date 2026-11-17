@@ -40,7 +40,7 @@ test('a retained legacy web job blocks low-priority duplicates before and after 
     $original = (array) DB::table('jobs')->find($id);
     $dispatcher->adopt($job, $id);
     $hold = (array) DB::table('edna_work_queue_keys')->sole();
-    DB::table('web_form_chat_routes')->insert(['entry_event_id' => 42, 'state' => 'waiting',
+    DB::table('web_form_chat_routes')->insert(['entry_event_id' => 42, 'state' => 'waiting', 'attempts' => 1,
         'available_at' => now()->subMinute(), 'created_at' => now()->subMinute(), 'updated_at' => now()]);
 
     expect($dispatcher->push($job))->toBeFalse()->and(app(WebFormChatRouting::class)->poll())->toBe(0);
@@ -89,5 +89,27 @@ test('one Laravel worker prioritizes inbox FIFO then normal work then web reconc
     }
     expect($selected)->toBe([$firstInbox, $secondInbox, $normal, $legacy, $low])
         ->and(DB::table('jobs')->count())->toBe(0)->and(DB::table('edna_work_queue_keys')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('the real web worker selects a fresh case ahead of already queued recovery work with intact holds', function () {
+    $dispatcher = app(EdnaWorkQueue::class);
+    foreach ([41 => 5, 42 => 0] as $id => $attempts) {
+        DB::table('web_form_chat_routes')->insert(['entry_event_id' => $id, 'state' => $attempts ? 'waiting' : 'pending',
+            'attempts' => $attempts, 'created_at' => now(), 'updated_at' => now()]);
+        $dispatcher->push(new LinkWebFormChat($id));
+    }
+    $rows = DB::table('jobs')->orderBy('id')->get();
+    expect($rows[0]->queue)->toBe('edna-web-reconcile')->and($rows[1]->queue)->toBe('edna-web-new');
+    $next = new ReflectionMethod(Worker::class, 'getNextJob');
+    $worker = app('queue.worker');
+    $connection = Queue::connection('edna');
+    $fresh = $next->invoke($worker, $connection, 'edna-web-new,edna-web-reconcile');
+    expect((int) $fresh->getJobId())->toBe((int) $rows[1]->id)->and(DB::table('edna_work_queue_keys')->count())->toBe(2);
+    $fresh->delete();
+    $retry = $next->invoke($worker, $connection, 'edna-web-new,edna-web-reconcile');
+    expect((int) $retry->getJobId())->toBe((int) $rows[0]->id);
+    $retry->delete();
+    expect(DB::table('edna_work_queue_keys')->count())->toBe(0);
     Http::assertNothingSent();
 });

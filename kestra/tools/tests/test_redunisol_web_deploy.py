@@ -36,6 +36,14 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 self.assertTrue(expected.issubset(environment), expected.difference(environment))
         self.assertEqual(compose['services']['php-fpm']['environment']['EDNA_INTAKE_ENABLED'], '${EDNA_INTAKE_ENABLED:-false}')
 
+    def test_web_linker_worker_consumes_fresh_before_retry_work(self):
+        compose = yaml.safe_load((ROOT / 'web/redunisol-web/deploy/docker-compose.vps.yml').read_text())
+        command = compose['services']['edna-web-worker']['command']
+        # One argv value: an unquoted comma in YAML flow syntax splits this argument.
+        queues = [arg for arg in command if arg.startswith('--queue=')]
+        self.assertEqual(queues, ['--queue=edna-web-new,edna-web-reconcile'])
+        self.assertNotIn('edna-web-reconcile', command)
+
     def test_kestra_runtime_propagates_the_intake_gates(self):
         compose = yaml.safe_load((ROOT / 'kestra/platform/infra/docker-compose.yml').read_text())
         environment = compose['services']['kestra']['environment']

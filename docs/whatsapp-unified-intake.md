@@ -299,7 +299,8 @@ debe ocurrir en la transacción; una configuración incompatible falla sin envia
 
 Ventas tiene un consumidor por cola: `edna-inbox-worker` recibe entradas de
 `edna-inbox`, `edna-worker` procesa menú/v3/préstamos en `edna`, y
-`edna-web-worker` consume `edna-web-reconcile`. Así los reintentos del menú no
+`edna-web-worker` consume primero `edna-web-new` y después
+`edna-web-reconcile`. Así los reintentos del menú no
 impiden ejecutar el puente web ni capturar callbacks. Cada cola tiene un solo
 worker; no se escala el envío sin límite. Los tres comparten las reservas
 durables y los locks por chat existentes, y cada acción vuelve a verificar
@@ -503,6 +504,47 @@ se necesita evidencia del proceso y una transferencia nativa correlacionada; no
 basta con la fase guardada o con que el vendedor ya sea dueño. Si aparece otra sesión o una decisión
 humana posterior, se conserva; los resultados inciertos que no se resuelven
 terminan en revisión.
+
+### Reintentos acotados y prioridad de mensajes nuevos
+
+El puente aplica backoff exponencial con **equal jitter**: para los intentos
+1, 2, 3, 4, 5 y siguientes, el techo es 60, 120, 240, 480, 960 y 1800 segundos.
+Cada espera se elige al azar entre el 50 % y el 100 % del techo; no supera
+30 minutos. Una transferencia incierta conserva además un mínimo de 5 minutos
+entre consultas. El poll corre cada minuto: estos intervalos indican cuándo
+el trabajo pasa a estar disponible, no una promesa de ejecución exacta.
+
+La recuperación automática termina a las **8 horas desde `created_at` de la ruta
+del mensaje**, sin renovar ese plazo con cada intento. El claim comprueba el
+vencimiento antes de cualquier lectura CRM; también se verifica durante el job
+y antes de transferir. El poll caduca filas sin lease vigente en lotes acotados.
+Los jobs antiguos ya encolados se reconocen y terminan localmente sin repetir
+consultas. No se eliminan recibos, pruebas ni reservas de trabajos aún activos.
+Una ruta sin transferencia incierta queda `expired/retry_window_expired`;
+`sending`/`unknown` o una intención sin resolución quedan en
+`review/transfer_unresolved_after_retry_window`, conservando el acuse disponible.
+No se repite el POST ni se reabre un caso vencido. Un mensaje nuevo puede crear
+su propia ruta elegible; no se reprocesa el mensaje anterior. Una prueba histórica
+válida de una ruta vencida puede orientar esa nueva resolución, pero todavía se
+exigen el mensaje exacto y las verificaciones vigentes antes de elegir el caso.
+
+Los primeros intentos usan `edna-web-new`; los reintentos usan
+`edna-web-reconcile`. El consumidor atiende las dos colas en ese orden y el poll
+también selecciona primero los intentos nuevos. Es prioridad estricta: si hay
+ingresos nuevos sostenidos, un reintento puede llegar al vencimiento sin volver
+a ejecutarse. Las reservas durables y el ACK siguen evitando duplicados entre
+productores y trabajos reservados.
+
+La prueba exacta del mensaje ya persistida se reutiliza en el reintento.
+Dentro de cada resolución se memoizan lecturas Bitrix idénticas; el snapshot se
+reinicia en cada llamada a `resolve`/`resolveCurrent` y no se comparte con otra invocación.
+No se cachean las verificaciones finales de sesión, vendedor ni atención humana.
+
+Publicar el código y el Compose compatible juntos: el worker debe consumir
+`--queue=edna-web-new,edna-web-reconcile`. Para rollback, mantener un consumidor
+compatible hasta vaciar `edna-web-new` antes de retirarlo. No borrar ni trasladar
+jobs manualmente como parte del despliegue. El cambio no crea prospectos,
+negociaciones ni recupera asignaciones históricas.
 
 ### Operación y recuperación del puente
 

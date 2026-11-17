@@ -172,12 +172,70 @@ test('an exact ID duplicated across native messages remains ambiguous', function
     expect((new EdnaMessageBinding($fake))->resolve($event, $payload))->toBeNull();
 });
 
-test('distinct activities carrying the same proof remain ambiguous', function () {
+test('distinct activities remain ambiguous while sharing one session history and dialog read', function () {
     [$event, $payload, $fake] = messageBindingFixture();
     $fake->activities['1:101'][] = array_replace($fake->activities['1:101'][0], ['ID' => '802']);
 
     expect((new EdnaMessageBinding($fake))->resolve($event, $payload))->toBeNull();
+    $calls = array_count_values(array_column($fake->calls, 0));
+    expect($calls['imopenlines.session.history.get'])->toBe(1)
+        ->and($calls['imopenlines.dialog.get'])->toBe(1);
 });
+
+test('session history snapshots never collapse distinct candidate sessions', function () {
+    [$event, $payload, $fake] = messageBindingFixture();
+    $fake->activities['1:101'][] = array_replace($fake->activities['1:101'][0], [
+        'ID' => '802', 'ASSOCIATED_ENTITY_ID' => '502',
+    ]);
+    $fake->histories['502'] = array_replace($fake->histories['501'], ['sessionId' => 502]);
+
+    expect((new EdnaMessageBinding($fake))->resolve($event, $payload))->toBeNull();
+    $calls = array_count_values(array_column($fake->calls, 0));
+    expect($calls['imopenlines.session.history.get'])->toBe(2)
+        ->and($calls['imopenlines.dialog.get'])->toBe(1);
+});
+
+test('a failed message lookup is refreshed on the next resolution attempt', function () {
+    [$event, $payload, $fake] = messageBindingFixture();
+    $fake->histories['501']['message']['701']['params']['connectorMid'] = ['other-message'];
+    $resolver = new EdnaMessageBinding($fake);
+    expect($resolver->resolve($event, $payload, 601))->toBeNull();
+
+    $fake->histories['501']['message']['701']['params']['connectorMid'] = ['700001'];
+    expect($resolver->resolve($event, $payload, 601))->toMatchArray([
+        'verified' => true, 'session_id' => '501', 'entry_message_id' => '700001',
+    ]);
+    expect(array_count_values(array_column($fake->calls, 0))['imopenlines.session.history.get'])->toBe(2);
+});
+
+test('a later resolution cannot reuse a proven message after its native evidence changes', function () {
+    [$event, $payload, $fake] = messageBindingFixture();
+    $resolver = new EdnaMessageBinding($fake);
+    expect($resolver->resolve($event, $payload, 601)['verified'])->toBeTrue();
+
+    $fake->histories['501']['message']['701']['params']['connectorMid'] = ['other-message'];
+    expect($resolver->resolve($event, $payload, 601))->toBeNull();
+    expect(array_count_values(array_column($fake->calls, 0))['imopenlines.session.history.get'])->toBe(2);
+});
+
+test('every resolution refreshes the current chat before considering historical evidence', function (string $method) {
+    [$event, $payload, $fake] = messageBindingFixture();
+    $resolver = new EdnaMessageBinding($fake);
+    expect($resolver->resolve($event, $payload, 601)['session_id'])->toBe('501');
+
+    $fake->dialogs['601']['entity_data_1'] = 'Y|DEAL|401|N|N|502|0|0|0|0';
+    $fake->activities['session:502'] = [array_replace($fake->activities['session:501'][0], [
+        'ID' => '802', 'ASSOCIATED_ENTITY_ID' => '502',
+    ])];
+    $fake->histories['502'] = array_replace($fake->histories['501'], [
+        'sessionId' => 502, 'message' => [],
+    ]);
+
+    expect($resolver->{$method}($event, $payload, 601))->toBeNull();
+    $calls = array_values(array_filter($fake->calls, fn ($call) => $call[0] === 'imopenlines.session.history.get'));
+    expect(array_column(array_column($calls, 1), 'SESSION_ID'))->toBe([501, 502]);
+    expect(array_count_values(array_column($fake->calls, 0))['imopenlines.dialog.get'])->toBe(2);
+})->with(['resolve', 'resolveCurrent']);
 
 test('native evidence must belong to the external sender and exact chat', function (string $field) {
     [$event, $payload, $fake] = messageBindingFixture();
