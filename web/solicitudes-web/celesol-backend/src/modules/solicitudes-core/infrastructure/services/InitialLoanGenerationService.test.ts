@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { CrearPrestamoGateway, PrestamoLegacyNotSentError } from "./CrearPrestamoGateway";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import { InitialLoanGenerationService, type PreparedInitialLoan } from "./InitialLoanGenerationService";
 import { coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
 import { actingContext } from "../../../auth/impersonation/context";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
+import { createLoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 
 function fixture() {
   let row = {
@@ -22,6 +24,9 @@ function fixture() {
   const notifications: Array<Record<string, unknown>> = [];
   let calls = 0;
   let persistenceError: Error | null = null;
+  let cleanupError: Error | null = null;
+  let commitError: Error | null = null;
+  const updates: Array<Partial<typeof row>> = [];
   const gatewayContexts: (LoanDiagnosticContext | undefined)[] = [];
   const diagnostics: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];
   const prepared: PreparedInitialLoan = {
@@ -36,7 +41,9 @@ function fixture() {
       findFirst: async () => null,
       update: async (input: { data: Partial<typeof row> }) => {
         if (persistenceError && (input.data.administrativeCoreControl?.generationPending as { status?: string } | undefined)?.status === "CREATED") throw persistenceError;
-        row = { ...row, ...input.data, updatedAt: new Date(row.updatedAt.getTime() + 1) }; return structuredClone(row);
+        if (cleanupError && Object.is(input.data.administrativeCoreControl, Prisma.DbNull)) throw cleanupError;
+        updates.push(input.data);
+        row = { ...row, ...input.data, ...(Object.is(input.data.administrativeCoreControl, Prisma.DbNull) ? { administrativeCoreControl: {} } : {}), updatedAt: new Date(row.updatedAt.getTime() + 1) }; return structuredClone(row);
       },
     },
     user: { findFirst: async (input: { where: { id: string } }) => ({ ...actor, id: input.where.id, isSystemAdmin: input.where.id === "admin", state: 1, deletedAt: null }) },
@@ -47,7 +54,11 @@ function fixture() {
   const prisma = { ...db, $transaction: <T>(fn: (tx: typeof db) => Promise<T>) => {
     const run = tail.then(async () => {
       const snapshot = structuredClone(row), beforeAudits = audits.length, beforeNotifications = notifications.length;
-      try { return await fn(db); } catch (e) { row = snapshot; audits.length = beforeAudits; notifications.length = beforeNotifications; throw e; }
+      let result: T;
+      try { result = await fn(db); } catch (e) { row = snapshot; audits.length = beforeAudits; notifications.length = beforeNotifications; throw e; }
+      // Simulate a durable COMMIT whose acknowledgement is lost at the client.
+      if (commitError) { const error = commitError; commitError = null; throw error; }
+      return result;
     });
     tail = run.catch(() => undefined);
     return run;
@@ -61,7 +72,7 @@ function fixture() {
     diagnostics: async (context, event) => { diagnostics.push({ context, event }); },
   };
   return { deps, service: new InitialLoanGenerationService(deps), prepared, actor, audits, notifications, diagnostics, gatewayContexts,
-    row: () => row, calls: () => calls, failPersistence: (error: Error) => { persistenceError = error; },
+    row: () => row, calls: () => calls, updates, failCleanup: (error: Error) => { cleanupError = error; }, failNextCommit: (error: Error) => { commitError = error; }, failPersistence: (error: Error) => { persistenceError = error; },
     mutate: (change: Partial<typeof row>) => { row = { ...row, ...change }; } };
 }
 
@@ -258,4 +269,73 @@ it("a rejected diagnostic writer cannot turn a successful generation into failur
   await assert.rejects(uncertain.service.create(uncertain.prepared, { solicitudId: "sol-1", currentUser: uncertain.actor }), /no confirmó/);
   assert.equal((uncertain.row().administrativeCoreControl.generationPending as { status: string }).status, "UNCERTAIN");
   assert.equal(uncertain.calls(), 1);
+});
+
+it("releases a failed pre-send request trace and permits a deliberate retry with exactly one Core creation", async () => {
+  const f = fixture();
+  let failTrace = true, remoteCalls = 0;
+  let finishLateWrite!: () => void;
+  const lateWrite = new Promise<void>(resolve => { finishLateWrite = resolve; });
+  const diagnosticDb = { technicalDiagnosticEvent: { create: async () => {
+    if (failTrace) await lateWrite;
+  } } } as unknown as Pick<PrismaClient, "technicalDiagnosticEvent">;
+  f.deps.gateway = new CrearPrestamoGateway({
+    baseUrl: "https://core.example.test", timeoutMs: 1000,
+    diagnostics: createLoanDiagnosticWriter(diagnosticDb, { timeoutMs: 10, fallback: () => undefined }),
+  }, async () => { remoteCalls++; return new Response('{"Ok":true,"ID":"444"}'); });
+  await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /no se envió/);
+  assert.equal(remoteCalls, 0);
+  assert.equal(f.row().legacyOid, null);
+  assert.equal(f.row().administrativeCoreControl.generationPending, undefined);
+  assert.equal(f.updates.at(-1)!.administrativeCoreControl, Prisma.DbNull);
+  assert.equal(coreReconciliationPending(f.row()), false);
+  assert.equal(f.audits.at(-1)!.actionCode, "LOAN_GENERATION_NOT_SENT");
+  assert(f.diagnostics.some(entry => entry.event.stage === "RESERVATION_RELEASED"));
+  finishLateWrite();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(remoteCalls, 0);
+  failTrace = false;
+  f.prepared.solicitud.updatedAt = f.row().updatedAt;
+  await f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor });
+  assert.equal(remoteCalls, 1);
+  assert.equal(f.row().legacyOid, "444");
+});
+
+it("releases only its own un-sent durable reservation if the reservation COMMIT acknowledgement fails", async () => {
+  const f = fixture(), error = new Error("transaction expired waiting for COMMIT");
+  f.mutate({ administrativeCoreControl: { retainedControl: "keep" } });
+  f.failNextCommit(error);
+  await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /no se envió/);
+  assert.equal(f.calls(), 0);
+  assert.deepEqual(f.row().administrativeCoreControl, { retainedControl: "keep" });
+  assert.equal(f.audits.at(-1)!.actionCode, "LOAN_GENERATION_NOT_SENT");
+  const start = f.audits[0]!.metadata as { requestId: string };
+  assert(f.diagnostics.every(entry => entry.context.operationId === start.requestId));
+  assert.equal((f.diagnostics[0]!.event.data as { phase: string }).phase, "RESERVATION");
+});
+
+it("does not clear another operation, a known remote ID or an unresolved refinancing charge", async () => {
+  for (const patch of [{ requestId: "another-operation" }, { newLoanId: "444" }, { refinanciacionCobro: { operationId: "charge" } }]) {
+    const f = fixture();
+    f.deps.gateway.crear = async () => {
+      const pending = f.row().administrativeCoreControl.generationPending as Record<string, unknown>;
+      f.mutate({ administrativeCoreControl: { generationPending: { ...pending, ...patch } } });
+      throw new PrestamoLegacyNotSentError();
+    };
+    await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /no confirmó/);
+    const pending = f.row().administrativeCoreControl.generationPending as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patch)) assert.deepEqual(pending[key], value);
+    assert.equal(f.audits.some(a => a.actionCode === "LOAN_GENERATION_NOT_SENT"), false);
+  }
+});
+
+it("preserves the reservation if its safe cleanup cannot be persisted", async () => {
+  const f = fixture();
+  f.failCleanup(new Error("cleanup storage failed"));
+  f.deps.gateway.crear = async () => { throw new PrestamoLegacyNotSentError(); };
+  await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /no pudo liberarse la reserva/);
+  assert(f.row().administrativeCoreControl.generationPending);
+  assert.equal(f.calls(), 0);
+  assert(f.diagnostics.some(entry => entry.event.stage === "PERSISTENCE_FAILED"));
+  await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /generación.*incierto/);
 });

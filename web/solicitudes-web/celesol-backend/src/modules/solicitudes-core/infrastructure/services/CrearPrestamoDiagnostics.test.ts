@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 import { PrestamoLegacyRechazadoError, PrestamoLegacyUnavailableError } from "../../domain/solicitudes-core-errors";
-import { CrearPrestamoGateway, type CrearPrestamoInput } from "./CrearPrestamoGateway";
+import { CrearPrestamoGateway, PrestamoLegacyNotSentError, type CrearPrestamoInput } from "./CrearPrestamoGateway";
 
 type Event = Parameters<LoanDiagnosticWriter>[1];
 type SavedEvent = { context: LoanDiagnosticContext; event: Event; required?: boolean };
@@ -200,7 +200,10 @@ describe("CrearPrestamoGateway diagnostics", () => {
     const f = fixture(async () => assert.fail("Core must not be called without a request trace"), {
       writer: async (_ctx, event) => { if (event.stage === "REQUEST") throw new Error("SECRET database unavailable"); },
     });
-    await assert.rejects(f.gateway.crear(input, context), assertGeneric);
+    await assert.rejects(f.gateway.crear(input, context), error => {
+      assert(error instanceof PrestamoLegacyNotSentError);
+      return assertGeneric(error);
+    });
     assert.equal(f.calls(), 0);
     assert.deepEqual(f.events.map(saved => saved.event.stage), ["REQUEST"]);
   });

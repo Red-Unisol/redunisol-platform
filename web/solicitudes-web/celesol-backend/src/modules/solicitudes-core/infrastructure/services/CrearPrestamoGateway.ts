@@ -67,6 +67,14 @@ export type CrearPrestamoResult = {
 
 const CREAR_PRESTAMO_PATH = "/api/Simulador/CrearPrestamo";
 
+/** Only thrown while the gateway can prove fetch has never been invoked. */
+export class PrestamoLegacyNotSentError extends PrestamoLegacyUnavailableError {
+  constructor() {
+    super();
+    this.name = "PrestamoLegacyNotSentError";
+  }
+}
+
 export class CrearPrestamoGateway {
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
@@ -207,7 +215,7 @@ export class CrearPrestamoGateway {
     try {
       await this.diagnostics(context, { stage, callId, elapsedMs: Math.max(0, Date.now() - startedAt), data }, required);
     } catch {
-      if (required) throw new PrestamoLegacyUnavailableError();
+      if (required) throw new PrestamoLegacyNotSentError();
     }
   }
 

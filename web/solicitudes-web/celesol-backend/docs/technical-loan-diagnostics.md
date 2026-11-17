@@ -80,6 +80,26 @@ reserva durable y la recuperación existente siguen protegiendo contra duplicado
 Este registro no libera reservas `UNCERTAIN`, no introduce reintentos automáticos
 y no reconstruye las respuestas de incidentes anteriores a su despliegue.
 
+El alta inicial distingue el fallo del diagnóstico obligatorio **antes del envío**
+de un fallo de red después de invocar el transporte. En el primer caso libera y
+audita su propia reserva `CREATING`, sin enviar ni reintentar la creación. El
+operador debe actualizar la solicitud antes de volver a intentarlo. También
+conserva el `requestId` fuera de la transacción de reserva: si falla la respuesta
+del commit después de que la base lo haya confirmado, vuelve a bloquear la fila
+y libera únicamente la reserva de esa ejecución, que todavía no llamó al Core.
+
+La liberación conserva otros controles administrativos y usa SQL `NULL` si no
+queda ninguna clave. No elimina reservas de otra operación, con ID remoto
+conocido ni con cobros de refinanciación pendientes. Si falla la limpieza, el
+intento permanece bloqueado y registra `PERSISTENCE_FAILED`; requiere revisión.
+Sin un préstamo vinculado no se muestra una conciliación de préstamo `null`,
+pero los bloqueos de generación y refinanciación siguen vigentes.
+
+Estas decisiones usan evidencia del camino de ejecución que aún está activo.
+La ausencia de eventos, la antigüedad de una reserva o un `REQUEST` tardío no
+autorizan una liberación automática después de reiniciar el proceso. Los intentos
+históricos requieren verificar el estado en Beex y en el Core antes de intervenir.
+
 ## Consulta operativa de solo lectura
 
 Acceder por SSH con el procedimiento y las credenciales operativas locales.
