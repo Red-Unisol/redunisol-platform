@@ -5,10 +5,12 @@ import type { NextFunction, Response } from "express";
 import { InvalidSessionError } from "../../auth/domain/auth-errors";
 import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
 import {
+  CalculadoraVersionNotFoundError,
   ForbiddenCalculadoraAccessError,
   InvalidEvaluacionRequestError,
   InvalidSolicitudOidError,
 } from "../domain/riesgo-errors";
+import { leerPlanillaRepositorio } from "../infrastructure/services/PlanillaRepositorio";
 import { RiesgoController } from "./RiesgoController";
 
 describe("RiesgoController", () => {
@@ -54,6 +56,29 @@ describe("RiesgoController", () => {
 
     assert.equal(nextError, undefined);
     assert.equal(response.statusCode, 200);
+  });
+
+  it("sirve la version vigente de la base en lugar del archivo", async () => {
+    const contenido = Buffer.from("planilla-vigente");
+    const controller = buildController({
+      calculadoraVersiones: {
+        findVigente: async () => ({ contenido }),
+      },
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.getCalculadora(
+      request(),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body, contenido);
   });
 
   it("rejects access for a vendedor (non-admin, non-RIESGO)", async () => {
@@ -298,9 +323,120 @@ describe("RiesgoController", () => {
   });
 });
 
+describe("RiesgoController versiones de la calculadora", () => {
+  const VENDEDOR = {
+    getCurrentUserUseCase: {
+      execute: async () => ({
+        ...authenticatedUser(),
+        workflowOwner: { code: "VENDEDORES", id: "o-v", name: "Vendedores" },
+      }),
+    },
+  };
+  const HUELLA = "a".repeat(64);
+  const VERSION_ID = "00000000-0000-4000-8000-000000000001";
+
+  async function llamar(
+    accion:
+      | "aplicarVersion"
+      | "listarVersiones"
+      | "previsualizarVersion"
+      | "restaurarVersion",
+    controller: RiesgoController,
+    req: unknown,
+  ) {
+    const response = createResponse();
+    let nextError: unknown;
+    await controller[accion](
+      req as never,
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+    return { nextError, response };
+  }
+
+  for (const accion of [
+    "aplicarVersion",
+    "listarVersiones",
+    "previsualizarVersion",
+    "restaurarVersion",
+  ] as const) {
+    it(`${accion}: solo Riesgo o admin`, async () => {
+      const { nextError } = await llamar(
+        accion,
+        buildController(VENDEDOR),
+        { ...(request({ versionId: VERSION_ID }) as object), body: { huellaVimarx: HUELLA } },
+      );
+      assert.ok(nextError instanceof ForbiddenCalculadoraAccessError);
+    });
+  }
+
+  it("aplica con la huella revisada y el usuario actual", async () => {
+    const llamadas: unknown[] = [];
+    const controller = buildController({
+      calculadoraVersionesUseCase: {
+        aplicar: async (input: unknown) => {
+          llamadas.push(input);
+          return { id: VERSION_ID };
+        },
+      },
+    });
+
+    const { nextError, response } = await llamar("aplicarVersion", controller, {
+      ...(request() as object),
+      body: { huellaVimarx: HUELLA },
+    });
+
+    assert.equal(nextError, undefined);
+    assert.deepEqual(llamadas, [{ huellaVimarx: HUELLA, usuarioId: "user-1" }]);
+    assert.deepEqual(response.body, { version: { id: VERSION_ID } });
+  });
+
+  it("no aplica sin una huella válida", async () => {
+    const { nextError } = await llamar("aplicarVersion", buildController(), {
+      ...(request() as object),
+      body: { huellaVimarx: "cualquiera" },
+    });
+    assert.ok(nextError instanceof InvalidEvaluacionRequestError);
+  });
+
+  it("restaurar rechaza un id que no es uuid", async () => {
+    const { nextError } = await llamar(
+      "restaurarVersion",
+      buildController(),
+      request({ versionId: "../otra" }),
+    );
+    assert.ok(nextError instanceof CalculadoraVersionNotFoundError);
+  });
+
+  it("restaura la versión pedida con el usuario actual", async () => {
+    const llamadas: unknown[] = [];
+    const controller = buildController({
+      calculadoraVersionesUseCase: {
+        restaurar: async (input: unknown) => {
+          llamadas.push(input);
+          return { id: "nueva" };
+        },
+      },
+    });
+
+    const { nextError } = await llamar(
+      "restaurarVersion",
+      controller,
+      request({ versionId: VERSION_ID }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.deepEqual(llamadas, [{ usuarioId: "user-1", versionId: VERSION_ID }]);
+  });
+});
+
 function buildController(
   overrides?: Partial<{
     calculadoraMutualDatosProvider: unknown;
+    calculadoraVersiones: unknown;
+    calculadoraVersionesUseCase: unknown;
     getCurrentUserUseCase: unknown;
     guardarEvaluacionRiesgoUseCase: unknown;
   }>,
@@ -311,6 +447,18 @@ function buildController(
       getDatosByCoreId: async () => ({}),
       ...(overrides?.calculadoraMutualDatosProvider ?? {}),
     } as never),
+    calculadoraVersiones: ({
+      findVigente: async () => null,
+      ...(overrides?.calculadoraVersiones ?? {}),
+    } as never),
+    calculadoraVersionesUseCase: ({
+      aplicar: async () => null,
+      listar: async () => [],
+      previsualizar: async () => ({}),
+      restaurar: async () => ({}),
+      ...(overrides?.calculadoraVersionesUseCase ?? {}),
+    } as never),
+    leerPlanillaRepositorio,
     getCurrentUserUseCase: ({
       execute: async () => authenticatedUser(),
       ...(overrides?.getCurrentUserUseCase ?? {}),

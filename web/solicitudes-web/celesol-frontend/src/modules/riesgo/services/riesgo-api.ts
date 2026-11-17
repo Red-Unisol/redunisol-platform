@@ -162,3 +162,66 @@ export function guardarEvaluacionRiesgo(
     payload,
   );
 }
+
+// Versiones de la calculadora: Riesgo trae la ultima SCORINGPF de Vimarx.
+// Bajarla y adaptarla puede tardar mas que una consulta comun.
+const VERSIONES_TIMEOUT_MS = 45000;
+
+export type CalculadoraVersion = {
+  cargadaEn: string;
+  cargadaPor: { id: string; nombre: string } | null;
+  id: string;
+  origen: "REPOSITORIO" | "RESTAURADA" | "VIMARX";
+  restauradaDeId: string | null;
+  resumenCambios: unknown;
+  sha256: string;
+  vigente: boolean;
+};
+
+export type CambiosCalculadora = {
+  hojas: Array<{
+    celdas: Array<{ antes: string; despues: string; ref: string }>;
+    hoja: string;
+    total: number;
+  }>;
+  hojasNuevas: string[];
+  hojasQuitadas: string[];
+};
+
+export type VistaPreviaCalculadora = {
+  cambios: CambiosCalculadora;
+  huellaVimarx: string;
+  sinCambios: boolean;
+};
+
+export async function listarVersionesCalculadora() {
+  const response = await apiClient.get<{ versiones: CalculadoraVersion[] }>(
+    "/api/riesgo/calculadora/versiones",
+  );
+  return response.versiones;
+}
+
+export function previsualizarVersionCalculadora() {
+  return apiClient.post<VistaPreviaCalculadora>(
+    "/api/riesgo/calculadora/versiones/vista-previa",
+    {},
+    VERSIONES_TIMEOUT_MS,
+  );
+}
+
+export async function aplicarVersionCalculadora(huellaVimarx: string) {
+  const response = await apiClient.post<{ version: CalculadoraVersion | null }>(
+    "/api/riesgo/calculadora/versiones",
+    { huellaVimarx },
+    VERSIONES_TIMEOUT_MS,
+  );
+  return response.version;
+}
+
+export async function restaurarVersionCalculadora(versionId: string) {
+  const response = await apiClient.post<{ version: CalculadoraVersion }>(
+    `/api/riesgo/calculadora/versiones/${encodeURIComponent(versionId)}/restaurar`,
+    {},
+  );
+  return response.version;
+}

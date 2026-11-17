@@ -3,11 +3,15 @@ import { prisma } from "../../db/prisma";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
 import { MinioAdjuntosObjectStorage } from "../solicitudes-core/adjuntos/infrastructure/services/MinioAdjuntosObjectStorage";
 import { CalculadoraMutualDatosProvider } from "./application/services/CalculadoraMutualDatosProvider";
+import { CalculadoraVersionesUseCase } from "./application/use-cases/CalculadoraVersiones.use-case";
 import { GetEvaluacionRiesgoUseCase } from "./application/use-cases/GetEvaluacionRiesgo.use-case";
 import { GuardarEvaluacionRiesgoUseCase } from "./application/use-cases/GuardarEvaluacionRiesgo.use-case";
+import { CalculadoraRiesgoVersionPrismaDatasource } from "./infrastructure/datasources/CalculadoraRiesgoVersionPrismaDatasource";
 import { EvaluacionRiesgoPrismaDatasource } from "./infrastructure/datasources/EvaluacionRiesgoPrismaDatasource";
 import { SolicitudCoreSnapshotDatasource } from "./infrastructure/datasources/SolicitudCoreSnapshotDatasource";
 import { CalculadoraMutualLegacyGateway } from "./infrastructure/services/CalculadoraMutualLegacyGateway";
+import { leerPlanillaRepositorio } from "./infrastructure/services/PlanillaRepositorio";
+import { ScoringpfVimarxGateway } from "./infrastructure/services/ScoringpfVimarxGateway";
 import { RiesgoController } from "./presentation/RiesgoController";
 import { RiesgoRoutes } from "./presentation/RiesgoRoutes";
 
@@ -43,8 +47,24 @@ export function createRiesgoRouter(
     prisma,
   );
 
+  // Versiones de la calculadora que Riesgo trae de Vimarx (SCORINGPF).
+  const calculadoraVersiones = new CalculadoraRiesgoVersionPrismaDatasource(
+    prisma,
+  );
+  const calculadoraVersionesUseCase = new CalculadoraVersionesUseCase({
+    leerPlanillaRepositorio,
+    now: () => new Date(),
+    repository: calculadoraVersiones,
+    vimarx: new ScoringpfVimarxGateway({
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    }),
+  });
+
   const riesgoController = new RiesgoController({
     calculadoraMutualDatosProvider,
+    calculadoraVersiones,
+    calculadoraVersionesUseCase,
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     getEvaluacionRiesgoUseCase: new GetEvaluacionRiesgoUseCase({
       objectStorage,
@@ -56,6 +76,7 @@ export function createRiesgoRouter(
       repository: evaluacionRiesgoRepository,
       storageBucket: env.MINIO_BUCKET_SOLICITUDES,
     }),
+    leerPlanillaRepositorio,
   });
 
   return RiesgoRoutes.create(riesgoController);
