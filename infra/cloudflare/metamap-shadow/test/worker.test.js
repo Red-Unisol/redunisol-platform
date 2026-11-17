@@ -304,8 +304,8 @@ test("committed prepared or active configuration agrees with its manifest and ke
   const manifest = JSON.parse(await readFile(new URL("manifest.json", root), "utf8"));
   const pattern = "https://" + SOURCE_HOST + SOURCE_PATH + "*";
   function validate(actual, desired) {
-    assert.ok(["prepared-not-applied", "active"].includes(desired.status));
-    const active = desired.status === "active";
+    assert.ok(["prepared-not-applied", "active", "dedicated-primary"].includes(desired.status));
+    const active = desired.status !== "prepared-not-applied";
     assert.equal(actual.name, "metamap-webhook-shadow"); assert.equal(desired.worker, actual.name);
     assert.equal(actual.workers_dev, false); assert.equal(actual.preview_urls, false); assert.equal(desired.workers_dev, false);
     assert.equal(Object.hasOwn(actual, "route"), false, "Only the reviewed routes array may configure routing");
@@ -321,7 +321,14 @@ test("committed prepared or active configuration agrees with its manifest and ke
         assert.match(desired.route.zone_id, /^[0-9a-f]{32}$/);
         route.zone_id = desired.route.zone_id;
       } else { route.zone_name = "redunisol.com.ar"; }
-      assert.deepEqual(actual.routes, [route], "Active routing must contain exactly the agreed route");
+      const expected = [route];
+      if (desired.production_cutover) {
+        assert.equal(desired.primary_route.pattern, "https://" + SOURCE_HOST + "/metamap-platform/*");
+        assert.equal(desired.primary_route.request_limit_fail_open, true);
+        assert.equal(actual.vars.PRIMARY_MODE, "dedicated");
+        expected.push({ pattern: desired.primary_route.pattern, zone_id: desired.primary_route.zone_id });
+      }
+      assert.deepEqual(actual.routes, expected, "Active routing must contain exactly the bounded MetaMap routes");
     } else { assert.deepEqual(actual.routes, []); }
     assert.equal(actual.observability.logs.invocation_logs, false);
     assert.deepEqual(actual.queues.producers, [{ binding: "SHADOW_QUEUE", queue: "metamap-webhook-shadow" }]);
@@ -331,7 +338,7 @@ test("committed prepared or active configuration agrees with its manifest and ke
       dead_letter_queue: "metamap-webhook-shadow-dlq" }]);
     assert.equal(desired.dead_letter_queue, "metamap-webhook-shadow-dlq"); assert.equal(desired.dead_letter_consumer, null);
     assert.equal(desired.raw_body_limit_bytes, MAX_RAW_BYTES);
-    assert.equal(desired.production_backend_enabled, false); assert.equal(desired.production_cutover, false);
+    assert.equal(desired.production_backend_enabled, desired.status === "dedicated-primary"); assert.equal(desired.production_cutover, desired.status === "dedicated-primary");
   }
   validate(config, manifest);
 
@@ -339,6 +346,7 @@ test("committed prepared or active configuration agrees with its manifest and ke
   const preparedConfig = structuredClone(config);
   const preparedManifest = structuredClone(manifest);
   preparedConfig.routes = []; preparedConfig.vars.SHADOW_CAPTURE_ENABLED = "false";
+  preparedManifest.production_backend_enabled = false; preparedManifest.production_cutover = false; preparedConfig.vars.PRIMARY_MODE = "vps";
   preparedManifest.status = "prepared-not-applied"; preparedManifest.capture_enabled = false; preparedManifest.route.enabled = false;
   validate(preparedConfig, preparedManifest);
   const activeConfig = structuredClone(preparedConfig);

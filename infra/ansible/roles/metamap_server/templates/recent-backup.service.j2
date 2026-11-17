@@ -1,0 +1,19 @@
+[Unit]
+Description=Consistent MetaMap recent data and signed updates backup
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+Environment=RESTIC_CACHE_DIR=/var/cache/redunisol-metamap
+ExecStart=/usr/bin/python3 /usr/local/libexec/redunisol-metamap-live-backup.py --revision {{ metamap_revision }}
+TimeoutStartSec=300
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/redunisol/state/metamap-server /srv/redunisol-backups/restic/metamap /var/cache/redunisol-metamap

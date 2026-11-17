@@ -9,16 +9,29 @@
     {
       "pattern": "https://kestra.redunisol.com.ar/metamap-platform/api/v1/metamap/webhooks*",
       "zone_id": "98afdd42871695e66af52cec137d2be7"
+    },
+    {
+      "pattern": "https://kestra.redunisol.com.ar/metamap-platform/*",
+      "zone_id": "98afdd42871695e66af52cec137d2be7"
     }
   ],
-  "vars": { "SHADOW_CAPTURE_ENABLED": "true" },
+  "vars": {
+    "SHADOW_CAPTURE_ENABLED": "true",
+    "PRIMARY_MODE": "dedicated"
+  },
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": false }
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
   },
   "queues": {
     "producers": [
-      { "binding": "SHADOW_QUEUE", "queue": "metamap-webhook-shadow" }
+      {
+        "binding": "SHADOW_QUEUE",
+        "queue": "metamap-webhook-shadow"
+      }
     ],
     "consumers": [
       {

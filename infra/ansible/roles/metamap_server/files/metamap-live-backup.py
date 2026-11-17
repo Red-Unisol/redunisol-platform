@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import urllib.request
 
 STATE = Path("/srv/redunisol/state/metamap-server")
 DATABASE = STATE / "data/metamap_platform_server.db"
@@ -70,7 +71,14 @@ def execute(revision, verify_restore):
         proof = database_proof(temporary)
         final = STAGE / "metamap_platform_server.db"
         os.replace(str(temporary), str(final))
-        report = {"scope": "metamap-recent-live-backup", "revision": revision, "created_at": int(time.time()), "counts": proof, "sqlite_sha256": digest(final), "repository_id": config["id"], "offsite": False}
+        application = {"status": "unavailable"}
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:18083/health", timeout=3) as response:
+                application = json.load(response)
+        except Exception:
+            pass
+        image = run(["docker", "inspect", "--format", "{{.Config.Image}}", "metamap-server-server-1"]).decode().strip()
+        report = {"scope": "metamap-recent-live-backup", "revision": revision, "created_at": int(time.time()), "counts": proof, "sqlite_sha256": digest(final), "repository_id": config["id"], "offsite": False, "application": application, "image": image}
         (STAGE / "manifest.json").write_text(json.dumps(report, sort_keys=True))
         (STAGE / "manifest.json").chmod(0o600)
         output = restic(["backup", "--json", "--tag", "metamap-recent-live", "--tag", "revision:" + revision, "--exclude", str(STAGE / "backup.lock"), "--", str(STAGE), str(UPDATES)])

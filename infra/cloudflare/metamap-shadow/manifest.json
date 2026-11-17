@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "active",
+  "status": "dedicated-primary",
   "cloudflare_account_id": "5dd7bad97b4d2a933d0722c1a15772d6",
   "worker": "metamap-webhook-shadow",
   "queue": "metamap-webhook-shadow",
@@ -32,7 +32,21 @@
   "delivery_timeout_ms": 8000,
   "max_retries": 3,
   "free_plan_retention_hours": 24,
-  "required_secrets": ["METAMAP_WEBHOOK_SECRET", "SHADOW_DELIVERY_TOKEN"],
-  "production_backend_enabled": false,
-  "production_cutover": false
+  "required_secrets": [
+    "METAMAP_WEBHOOK_SECRET",
+    "SHADOW_DELIVERY_TOKEN"
+  ],
+  "production_backend_enabled": true,
+  "production_cutover": true,
+  "primary_mode": "dedicated",
+  "primary_origin": "metamap-origin.redunisol.com.ar",
+  "data_since_utc": "2026-11-13T03:00:00Z",
+  "cutover_utc": "2026-11-17T13:33:03Z",
+  "fallback": "localhost:3031 forwards only to dedicated; historical database unmounted",
+  "primary_route": {
+    "id": "97e3b8caa9f0494dbc12abd46a6bb2a5",
+    "pattern": "https://kestra.redunisol.com.ar/metamap-platform/*",
+    "zone_id": "98afdd42871695e66af52cec137d2be7",
+    "request_limit_fail_open": true
+  }
 }
