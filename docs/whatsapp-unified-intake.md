@@ -42,6 +42,28 @@ verificar el corte: `php artisan edna:intake-cutover status`. Un rollback debe
 conservar los consumidores nuevos mientras existan jobs `RouteEdnaIntakeChat`;
 no borrar el corte ni reactivar solicitudes anteriores como forma de recuperación.
 
+## Actividades de chat pertenecientes a negociaciones (17/11/2026)
+
+El resolvedor de mensajes web también busca negociaciones relacionadas por los
+IDs de prospectos y contactos cuyo teléfono ya fue verificado. Lee sus
+actividades `IMOPENLINES_SESSION` aunque la actividad pertenezca exclusivamente
+al deal. La relación sólo descubre candidatos: la prueba sigue exigiendo el ID
+externo exacto, sesión, chat, canal y emisor. Páginas completas, relaciones no
+verificables y pruebas múltiples quedan pendientes/revisión, sin elegir el primer
+resultado. No se selecciona vendedor por teléfono ni se crean fichas.
+
+El despliegue productivo ejecuta `php artisan edna:deal-message-binding activate`
+tras comprobar imágenes y salud. Guarda una frontera inmutable
+`deal-message-binding-v1` en `edna_intake_cutovers`: sólo inbox IDs posteriores
+y fechas originales posteriores al corte ganan esta búsqueda adicional. Repetir
+el deploy no mueve la frontera, no modifica otros cortes ni encola recuperaciones.
+Los mensajes anteriores conservan su resolución original; este cambio no recupera
+los casos detectados durante el diagnóstico. `status` permite leer la frontera.
+
+Los controles del puente sobre identidad, negociación vigente, sesión abierta,
+atención humana, lock compartido y lectura final antes del único POST se
+mantienen. Encontrar una actividad no demuestra una transferencia del chat.
+
 ## Alcance y escritor único
 
 ### Restablecimiento de callbacks sin reprocesamiento
