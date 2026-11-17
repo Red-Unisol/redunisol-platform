@@ -866,6 +866,30 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   // sus 22 activos (sol 500301, 12/11/2026). Del resto se piden primero solo
   // los ID (rapido) y despues los datos de los de ID mas alto. La lista sale
   // entera del mas nuevo al mas viejo, activos y no activos mezclados.
+  /** Recovery search: all states since the attempt, using the creation stamp
+   * (Core local time), never the capped display list or the emission date. */
+  async findLoansForGeneration(socioId: string, since: Date, knownLoanId?: string): Promise<import("../../../solicitudes-core/infrastructure/services/LoanGenerationCheckService").GenerationLoan[]> {
+    if (!/^[1-9]\d*$/.test(socioId) || !Number.isFinite(since.getTime()) ||
+      (knownLoanId !== undefined && !/^[1-9]\d*$/.test(knownLoanId))) throw new LegacySolicitudesUnavailableError();
+    const cutoff = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Argentina/Buenos_Aires",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(since);
+    const fields = ["ID", "NroCuenta", "Creado.FechaEvento", "MontoDeseado", "Cuotas", "LineaPrestamo.ID", "PrimerVencimiento", "NroLote", "Estado"];
+    const rows = await this.executeEvaluateList({
+      tipo: "F.Module.Cuentas.Prestamos.Prestamo", defaultMax: 201, fields,
+      buildCmd: () => `SocioTitular.Socio.ID = ${socioId} And (Creado.FechaEvento Is Null Or Creado.FechaEvento >= #${cutoff}#${knownLoanId ? ` Or ID = ${knownLoanId}` : ""})`,
+      mapRow: row => {
+        const id = signatureInboxId(row[0]), createdAt = signatureInboxText(row[2]);
+        if (row.length !== fields.length || !id || id === "0" || !createdAt || !Number.isFinite(Date.parse(createdAt)))
+          throw new LegacySolicitudesUnavailableError();
+        return { id, account: row[1] == null ? null : String(row[1]), createdAt,
+          amount: signatureInboxNumber(row[3]), cuotas: signatureInboxNumber(row[4], true), lineaId: signatureInboxId(row[5]),
+          primerVencimiento: signatureInboxText(row[6]), cancelacionesCentavos: signatureInboxNumber(row[7], true), estado: signatureInboxNumber(row[8], true) };
+      },
+    }, 201, true);
+    if (rows.length >= 201 || new Set(rows.map(row => row.id)).size !== rows.length) throw new LegacySolicitudesUnavailableError();
+    return rows;
+  }
+
   async listPrestamosDelSocio(
     socioLegacyId: string,
   ): Promise<PrestamoDelSocioLegacy[]> {

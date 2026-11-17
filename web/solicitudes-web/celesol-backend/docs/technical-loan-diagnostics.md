@@ -100,6 +100,41 @@ La ausencia de eventos, la antigüedad de una reserva o un `REQUEST` tardío no
 autorizan una liberación automática después de reiniciar el proceso. Los intentos
 históricos requieren verificar el estado en Beex y en el Core antes de intervenir.
 
+## Volver a comprobar desde la solicitud
+
+Cuando existe una reserva de alta inicial, el botón consulta por POST
+`/solicitudes/:id/loan-generation/check`. La consulta verifica visibilidad,
+`requestId`, versión de la solicitud y condiciones reservadas. No modifica la
+solicitud. El polling de `linked-loan-status` sigue siendo una lectura local del
+bloqueo y no ejecuta búsquedas por socio ni recuperaciones automáticas.
+
+La búsqueda específica usa el ID del titular reservado y `Creado.FechaEvento`
+desde el intento, en hora de Argentina, incluyendo todos los estados y el ID
+remoto conocido aunque su fecha sea anterior. No usa `FechaEmision` ni la lista
+de préstamos de la pestaña del socio, que tiene un límite de presentación.
+Respuestas inválidas, duplicadas o que alcanzan el límite de 201 filas se
+consideran no disponibles; nunca se convierten en una ausencia de préstamos.
+
+Un candidato único y compatible permite a un administrador recuperar la
+vinculación con motivo obligatorio. Se vuelven a consultar los candidatos al
+confirmar y luego se ejecuta la recuperación existente, que verifica titular,
+estado, monto, cuotas, línea, cancelaciones y vencimiento. Los resultados
+ambiguos, incompatibles o aún en curso mantienen el bloqueo. Los demás roles
+pueden comprobar, pero no ganan permisos administrativos.
+
+La búsqueda vacía sólo habilita liberar cuando existe prueba positiva de que
+no se envió la creación. Las nuevas reservas guardan `dispatchState=NOT_STARTED`
+y si hay una operación previa; inmediatamente antes del transporte, el gateway
+debe bloquear la fila y cambiar a `STARTED`. Si una liberación eliminó la reserva,
+ese envío queda rechazado incluso si su diagnóstico `REQUEST` termina después.
+También se acepta un diagnóstico terminal de no envío del mismo intento, sin
+ID conocido ni cobro previo pendiente. La liberación reconsulta el Core, vuelve
+a bloquear/verificar la fila y conserva auditoría y otros controles.
+
+Las reservas históricas sin esta marca ni evidencia terminal, los timeouts
+posteriores al envío y los préstamos conocidos que ya no aparecen en Core
+permanecen bloqueados. El mero paso del tiempo o una consulta vacía no los libera.
+
 ## Consulta operativa de solo lectura
 
 Acceder por SSH con el procedimiento y las credenciales operativas locales.

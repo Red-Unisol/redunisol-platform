@@ -55,6 +55,31 @@ function createGateway(response: unknown, ok = true) {
   };
 }
 
+describe("Recovery lookup of Core loans by reserved member", () => {
+  const row = [444, 90001, "2026-11-17T10:11:00", 500000, 12, 88, "2026-12-31", 0, 0];
+  it("uses the exact member and local creation stamp, all states, and includes a known ID independently of its date", async () => {
+    const { gateway, requests } = createGateway([row]);
+    const loans = await gateway.findLoansForGeneration("77", new Date("2026-11-17T13:10:25.837Z"), "444");
+    const request = requests[0]!.body as { tipo: string; cmd: string; max: number; campos: string };
+    assert.equal(request.tipo, "F.Module.Cuentas.Prestamos.Prestamo");
+    assert.equal(request.cmd, "SocioTitular.Socio.ID = 77 And (Creado.FechaEvento Is Null Or Creado.FechaEvento >= #2026-11-17 10:10:25# Or ID = 444)");
+    assert.equal(request.max, 201);
+    assert.doesNotMatch(request.cmd, /Estado|FechaEmision/);
+    assert.equal(loans[0]?.id, "444"); assert.equal(loans[0]?.account, "90001");
+  });
+  it("only accepts complete arrays, rejects limit saturation and duplicates, and validates identifiers before transport", async () => {
+    for (const body of [null, {}, [null], [[444]], [[444, null, null, ...row.slice(3)]], [row, row],
+      Array.from({ length: 201 }, (_, i) => [i + 1, ...row.slice(1)])]) {
+      await assert.rejects(createGateway(body).gateway.findLoansForGeneration("77", new Date()), LegacySolicitudesUnavailableError);
+    }
+    const { gateway, requests } = createGateway([]);
+    await assert.rejects(gateway.findLoansForGeneration("1 Or 1=1", new Date()), LegacySolicitudesUnavailableError);
+    await assert.rejects(gateway.findLoansForGeneration("77", new Date(), "1 Or 1=1"), LegacySolicitudesUnavailableError);
+    assert.equal(requests.length, 0);
+    assert.deepEqual(await gateway.findLoansForGeneration("77", new Date()), []);
+  });
+});
+
 describe("Consulta acotada del CBU habitual", () => {
   it("consulta sólo socio y CBU habitual con tipo de documento y límite para detectar ambigüedad", async () => {
     const { gateway, requests } = createGateway([[71, " 0110000699111100000248 "]]);

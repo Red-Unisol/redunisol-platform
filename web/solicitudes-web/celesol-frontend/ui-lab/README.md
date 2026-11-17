@@ -1,5 +1,13 @@
 # Laboratorio de interfaces de Beex
 
+`/loan-generation?scenario=match` renderiza el aviso y la comprobación reales
+con datos ficticios. Los escenarios `safe`, `uncertain`, `ambiguous`, `error` y
+`stale` cubren liberación segura, ausencia sin evidencia, candidatos múltiples,
+fallo de consulta y cambios al confirmar. `role=riesgo` permite consultar sin
+mostrar las acciones administrativas. Las operaciones sólo cambian la memoria
+del laboratorio. `node ui-lab/loan-generation.browser-test.mjs` revisa el flujo
+en escritorio y 390 px y guarda capturas en `.local/loan-generation-review/`.
+
 `/padrones` muestra la pestaña CredixSA operativa con padrones ficticios. Los
 escenarios `?scenario=none`, `error`, `unconfigured`, `missing-document`,
 `credixsa-error` y `bajas` permiten revisar estados independientes, cargos

@@ -33,6 +33,7 @@ import { businessDate } from "../monthly-cutoffs/domain";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
 import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
+import { LoanGenerationCheckService } from "./infrastructure/services/LoanGenerationCheckService";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
 import { AuthPrismaDatasource } from "../auth/infrastructure/datasources/AuthPrismaDatasource";
 import { AuthRepositoryImpl } from "../auth/infrastructure/repositories/AuthRepositoryImpl";
@@ -611,7 +612,12 @@ export function createSolicitudesCoreRouter(
     service: new LoanReliquidationService({ db: prisma,
       lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct) }),
   });
-  addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
+  addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration,
+    access: (id, user) => getSolicitudByIdUseCase.execute({ id, currentUser: user }),
+    checkService: new LoanGenerationCheckService({ db: prisma, generation: initialGeneration,
+      creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
+      findLoans: (socioId, since, knownId) => solicitudesLegacyGateway.findLoansForGeneration(socioId, since, knownId) }),
+  });
   addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {
     try {
@@ -627,7 +633,7 @@ export function createSolicitudesCoreRouter(
       catch (error) { res.json({ status: "unavailable", currentLoanId: source.legacyOid, amount: null,
         requestedAmount: source.montoAFinanciar === null ? null : Number(source.montoAFinanciar), matchesAmount: false, amountEditable: false,
         reason: error instanceof Error ? error.message : "No se pudo verificar el préstamo.",
-        ...(user.isSystemAdmin && generation ? { recovery: { requestId: generation.requestId, status: generation.status,
+        ...(generation ? { recovery: { requestId: generation.requestId, status: generation.status,
           knownLoanId: generation.newLoanId ?? null, expectedUpdatedAt: source.updatedAt.toISOString() } } : {}),
       }); }
     } catch (error) { next(error); }

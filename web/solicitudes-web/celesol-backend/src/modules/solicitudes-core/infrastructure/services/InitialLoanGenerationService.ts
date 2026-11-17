@@ -23,11 +23,14 @@ export type PreparedInitialLoan = {
   antesDeCrear?: (context: LoanDiagnosticContext) => Promise<void>;
   refinanciacionVersion?: string;
 };
-type Reservation = {
+export type InitialLoanReservation = {
   requestId: string; actorId: string; createdAt: string; status: "CREATING" | "UNCERTAIN" | "CREATED";
   sourceFingerprint: string; coreInput: CrearPrestamoInput; codigoMutual: string | null; newLoanId?: string;
   refinanciacionCobro?: PendingRefinanciacionCobro;
+  dispatchState?: "NOT_STARTED" | "STARTED";
+  beforeCreationPending?: boolean;
 };
+type Reservation = InitialLoanReservation;
 const json = (v: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(v));
 const control = (value: unknown) => (value ?? {}) as Prisma.JsonObject;
 const reservation = (value: unknown) => (control(value).generationPending ?? null) as Reservation | null;
@@ -108,6 +111,7 @@ export class InitialLoanGenerationService {
       const next: Reservation = {
         requestId, actorId: actor.id, createdAt: new Date().toISOString(), status: "CREATING",
         sourceFingerprint: coreConditionsFingerprint(s), coreInput: prepared.coreInput, codigoMutual: prepared.codigoMutual,
+        dispatchState: "NOT_STARTED", beforeCreationPending: Boolean(prepared.antesDeCrear),
       };
       await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: { ...control(s.administrativeCoreControl), generationPending: json(next) } } });
       await this.audit(tx, s, actor.id, "LOAN_GENERATION_STARTED", { requestId: next.requestId, amount: prepared.coreInput.montoDeseado });
@@ -157,7 +161,7 @@ export class InitialLoanGenerationService {
     }
     let newLoanId: string;
     try {
-      newLoanId = (await this.deps.gateway.crear(prepared.coreInput, context)).id;
+      newLoanId = (await this.deps.gateway.crear(prepared.coreInput, context, () => this.authorizeDispatch(id, pending.requestId))).id;
       if (!/^[1-9]\d*$/.test(newLoanId)) throw new Error("Invalid loan ID");
     } catch (error) {
       await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
@@ -225,6 +229,22 @@ export class InitialLoanGenerationService {
       await this.diagnostic(context, "PERSISTENCE_FAILED", { phase: "RELEASE_NOT_SENT", sourcePhase: phase, error });
       throw new AdministrativeCorrectionError("La generación no se envió a Vimarx, pero no pudo liberarse la reserva. Solicitá una revisión administrativa.", 503);
     }
+  }
+
+  private async authorizeDispatch(id: string, requestId: string) {
+    await this.deps.db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
+      const s = await administrativeSource(tx, id);
+      const current = reservation(s.administrativeCoreControl);
+      if (!current || current.requestId !== requestId || current.status !== "CREATING" ||
+        current.dispatchState !== "NOT_STARTED" || current.newLoanId || current.refinanciacionCobro ||
+        s.legacyOid || s.archivedAt || s.estadoActual.code !== "Confirmada" || s.desembolso || s.pagoExterno ||
+        coreConditionsFingerprint(s) !== current.sourceFingerprint)
+        throw new AdministrativeCorrectionError("La reserva cambió antes del envío. Actualizá la solicitud.");
+      await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {
+        ...control(s.administrativeCoreControl), generationPending: json({ ...current, dispatchState: "STARTED" }),
+      } } });
+    });
   }
 
   private async link(id: string, requestId: string, newLoanId: string, actorId: string, context: LoanDiagnosticContext, reason: string | null = null) {

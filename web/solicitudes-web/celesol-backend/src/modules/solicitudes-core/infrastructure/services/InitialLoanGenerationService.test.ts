@@ -4,7 +4,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { CrearPrestamoGateway, PrestamoLegacyNotSentError } from "./CrearPrestamoGateway";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import { InitialLoanGenerationService, type PreparedInitialLoan } from "./InitialLoanGenerationService";
-import { coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
+import { coreReconciliationPending, coreConditionsFingerprint } from "../../domain/workflow/AdministrativeCorrection";
+import { LoanGenerationCheckService, type GenerationLoan } from "./LoanGenerationCheckService";
 import { actingContext } from "../../../auth/impersonation/context";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
@@ -27,6 +28,7 @@ function fixture() {
   let cleanupError: Error | null = null;
   let commitError: Error | null = null;
   const updates: Array<Partial<typeof row>> = [];
+  const evidence: { stage: string; data: Prisma.JsonValue }[] = [];
   const gatewayContexts: (LoanDiagnosticContext | undefined)[] = [];
   const diagnostics: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];
   const prepared: PreparedInitialLoan = {
@@ -36,6 +38,7 @@ function fixture() {
   const actor = { id: "operator", workflowOwnerId: "risk", isSystemAdmin: false };
   const db = {
     $queryRaw: async () => [],
+    technicalDiagnosticEvent: { findMany: async () => evidence },
     solicitud: {
       findUnique: async () => structuredClone(row),
       findFirst: async () => null,
@@ -72,7 +75,7 @@ function fixture() {
     diagnostics: async (context, event) => { diagnostics.push({ context, event }); },
   };
   return { deps, service: new InitialLoanGenerationService(deps), prepared, actor, audits, notifications, diagnostics, gatewayContexts,
-    row: () => row, calls: () => calls, updates, failCleanup: (error: Error) => { cleanupError = error; }, failNextCommit: (error: Error) => { commitError = error; }, failPersistence: (error: Error) => { persistenceError = error; },
+    row: () => row, calls: () => calls, updates, evidence, failCleanup: (error: Error) => { cleanupError = error; }, failNextCommit: (error: Error) => { commitError = error; }, failPersistence: (error: Error) => { persistenceError = error; },
     mutate: (change: Partial<typeof row>) => { row = { ...row, ...change }; } };
 }
 
@@ -338,4 +341,152 @@ it("preserves the reservation if its safe cleanup cannot be persisted", async ()
   assert.equal(f.calls(), 0);
   assert(f.diagnostics.some(entry => entry.event.stage === "PERSISTENCE_FAILED"));
   await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /generación.*incierto/);
+});
+
+function checkingFixture() {
+  const f = fixture();
+  const loan: GenerationLoan = { id: "444", account: "90001", createdAt: "2026-10-26T09:01:00",
+    estado: 0, amount: 500000, cuotas: 12, lineaId: "88", primerVencimiento: "2026-12-31", cancelacionesCentavos: 0 };
+  const reservation = { requestId: "request-1", actorId: f.actor.id, createdAt: "2026-10-26T12:00:00Z", status: "CREATING",
+    sourceFingerprint: coreConditionsFingerprint(f.row()), coreInput: f.prepared.coreInput,
+    dispatchState: "NOT_STARTED", beforeCreationPending: false };
+  f.mutate({ administrativeCoreControl: { generationPending: reservation } });
+  const lookup: { socioId: string; since: Date; knownId?: string }[] = [];
+  const recoveries: unknown[] = [];
+  const deps: ConstructorParameters<typeof LoanGenerationCheckService>[0] = { db: f.deps.db,
+    now: () => new Date("2026-10-26T12:05:00Z"),
+    findLoans: async (socioId, since, knownId) => { lookup.push({ socioId, since, knownId }); return [loan]; },
+    generation: { recover: async (...args) => { recoveries.push(args); return f.row() as unknown as SolicitudCore; } },
+  };
+  const admin = { id: "admin", isSystemAdmin: true, workflowOwnerId: "risk" };
+  const input = { requestId: "request-1", expectedUpdatedAt: f.row().updatedAt.toISOString() };
+  return { ...f, loan, reservation, lookup, recoveries, checking: new LoanGenerationCheckService(deps), checkDeps: deps, admin, checkInput: input };
+}
+
+it("checks the reserved Core member and creation instant, proposes one compatible loan, and keeps mutations administrative", async () => {
+  const f = checkingFixture();
+  const checked = await f.checking.check("sol-1", f.admin, f.checkInput);
+  assert.equal(checked.canRecover, true);
+  assert.equal(checked.candidate?.id, "444");
+  assert.equal(checked.canRelease, false);
+  assert.deepEqual(f.lookup, [{ socioId: "77", since: new Date(f.reservation.createdAt), knownId: undefined }]);
+  assert.equal((await f.checking.check("sol-1", f.actor, f.checkInput)).canRecover, false);
+  await assert.rejects(f.checking.recover("sol-1", f.actor, { ...f.checkInput, newLoanId: "444", reason: "Comprobado en Core" }), /administrador/);
+  await f.checking.recover("sol-1", f.admin, { ...f.checkInput, newLoanId: "444", reason: "Comprobado en Core" });
+  assert.equal(f.recoveries.length, 1);
+  assert.equal(f.calls(), 0);
+});
+
+it("never releases an empty search without positive non-delivery evidence, including old reservations and known IDs", async () => {
+  for (const patch of [ { dispatchState: undefined, beforeCreationPending: undefined }, { dispatchState: "STARTED" },
+    { status: "UNCERTAIN", dispatchState: "STARTED" }, { newLoanId: "444" }, { beforeCreationPending: true } ]) {
+    const f = checkingFixture();
+    f.mutate({ administrativeCoreControl: { generationPending: { ...f.reservation, ...patch } } });
+    f.checkDeps.findLoans = async () => [];
+    assert.equal((await f.checking.check("sol-1", f.admin, f.checkInput)).canRelease, false);
+    await assert.rejects(f.checking.release("sol-1", f.admin, { ...f.checkInput, reason: "Consulta vacía" }));
+    assert(f.row().administrativeCoreControl.generationPending);
+  }
+});
+
+it("revalidates and audits a safe empty search, preserves other controls and uses SQL NULL when empty", async () => {
+  for (const retained of [false, true]) {
+    const f = checkingFixture();
+    f.mutate({ administrativeCoreControl: { ...f.row().administrativeCoreControl, ...(retained ? { retained: "keep" } : {}) } });
+    f.checkDeps.findLoans = async () => [];
+    assert.equal((await f.checking.check("sol-1", f.admin, f.checkInput)).canRelease, true);
+    await f.checking.release("sol-1", f.admin, { ...f.checkInput, reason: "Consulta de socio sin préstamos y generación no enviada" });
+    assert.equal(f.row().administrativeCoreControl.generationPending, undefined);
+    assert.equal(f.audits.at(-1)!.actionCode, "LOAN_GENERATION_RESERVATION_RELEASED");
+    assert.equal(f.audits.at(-1)!.changedBy, "admin");
+    assert.equal(f.row().estadoActual.code, "Confirmada");
+    if (retained) assert.deepEqual(f.row().administrativeCoreControl, { retained: "keep" });
+    else assert.equal(f.updates.at(-1)!.administrativeCoreControl, Prisma.DbNull);
+    assert.equal(f.calls(), 0);
+  }
+});
+
+it("an unavailable or ambiguous Core search and incompatible financial conditions never unlock or recover", async () => {
+  const variants = [{ amount: 1 }, { cuotas: 1 }, { lineaId: "99" }, { estado: 1 }, { cancelacionesCentavos: 1 }, { primerVencimiento: "2027-01-01" }];
+  for (const change of variants) {
+    const f = checkingFixture();
+    f.prepared.coreInput.fechaPrimerVencimiento = "2026-12-31";
+    f.checkDeps.findLoans = async () => [{ ...f.loan, ...change }];
+    const result = await f.checking.check("sol-1", f.admin, f.checkInput);
+    assert.equal(result.canRecover, false); assert.equal(result.canRelease, false);
+  }
+  const f = checkingFixture();
+  f.checkDeps.findLoans = async () => [f.loan, { ...f.loan, id: "445" }];
+  assert.equal((await f.checking.check("sol-1", f.admin, f.checkInput)).status, "ambiguous");
+  f.checkDeps.findLoans = async () => { throw new Error("upstream incomplete"); };
+  const unavailable = await f.checking.check("sol-1", f.admin, f.checkInput);
+  assert.equal(unavailable.status, "unavailable"); assert.equal(unavailable.canRelease, false);
+  assert.equal(f.recoveries.length, 0);
+});
+
+it("positive non-delivery evidence permits retry but a confirmed diagnostic ID always prevents release", async () => {
+  const f = checkingFixture();
+  f.mutate({ administrativeCoreControl: { generationPending: { ...f.reservation, status: "UNCERTAIN", dispatchState: "STARTED" } } });
+  f.checkDeps.findLoans = async () => [];
+  f.evidence.push({ stage: "ERROR", data: { phase: "REMOTE_CREATION", error: { name: "PrestamoLegacyNotSentError" } } });
+  assert.equal((await f.checking.check("sol-1", f.admin, f.checkInput)).canRelease, true);
+  f.evidence.push({ stage: "SUCCESS", data: { loanId: "444" } });
+  assert.equal((await f.checking.check("sol-1", f.admin, f.checkInput)).canRelease, false);
+  await assert.rejects(f.checking.release("sol-1", f.admin, { ...f.checkInput, reason: "Consulta vacía" }));
+});
+
+it("a source change during the lookup or a different candidate on confirmation aborts recovery", async () => {
+  const f = checkingFixture();
+  f.checkDeps.findLoans = async () => { f.mutate({ updatedAt: new Date() }); return []; };
+  await assert.rejects(f.checking.check("sol-1", f.admin, f.checkInput), /reserva cambió/);
+  const changed = checkingFixture();
+  assert.equal((await changed.checking.check("sol-1", changed.admin, changed.checkInput)).candidate?.id, "444");
+  changed.checkDeps.findLoans = async () => [{ ...changed.loan, id: "445" }];
+  await assert.rejects(changed.checking.recover("sol-1", changed.admin, { ...changed.checkInput, newLoanId: "444", reason: "Comprobado" }), /comprobación cambió/);
+  assert.equal(changed.recoveries.length, 0);
+});
+
+it("releasing an un-sent reservation fences a live creator paused in REQUEST diagnostics before fetch", async () => {
+  const f = fixture();
+  let resume!: () => void, began!: () => void, remoteCalls = 0;
+  const paused = new Promise<void>(resolve => { resume = resolve; });
+  const started = new Promise<void>(resolve => { began = resolve; });
+  f.deps.gateway = new CrearPrestamoGateway({ baseUrl: "https://core.example.test", timeoutMs: 1000,
+    diagnostics: async (_ctx, _event, required) => { if (required) { began(); await paused; } },
+  }, async () => { remoteCalls++; return new Response('{"Ok":true,"ID":"444"}'); });
+  const original = f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor });
+  const rejected = assert.rejects(original);
+  await started;
+  const p = f.row().administrativeCoreControl.generationPending as { requestId: string };
+  const checking = new LoanGenerationCheckService({ db: f.deps.db, generation: f.service, findLoans: async () => [] });
+  await checking.release("sol-1", { id: "admin", isSystemAdmin: true, workflowOwnerId: "risk" }, {
+    requestId: p.requestId, expectedUpdatedAt: f.row().updatedAt.toISOString(), reason: "Liberación verificada antes del envío",
+  });
+  resume(); await rejected;
+  assert.equal(remoteCalls, 0);
+  assert.equal(f.row().legacyOid, null);
+  assert.equal(f.row().administrativeCoreControl.generationPending, undefined);
+});
+
+it("once dispatch is authorized an empty Core search cannot unlock the still-running creation", async () => {
+  const f = fixture();
+  let resume!: () => void, began!: () => void, remoteCalls = 0;
+  const paused = new Promise<void>(resolve => { resume = resolve; });
+  const started = new Promise<void>(resolve => { began = resolve; });
+  f.deps.gateway = new CrearPrestamoGateway({ baseUrl: "https://core.example.test", timeoutMs: 5000 }, async () => {
+    remoteCalls++; began(); await paused; return new Response('{"Ok":true,"ID":"444"}');
+  });
+  const original = f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor });
+  await started;
+  try {
+    const p = f.row().administrativeCoreControl.generationPending as { requestId: string; dispatchState: string };
+    assert.equal(p.dispatchState, "STARTED");
+    const checking = new LoanGenerationCheckService({ db: f.deps.db, generation: f.service, findLoans: async () => [] });
+    const actor = { id: "admin", isSystemAdmin: true, workflowOwnerId: "risk" };
+    const input = { requestId: p.requestId, expectedUpdatedAt: f.row().updatedAt.toISOString(), reason: "Consulta durante el envío" };
+    assert.equal((await checking.check("sol-1", actor, input)).canRelease, false);
+    await assert.rejects(checking.release("sol-1", actor, input));
+  } finally { resume(); }
+  await original;
+  assert.equal(remoteCalls, 1); assert.equal(f.row().legacyOid, "444");
 });

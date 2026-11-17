@@ -88,7 +88,7 @@ export class CrearPrestamoGateway {
     this.diagnostics = config.diagnostics ?? (async () => undefined);
   }
 
-  async crear(input: CrearPrestamoInput, context?: LoanDiagnosticContext): Promise<CrearPrestamoResult> {
+  async crear(input: CrearPrestamoInput, context?: LoanDiagnosticContext, beforeSend?: () => Promise<void>): Promise<CrearPrestamoResult> {
     const diagnosticContext: LoanDiagnosticContext = context ?? { operationId: randomUUID(), operation: "loan_generation" };
     const callId = randomUUID();
     const startedAt = Date.now();
@@ -136,6 +136,14 @@ export class CrearPrestamoGateway {
       endpointPath: CREAR_PRESTAMO_PATH, url: new URL(CREAR_PRESTAMO_PATH, this.baseUrl).toString(),
       method: "POST", headers, body: requestBody,
     }, true);
+
+    // Revalidate the durable reservation after the trace write, immediately
+    // before handing the request to the transport. A recovery may have fenced it.
+    try { await beforeSend?.(); }
+    catch (error) {
+      await this.record(diagnosticContext, callId, startedAt, "NOT_SENT", { error, remoteRequestSent: false });
+      throw new PrestamoLegacyNotSentError();
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
