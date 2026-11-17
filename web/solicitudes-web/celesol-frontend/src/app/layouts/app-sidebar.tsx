@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   BarChart3,
+  Calculator,
   ChevronDown,
   CircleDot,
   ClipboardList,
@@ -98,6 +99,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
         label: "Créditos por vendedor",
         to: "/listados/creditos-por-vendedor",
       },
+      // Solo Riesgo y admin (se filtra abajo): ahi se actualiza la planilla.
+      { icon: Calculator, label: "Calculadora Mutual", to: "/riesgo/calculadora" },
     ],
   },
   {
@@ -128,6 +131,9 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
   const sidebarGroups: SidebarGroup[] = [
     ...SIDEBAR_GROUPS.map((group) => ({
       ...group,
+      items: group.items?.filter(
+        (item) => item.to !== "/riesgo/calculadora" || canAccessRiesgoTools(user),
+      ),
       sections: group.sections?.map((section) => ({
         ...section,
         items: section.items.filter(

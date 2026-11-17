@@ -108,3 +108,51 @@ export class EvaluacionArchivoUnavailableError extends RiesgoError {
     this.name = "EvaluacionArchivoUnavailableError";
   }
 }
+
+/** La planilla de Vimarx trae algo que Sol Web no sabe adaptar solo. */
+export class CalculadoraNoAdaptableError extends RiesgoError {
+  readonly detalle: string;
+
+  constructor(detalle: string) {
+    super(
+      `La planilla de Vimarx no se puede usar tal cual: ${detalle} Avisá a Sistemas.`,
+      "CALCULADORA_NO_ADAPTABLE",
+      422,
+    );
+    this.name = "CalculadoraNoAdaptableError";
+    this.detalle = detalle;
+  }
+}
+
+export class CalculadoraCambioEnVimarxError extends RiesgoError {
+  constructor() {
+    super(
+      "La planilla cambió en Vimarx desde que se revisaron los cambios. Volvé a revisarlos antes de actualizar.",
+      "CALCULADORA_CAMBIO_EN_VIMARX",
+      409,
+    );
+    this.name = "CalculadoraCambioEnVimarxError";
+  }
+}
+
+export class CalculadoraVersionNotFoundError extends RiesgoError {
+  constructor() {
+    super(
+      "Esa versión de la calculadora ya no existe.",
+      "CALCULADORA_VERSION_NOT_FOUND",
+      404,
+    );
+    this.name = "CalculadoraVersionNotFoundError";
+  }
+}
+
+export class CalculadoraVersionYaVigenteError extends RiesgoError {
+  constructor() {
+    super(
+      "Esa versión ya es la que se está usando.",
+      "CALCULADORA_VERSION_YA_VIGENTE",
+      409,
+    );
+    this.name = "CalculadoraVersionYaVigenteError";
+  }
+}

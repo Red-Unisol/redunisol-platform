@@ -1,26 +1,19 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 
 import type { GetCurrentUserUseCase } from "../../auth/application/use-cases/GetCurrentUser.use-case";
 import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
 import type { CalculadoraMutualDatosProvider } from "../application/services/CalculadoraMutualDatosProvider";
+import type { CalculadoraVersionesUseCase } from "../application/use-cases/CalculadoraVersiones.use-case";
+import type { CalculadoraRiesgoVersionRepository } from "../domain/repositories/CalculadoraRiesgoVersionRepository";
 import type { GetEvaluacionRiesgoUseCase } from "../application/use-cases/GetEvaluacionRiesgo.use-case";
 import type { GuardarEvaluacionRiesgoUseCase } from "../application/use-cases/GuardarEvaluacionRiesgo.use-case";
 import {
-  CalculadoraFileNotFoundError,
+  CalculadoraVersionNotFoundError,
   ForbiddenCalculadoraAccessError,
   InvalidEvaluacionRequestError,
   InvalidSolicitudOidError,
 } from "../domain/riesgo-errors";
-
-const CALCULADORA_FILE_PATH = path.join(
-  process.cwd(),
-  "docs",
-  "calculadora-riesgo",
-  "CALCULADORA MUTUAL.xlsx",
-);
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,15 +31,28 @@ const guardarEvaluacionBodySchema = z.object({
     .passthrough(),
 });
 
+const aplicarVersionBodySchema = z.object({
+  huellaVimarx: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
 type Dependencies = {
   calculadoraMutualDatosProvider: CalculadoraMutualDatosProvider;
+  calculadoraVersiones: Pick<CalculadoraRiesgoVersionRepository, "findVigente">;
+  calculadoraVersionesUseCase: Pick<
+    CalculadoraVersionesUseCase,
+    "aplicar" | "listar" | "previsualizar" | "restaurar"
+  >;
   getCurrentUserUseCase: GetCurrentUserUseCase;
   getEvaluacionRiesgoUseCase: GetEvaluacionRiesgoUseCase;
   guardarEvaluacionRiesgoUseCase: GuardarEvaluacionRiesgoUseCase;
+  leerPlanillaRepositorio: () => Promise<Buffer>;
 };
 
 export class RiesgoController {
   private readonly calculadoraMutualDatosProvider: CalculadoraMutualDatosProvider;
+  private readonly calculadoraVersiones: Dependencies["calculadoraVersiones"];
+  private readonly calculadoraVersionesUseCase: Dependencies["calculadoraVersionesUseCase"];
+  private readonly leerPlanillaRepositorio: Dependencies["leerPlanillaRepositorio"];
   private readonly getCurrentUserUseCase: GetCurrentUserUseCase;
   private readonly getEvaluacionRiesgoUseCase: GetEvaluacionRiesgoUseCase;
   private readonly guardarEvaluacionRiesgoUseCase: GuardarEvaluacionRiesgoUseCase;
@@ -54,6 +60,9 @@ export class RiesgoController {
   constructor(dependencies: Dependencies) {
     this.calculadoraMutualDatosProvider =
       dependencies.calculadoraMutualDatosProvider;
+    this.calculadoraVersiones = dependencies.calculadoraVersiones;
+    this.calculadoraVersionesUseCase = dependencies.calculadoraVersionesUseCase;
+    this.leerPlanillaRepositorio = dependencies.leerPlanillaRepositorio;
     this.getCurrentUserUseCase = dependencies.getCurrentUserUseCase;
     this.getEvaluacionRiesgoUseCase = dependencies.getEvaluacionRiesgoUseCase;
     this.guardarEvaluacionRiesgoUseCase =
@@ -119,19 +128,93 @@ export class RiesgoController {
     try {
       await this.assertRiesgoAccess(req);
 
-      let fileBuffer: Buffer;
-
-      try {
-        fileBuffer = await readFile(CALCULADORA_FILE_PATH);
-      } catch {
-        throw new CalculadoraFileNotFoundError();
-      }
+      // La version que Riesgo trajo de Vimarx; si todavia no hay ninguna,
+      // la planilla del repo.
+      const vigente = await this.calculadoraVersiones.findVigente();
+      const fileBuffer =
+        vigente?.contenido ?? (await this.leerPlanillaRepositorio());
 
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       );
       res.status(200).send(fileBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Versiones de la calculadora: historial, vista previa de la ultima de
+  // Vimarx, aplicarla y volver a una anterior.
+  listarVersiones = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.assertRiesgoAccess(req);
+      const versiones = await this.calculadoraVersionesUseCase.listar();
+      res.status(200).json({ versiones });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  previsualizarVersion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.assertRiesgoAccess(req);
+      const vistaPrevia = await this.calculadoraVersionesUseCase.previsualizar();
+      res.status(200).json(vistaPrevia);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  aplicarVersion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const currentUser = await this.assertRiesgoAccess(req);
+      const body = aplicarVersionBodySchema.safeParse(req.body);
+
+      if (!body.success) {
+        throw new InvalidEvaluacionRequestError();
+      }
+
+      const version = await this.calculadoraVersionesUseCase.aplicar({
+        huellaVimarx: body.data.huellaVimarx,
+        usuarioId: currentUser.id,
+      });
+      res.status(200).json({ version });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  restaurarVersion = async (
+    req: CookieRequest & { params: { versionId?: string } },
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const currentUser = await this.assertRiesgoAccess(req);
+      const versionId = req.params.versionId;
+
+      if (!versionId || !UUID_PATTERN.test(versionId)) {
+        throw new CalculadoraVersionNotFoundError();
+      }
+
+      const version = await this.calculadoraVersionesUseCase.restaurar({
+        usuarioId: currentUser.id,
+        versionId,
+      });
+      res.status(200).json({ version });
     } catch (error) {
       next(error);
     }

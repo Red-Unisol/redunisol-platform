@@ -31,6 +31,8 @@ import { instalarFormatoArgentino } from "../utils/calculadora-formato-argentino
 import { instalarPegadoNumerico } from "../utils/calculadora-pegado-numerico";
 import { instalarValidacionCarga } from "../utils/calculadora-validacion-carga";
 import { stripLuckyExcelSpuriousBorders } from "../pages/calculadora-riesgo-workbook-fixes";
+import { CalculadoraVersionesDialog } from "./CalculadoraVersionesDialog";
+import { CalculadoraVersionLinea } from "./CalculadoraVersionLinea";
 import {
   getCalculadoraMutualDatos,
   getCalculadoraMutualDatosByCoreId,
@@ -50,6 +52,8 @@ type CalculadoraMutualSheetProps = {
   className?: string;
   /** Avisa al detalle si hay cambios sin guardar, para frenar el cambio de pestaña. */
   onCambiosSinGuardarChange?: (hayCambios: boolean) => void;
+  /** Riesgo trajo o restauró una versión de la planilla: hay que recargarla. */
+  onCalculadoraActualizada?: () => void;
   /** Riesgo con la solicitud a cargo, o admin. El backend vuelve a chequearlo. */
   puedeGuardar?: boolean;
   source: CalculadoraMutualSheetSource;
@@ -81,6 +85,7 @@ export function CalculadoraMutualSheet({
   acciones,
   className,
   onCambiosSinGuardarChange,
+  onCalculadoraActualizada,
   puedeGuardar = false,
   source,
 }: CalculadoraMutualSheetProps) {
@@ -102,6 +107,7 @@ export function CalculadoraMutualSheet({
   const [hayCambios, setHayCambios] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [versionesAbiertas, setVersionesAbiertas] = useState(false);
 
   useEffect(() => {
     onCambiosSinGuardarChange?.(hayCambios);
@@ -441,6 +447,12 @@ export function CalculadoraMutualSheet({
               Editable localmente. El archivo original sigue disponible para
               descargar si alguna hoja no se visualiza bien.
             </p>
+            <CalculadoraVersionLinea onAbrir={() => setVersionesAbiertas(true)} />
+            <CalculadoraVersionesDialog
+              abierta={versionesAbiertas}
+              onAbiertaChange={setVersionesAbiertas}
+              onVersionCambiada={() => onCalculadoraActualizada?.()}
+            />
           </div>
 
           <div className="flex items-end gap-2">
