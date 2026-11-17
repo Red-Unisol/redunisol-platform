@@ -135,6 +135,26 @@ Las reservas históricas sin esta marca ni evidencia terminal, los timeouts
 posteriores al envío y los préstamos conocidos que ya no aparecen en Core
 permanecen bloqueados. El mero paso del tiempo o una consulta vacía no los libera.
 
+## Intervención excepcional sobre reservas históricas
+
+Una liberación manual requiere autorización explícita y verificación nueva en
+Beex y en el Core por el socio exacto, incluyendo todos los estados. Registrar
+la consulta y su fecha, la autorización y la evaluación del intento original;
+no presentar una búsqueda vacía como prueba de que nunca hubo envío.
+
+La intervención debe limitarse a una solicitud y una reserva identificadas.
+Bloquear la fila y abortar si cambian versión, estado o `requestId`, si aparece
+un ID remoto, un cobro pendiente, un desembolso o un pago. Quitar únicamente
+`generationPending`, conservar otros controles y usar SQL `NULL` cuando no
+queden claves. Mantener el estado de la solicitud y los importes.
+
+Conservar historial de negocio y diagnóstico append-only correlacionados con
+el intento, con la autorización, el ejecutor y la evidencia de la consulta.
+No atribuir la acción a otro usuario de la aplicación. Releer desde otra conexión
+y comprobar en el código del runtime que no quede bloqueo de generación ni
+conciliación ficticia. Esta reparación de datos no reemplaza la corrección
+versionada de generación y recuperación ni autoriza otras modificaciones por SSH.
+
 ## Consulta operativa de solo lectura
 
 Acceder por SSH con el procedimiento y las credenciales operativas locales.
