@@ -80,6 +80,81 @@ reserva durable y la recuperación existente siguen protegiendo contra duplicado
 Este registro no libera reservas `UNCERTAIN`, no introduce reintentos automáticos
 y no reconstruye las respuestas de incidentes anteriores a su despliegue.
 
+El alta inicial distingue el fallo del diagnóstico obligatorio **antes del envío**
+de un fallo de red después de invocar el transporte. En el primer caso libera y
+audita su propia reserva `CREATING`, sin enviar ni reintentar la creación. El
+operador debe actualizar la solicitud antes de volver a intentarlo. También
+conserva el `requestId` fuera de la transacción de reserva: si falla la respuesta
+del commit después de que la base lo haya confirmado, vuelve a bloquear la fila
+y libera únicamente la reserva de esa ejecución, que todavía no llamó al Core.
+
+La liberación conserva otros controles administrativos y usa SQL `NULL` si no
+queda ninguna clave. No elimina reservas de otra operación, con ID remoto
+conocido ni con cobros de refinanciación pendientes. Si falla la limpieza, el
+intento permanece bloqueado y registra `PERSISTENCE_FAILED`; requiere revisión.
+Sin un préstamo vinculado no se muestra una conciliación de préstamo `null`,
+pero los bloqueos de generación y refinanciación siguen vigentes.
+
+Estas decisiones usan evidencia del camino de ejecución que aún está activo.
+La ausencia de eventos, la antigüedad de una reserva o un `REQUEST` tardío no
+autorizan una liberación automática después de reiniciar el proceso. Los intentos
+históricos requieren verificar el estado en Beex y en el Core antes de intervenir.
+
+## Volver a comprobar desde la solicitud
+
+Cuando existe una reserva de alta inicial, el botón consulta por POST
+`/solicitudes/:id/loan-generation/check`. La consulta verifica visibilidad,
+`requestId`, versión de la solicitud y condiciones reservadas. No modifica la
+solicitud. El polling de `linked-loan-status` sigue siendo una lectura local del
+bloqueo y no ejecuta búsquedas por socio ni recuperaciones automáticas.
+
+La búsqueda específica usa el ID del titular reservado y `Creado.FechaEvento`
+desde el intento, en hora de Argentina, incluyendo todos los estados y el ID
+remoto conocido aunque su fecha sea anterior. No usa `FechaEmision` ni la lista
+de préstamos de la pestaña del socio, que tiene un límite de presentación.
+Respuestas inválidas, duplicadas o que alcanzan el límite de 201 filas se
+consideran no disponibles; nunca se convierten en una ausencia de préstamos.
+
+Un candidato único y compatible permite a un administrador recuperar la
+vinculación con motivo obligatorio. Se vuelven a consultar los candidatos al
+confirmar y luego se ejecuta la recuperación existente, que verifica titular,
+estado, monto, cuotas, línea, cancelaciones y vencimiento. Los resultados
+ambiguos, incompatibles o aún en curso mantienen el bloqueo. Los demás roles
+pueden comprobar, pero no ganan permisos administrativos.
+
+La búsqueda vacía sólo habilita liberar cuando existe prueba positiva de que
+no se envió la creación. Las nuevas reservas guardan `dispatchState=NOT_STARTED`
+y si hay una operación previa; inmediatamente antes del transporte, el gateway
+debe bloquear la fila y cambiar a `STARTED`. Si una liberación eliminó la reserva,
+ese envío queda rechazado incluso si su diagnóstico `REQUEST` termina después.
+También se acepta un diagnóstico terminal de no envío del mismo intento, sin
+ID conocido ni cobro previo pendiente. La liberación reconsulta el Core, vuelve
+a bloquear/verificar la fila y conserva auditoría y otros controles.
+
+Las reservas históricas sin esta marca ni evidencia terminal, los timeouts
+posteriores al envío y los préstamos conocidos que ya no aparecen en Core
+permanecen bloqueados. El mero paso del tiempo o una consulta vacía no los libera.
+
+## Intervención excepcional sobre reservas históricas
+
+Una liberación manual requiere autorización explícita y verificación nueva en
+Beex y en el Core por el socio exacto, incluyendo todos los estados. Registrar
+la consulta y su fecha, la autorización y la evaluación del intento original;
+no presentar una búsqueda vacía como prueba de que nunca hubo envío.
+
+La intervención debe limitarse a una solicitud y una reserva identificadas.
+Bloquear la fila y abortar si cambian versión, estado o `requestId`, si aparece
+un ID remoto, un cobro pendiente, un desembolso o un pago. Quitar únicamente
+`generationPending`, conservar otros controles y usar SQL `NULL` cuando no
+queden claves. Mantener el estado de la solicitud y los importes.
+
+Conservar historial de negocio y diagnóstico append-only correlacionados con
+el intento, con la autorización, el ejecutor y la evidencia de la consulta.
+No atribuir la acción a otro usuario de la aplicación. Releer desde otra conexión
+y comprobar en el código del runtime que no quede bloqueo de generación ni
+conciliación ficticia. Esta reparación de datos no reemplaza la corrección
+versionada de generación y recuperación ni autoriza otras modificaciones por SSH.
+
 ## Consulta operativa de solo lectura
 
 Acceder por SSH con el procedimiento y las credenciales operativas locales.

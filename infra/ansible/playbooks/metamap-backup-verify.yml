@@ -1,0 +1,17 @@
+---
+- name: Read the existing synthetic MetaMap backup and restore evidence only
+  hosts: metamap_backup_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify the existing separate repository without preparing or restoring again
+      ansible.builtin.import_role:
+        name: metamap_backup
+        tasks_from: verify
+      tags: [metamap_backup]

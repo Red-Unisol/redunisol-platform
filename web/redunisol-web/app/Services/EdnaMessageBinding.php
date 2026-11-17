@@ -195,7 +195,64 @@ class EdnaMessageBinding
             }
         }
 
+        // Preserve successful or ambiguous legacy evidence. A large deal history
+        // must not exhaust the read budget of a chat already proved by that path.
+        if ($proofs || ! app(EdnaDealMessageCutover::class)->applies($event, $payload)) {
+            return count($proofs) === 1 ? array_values($proofs)[0] : null;
+        }
+        $dealActivities = [];
+        $this->addDealActivities($dealActivities, $candidates);
+        foreach ($dealActivities as $activity) {
+            foreach ($this->proofs($event, $phoneHash, $activity) as $proof) {
+                $proofs[$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
         return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    /** Related deals discover activity candidates, never select a seller or prove identity. */
+    private function addDealActivities(array &$activities, array $candidates): void
+    {
+        $deals = [];
+        foreach ([1 => 'LEAD_ID', 3 => 'CONTACT_ID'] as $type => $field) {
+            $ids = array_column(array_filter($candidates, fn ($candidate) => $candidate['type'] === $type), 'id');
+            foreach (array_chunk($ids, 50) as $batch) {
+                $rows = $this->call('crm.deal.list', [
+                    'filter' => ['@'.$field => $batch], 'select' => ['ID', 'LEAD_ID', 'CONTACT_ID'],
+                    'order' => ['ID' => 'ASC'], 'start' => -1,
+                ]);
+                // This transport omits pagination metadata. Never accept a full page.
+                if (! is_array($rows) || ! array_is_list($rows) || count($rows) >= 50) {
+                    throw new RuntimeException('Related deal discovery is incomplete.');
+                }
+                foreach ($rows as $row) {
+                    if (! is_array($row) || ! $this->positiveId($row['ID'] ?? null)
+                        || ! in_array((string) ($row[$field] ?? ''), $batch, true)) {
+                        throw new RuntimeException('Related deal response does not match its candidate.');
+                    }
+                    $id = (string) $row['ID'];
+                    $links = ['LEAD_ID' => (string) ($row['LEAD_ID'] ?? ''), 'CONTACT_ID' => (string) ($row['CONTACT_ID'] ?? '')];
+                    if (isset($deals[$id]) && $deals[$id] !== $links) {
+                        throw new RuntimeException('Related deal bindings changed during discovery.');
+                    }
+                    $deals[$id] = $links;
+                    if (count($deals) > 25) {
+                        throw new RuntimeException('Related deal window requires review.');
+                    }
+                }
+            }
+        }
+        if (! $deals) {
+            return;
+        }
+        foreach ($this->activities(['OWNER_TYPE_ID' => 2, '@OWNER_ID' => array_map('strval', array_keys($deals))]) as $activity) {
+            if ((string) ($activity['OWNER_TYPE_ID'] ?? '') !== '2'
+                || ! isset($deals[(string) ($activity['OWNER_ID'] ?? '')])) {
+                throw new RuntimeException('Deal activity is outside the proven candidate set.');
+            }
+            $this->addActivity($activities, $activity);
+        }
     }
 
     private function entryPhone(object $event, array $payload): string
@@ -384,7 +441,7 @@ class EdnaMessageBinding
 
     private function call(string $method, array $payload): mixed
     {
-        if (! in_array($method, ['crm.duplicate.findbycomm', 'crm.lead.list', 'crm.contact.list', 'crm.activity.list',
+        if (! in_array($method, ['crm.duplicate.findbycomm', 'crm.lead.list', 'crm.contact.list', 'crm.deal.list', 'crm.activity.list',
             'imopenlines.session.history.get', 'imopenlines.dialog.get', 'imopenlines.crm.chat.get'], true)) {
             throw new RuntimeException('Unsupported message binding operation.');
         }

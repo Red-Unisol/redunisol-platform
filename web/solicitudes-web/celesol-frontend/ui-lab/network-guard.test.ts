@@ -11,6 +11,16 @@ import {
 } from "./network-guard.ts";
 const route = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
 
+it("generation recheck fixtures remain opt-in and cannot write real or unrelated destinations", async () => {
+  const path = `${route}/loan-generation/check`;
+  const fetcher = createUiLabFetch({ loanGeneration: "safe" });
+  const result = await (await fetcher(path, { method: "POST", body: "{}" })).json();
+  assert.equal(result.canRelease, true);
+  for (const url of [`https://api-solicitudes.redunisol.com.ar${path}`, path.replace(UI_LAB_SOLICITUD_ID, "other"), `${route}/prestamo-legacy`])
+    await assert.rejects(fetcher(url, { method: "POST", body: "{}" }), UiLabNetworkBlockedError);
+  await assert.rejects(createUiLabFetch()(path, { method: "POST", body: "{}" }), UiLabNetworkBlockedError);
+});
+
 it("reliquidation transport is opt-in, updates only its fictional request and rejects other destinations", async () => {
   const path = `${route}/reliquidacion`;
   const fetcher = createUiLabFetch({ reliquidation: "ready" });

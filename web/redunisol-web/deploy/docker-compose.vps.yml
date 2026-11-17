@@ -182,10 +182,10 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  edna-worker:
+  edna-worker: &edna-worker
     image: ${APP_IMAGE}
     entrypoint: [php, artisan, queue:work]
-    command: [edna, "--queue=edna-inbox,edna,edna-web-reconcile", --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+    command: [edna, --queue=edna, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
@@ -199,7 +199,17 @@ services:
         condition: service_started
       postgres:
         condition: service_started
+    # Let the longest Edna job (115s) finish before Compose sends SIGKILL.
+    stop_grace_period: 130s
     restart: unless-stopped
+
+  edna-inbox-worker:
+    <<: *edna-worker
+    command: [edna, --queue=edna-inbox, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+
+  edna-web-worker:
+    <<: *edna-worker
+    command: [edna, --queue=edna-web-reconcile, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
 
   scheduler:
     image: ${APP_IMAGE}

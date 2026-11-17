@@ -1,0 +1,17 @@
+---
+- name: Verify HTTPS origin TLS and blocked application routes without changing services
+  hosts: metamap_origin_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm the immutable dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify only the separately configured HTTPS origin
+      ansible.builtin.import_role:
+        name: metamap_origin
+        tasks_from: verify
+      tags: [metamap_origin]

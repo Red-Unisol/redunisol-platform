@@ -16,7 +16,7 @@ class ResolveEdnaIntakeBinding implements ShouldQueue
 
     public int $tries = 6;
 
-    public int $timeout = 60; // Leaves room for the final bounded provider read in flight.
+    public int $timeout = 105; // Current-message discovery plus native CRM snapshot; below the 120s visibility timeout.
 
     public function __construct(public readonly int $requestId, public readonly ?int $flowSendId = null) {}
 

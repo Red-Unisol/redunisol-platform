@@ -163,7 +163,7 @@ jobs:
 
           cd "$target_dir"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker scheduler web
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker edna-inbox-worker edna-web-worker scheduler web
           if [ "${JOURNEY_ENABLED:-false}" = "true" ]; then
             mountpoint -q /srv/redunisol-tracking
             test -f /srv/redunisol-tracking/.redunisol-tracking-volume
@@ -175,7 +175,7 @@ jobs:
 
           echo "Waiting for built assets and HTTP 200 from $app_host"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json < /dev/null
-          worker_services=(queue-worker edna-worker scheduler)
+          worker_services=(queue-worker edna-worker edna-inbox-worker edna-web-worker scheduler)
           for worker_service in "${worker_services[@]}"; do
             worker_running="false"
             for attempt in $(seq 1 12); do

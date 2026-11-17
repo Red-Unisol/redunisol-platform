@@ -1,0 +1,49 @@
+name: Validate MetaMap webhook shadow Worker
+
+'on':
+  pull_request:
+    paths:
+      - infra/cloudflare/metamap-shadow/**
+      - .github/workflows/validate-metamap-shadow.yml
+  push:
+    branches: [main]
+    paths:
+      - infra/cloudflare/metamap-shadow/**
+      - .github/workflows/validate-metamap-shadow.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metamap-shadow-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/cloudflare/metamap-shadow
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Check syntax
+        run: npm run check
+
+      - name: Exercise primary response isolation and shadow retries
+        run: npm test
+
+      - name: Bundle the Worker without deploying or contacting operational resources
+        run: npx --yes wrangler@4.162.0 deploy --dry-run --outdir "$RUNNER_TEMP/metamap-shadow-worker"

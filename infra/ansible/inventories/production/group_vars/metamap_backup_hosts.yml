@@ -1,0 +1,7 @@
+---
+metamap_backup_prepare_authorized: false
+metamap_backup_initialize_authorized: false
+metamap_backup_key_custody_confirmed: true
+metamap_backup_mountpoint: /srv/redunisol-backups
+metamap_backup_mount_uuid: df29bb35-b77f-4355-a93c-c53a32580267
+metamap_backup_repository: /srv/redunisol-backups/restic/metamap

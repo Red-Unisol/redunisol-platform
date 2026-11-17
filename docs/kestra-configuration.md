@@ -809,3 +809,18 @@ estas credenciales exclusivamente para leer `/api/v1/transfer-trace-events`.
 - `kestra/platform/infra/docker-compose.yml`
 - `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
 - `kestra/automations/marketing-crm/files/bitrix24_form_flow/README.md`
+
+
+## Nivel de logs de los flows Git-managed
+
+El desplegador canonico aplica `logLevel: INFO` a tareas y triggers que no
+especifiquen nivel. Recorre tambien los bloques de control, errores, finally y
+listeners. Los niveles explicitos se conservan: por ejemplo `WARN` para
+sondeos silenciosos o `DEBUG`/`TRACE` elegidos para un diagnostico temporal.
+Este filtro controla los registros guardados por Kestra; no cambia la
+severidad de los mensajes emitidos ni la logica de negocio.
+
+Los filtros de CI consideran compartidos los cambios del desplegador, por lo
+que al integrarlos se redespliegan los dominios y se aplica el nuevo valor a
+los flows existentes. No afecta flows mantenidos fuera de esta monorepo ni
+purga historicos. La retencion de logs es una operacion separada.

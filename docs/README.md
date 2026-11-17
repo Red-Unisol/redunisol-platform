@@ -9,6 +9,7 @@ Documentacion tecnica transversal de la repo.
 - `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
 - [Base reproducible del dedicado](dedicated-foundation.md): alcance de Ansible, provisionamiento, verificacion, mantenimiento y aceptacion operativa antes de migrar servicios
+- [Preparacion de la migracion de MetaMap](metamap-dedicated-migration.md): destino inactivo, captura fria, restauracion aislada y condiciones del corte posterior, conservando el cliente actual
 - `ui-prototyping.md`: proceso de maquetado local con datos ficticios y galería de escenarios para revisar interfaces antes de conectarlas a operaciones reales
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `kestra-worker-delivery-20260921.md`: diagnostico reproducible de tareas SUBMITTED, mitigacion de reconexiones y limites de recuperacion en Kestra 2.0.0

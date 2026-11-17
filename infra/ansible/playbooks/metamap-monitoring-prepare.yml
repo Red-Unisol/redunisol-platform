@@ -1,0 +1,21 @@
+---
+- name: Include the prepared MetaMap origin in existing local health collection
+  hosts: metamap_origin_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require independently authorized monitoring preparation
+      ansible.builtin.assert:
+        that:
+          - metamap_origin_apply_authorized | type_debug == 'bool'
+          - ansible_check_mode or metamap_origin_apply_authorized
+          - metamap_origin_revision is match('^[0-9a-f]{40}$')
+        fail_msg: Local monitoring preparation needs the reviewed MetaMap operation authorization and revision.
+      tags: [always]
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: monitoring
+      tags: [monitoring]

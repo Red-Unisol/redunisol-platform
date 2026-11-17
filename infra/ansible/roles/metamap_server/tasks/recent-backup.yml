@@ -1,0 +1,59 @@
+---
+- name: Require explicit active backup maintenance and a Git revision
+  ansible.builtin.assert:
+    that:
+      - metamap_live_backup_authorized | type_debug == 'bool'
+      - ansible_check_mode or metamap_live_backup_authorized
+      - metamap_revision is match('^[0-9a-f]{40}$')
+    fail_msg: Active backup maintenance requires authorization and an exact Git revision.
+
+- name: Inspect the existing live database and backup key without reading their contents
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /srv/redunisol/state/metamap-server/data/metamap_platform_server.db
+    - /etc/redunisol-metamap/restic-password
+  register: metamap_live_backup_inputs
+
+- name: Require existing regular files on the dedicated
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not item.stat.islnk
+  loop: "{{ metamap_live_backup_inputs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Maintain the private backup cache
+  ansible.builtin.file:
+    path: /var/cache/redunisol-metamap
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Maintain the consistent live backup helper
+  ansible.builtin.copy:
+    src: metamap-live-backup.py
+    dest: /usr/local/libexec/redunisol-metamap-live-backup.py
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Maintain live backup units
+  ansible.builtin.template:
+    src: "recent-backup.{{ item }}.j2"
+    dest: "/etc/systemd/system/metamap-recent-backup.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [service, timer]
+  register: metamap_live_backup_units
+
+- name: Enable the hourly backup timer
+  ansible.builtin.systemd_service:
+    name: metamap-recent-backup.timer
+    daemon_reload: "{{ metamap_live_backup_units.changed }}"
+    enabled: true
+    state: started

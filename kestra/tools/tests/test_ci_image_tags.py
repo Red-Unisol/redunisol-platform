@@ -109,8 +109,29 @@ class WorkflowIsolationTests(unittest.TestCase):
         self.assertEqual(events["push"]["branches"], ["main"])
         job = flow["jobs"]["deploy-dev"]
         self.assertEqual(job["if"], "github.ref == 'refs/heads/main'")
-        decrypt = next(step for step in job["steps"] if step.get("name") == "Decrypt runtime env")
-        self.assertIn("metamap-platform-server.dev.env.enc", decrypt["run"])
+        self.assertEqual(job["env"]["SSH_HOST"], "${{ secrets.METAMAP_SSH_HOST }}")
+        self.assertEqual(job["env"]["SSH_PORT"], "${{ secrets.METAMAP_SSH_PORT }}")
+        self.assertEqual(job["env"]["SSH_USER"], "${{ secrets.METAMAP_SSH_USER }}")
+        commands = "\n".join(step.get("run", "") for step in job["steps"])
+        self.assertIn("deploy/docker-compose.dedicated.yml", commands)
+        self.assertIn("deploy/deploy-dedicated.sh", commands)
+        compose = yaml.safe_load((
+            ROOT / "apps/metamap-platform/server/deploy/docker-compose.dedicated.yml"
+        ).read_text(encoding="utf-8"))
+        server = compose["services"]["server"]
+        self.assertEqual(server["ports"], ["127.0.0.1:18083:8000"])
+        self.assertEqual(server["env_file"], [
+            {"path": "./runtime.env", "required": True, "format": "raw"}
+        ])
+        self.assertEqual(
+            {mount["target"]: mount["source"] for mount in server["volumes"]},
+            {"/data": "/srv/redunisol/state/metamap-server/data",
+             "/updates": "/srv/redunisol/state/metamap-server/updates"},
+        )
+        deployment = (ROOT / "apps/metamap-platform/server/deploy/deploy-dedicated.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('install -m 600 "$base/runtime.env" "$stage/runtime.env"', deployment)
         self.assertEqual(
             job["env"]["PUBLIC_HEALTHCHECK_URL"],
             "https://kestra.redunisol.com.ar/metamap-platform/health",

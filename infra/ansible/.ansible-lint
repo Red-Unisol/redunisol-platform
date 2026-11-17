@@ -3,7 +3,7 @@ profile: safety
 offline: true
 # These cooperating project roles share a foundation_ configuration API.
 # Keep identifier validation while allowing that namespace instead of role names.
-var_naming_pattern: '^(foundation_[a-z0-9_]+|bcra_[a-z0-9_]+|ansible_[a-z0-9_]+)$'
+var_naming_pattern: '^(foundation_[a-z0-9_]+|bcra_[a-z0-9_]+|metamap_[a-z0-9_]+|ansible_[a-z0-9_]+)$'
 skip_list:
   - var-naming[no-role-prefix]
 exclude_paths:

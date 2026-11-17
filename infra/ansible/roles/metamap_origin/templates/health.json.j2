@@ -1,0 +1,4 @@
+{{ {'service': 'metamap-origin', 'scope': 'https-transport-only', 'origin_ready': true,
+    'application_ready': false, 'backend_enabled': false, 'production_cutover': false,
+    'hostname': metamap_origin_hostname, 'tls_trust_scope': metamap_origin_tls_mode,
+    'revision': metamap_origin_revision} | to_nice_json }}

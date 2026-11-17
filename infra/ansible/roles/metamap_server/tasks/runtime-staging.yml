@@ -1,0 +1,51 @@
+---
+- name: Inspect the isolated private runtime staging directory
+  ansible.builtin.stat:
+    path: /etc/redunisol-metamap
+    follow: false
+  register: metamap_runtime_staging_parent
+
+- name: Reject adoption of an unsafe private staging directory
+  ansible.builtin.assert:
+    that:
+      - >-
+        not metamap_runtime_staging_parent.stat.exists or
+        (metamap_runtime_staging_parent.stat.isdir and
+         not metamap_runtime_staging_parent.stat.islnk and
+         metamap_runtime_staging_parent.stat.uid == 0 and
+         metamap_runtime_staging_parent.stat.mode == '0700')
+
+- name: Inspect any previously staged private environment without reading it
+  ansible.builtin.stat:
+    path: "{{ metamap_pending_runtime_env_path }}"
+    follow: false
+    get_checksum: false
+  register: metamap_runtime_staging_existing
+
+- name: Reject unsafe existing staged runtime settings
+  ansible.builtin.assert:
+    that:
+      - >-
+        not metamap_runtime_staging_existing.stat.exists or
+        (metamap_runtime_staging_existing.stat.isreg and
+         not metamap_runtime_staging_existing.stat.islnk and
+         metamap_runtime_staging_existing.stat.uid == 0 and
+         metamap_runtime_staging_existing.stat.mode == '0600')
+
+- name: Create the private runtime staging directory
+  ansible.builtin.file:
+    path: /etc/redunisol-metamap
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Copy existing runtime settings to the pending private location only
+  ansible.builtin.copy:
+    src: "{{ metamap_runtime_env_source_file }}"
+    dest: "{{ metamap_pending_runtime_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
