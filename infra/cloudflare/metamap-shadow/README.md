@@ -11,13 +11,17 @@ Public responses identify this mode with `X-Metamap-Cutover: dedicated`.
 Modes are explicit: `vps` preserves the original request target; `hold`
 durably queues signed webhooks before acknowledging them and temporarily rejects
 other writes with 503/Retry-After; `dedicated` proxies the entire scoped prefix.
-Unknown modes fail closed. The bounded, signed asynchronous shadow capture and
-queue consumer remain active independently of the operational SQLite database.
+Unknown modes fail closed. Since 2026-11-17, shadow capture is disabled with
+`SHADOW_CAPTURE_ENABLED="false"`; primary routing remains `dedicated`.
+The existing queue consumer and isolated receiver are retained so earlier queued
+copies can drain. No new shadow copies are enqueued; no stored data is deleted.
 
-Cloudflare routes retain fail-open behavior. The old VPS listener on port3031
-is now a data-free fallback proxy to the same dedicated origin; the old application
-writer is stopped. Route fail-open therefore does not create two active databases.
-Returning service to the old database requires reconciling new dedicated data.
+Cloudflare routes retain their existing fail-open setting. At the operator's
+request, both the old VPS application and its separate forwarding fallback are
+stopped, with automatic restart disabled. There is no VPS listener on port3031
+and no operational fallback there if the Worker is bypassed or unavailable.
+Historical data is retained. Explicit manual recovery requires a separate profile
+and reconciliation of new dedicated data before using the old database.
 
 The following sections describe the original shadow trial and its delivery
 contract. Their original-target behavior applies specifically to `PRIMARY_MODE=vps`.
@@ -29,7 +33,7 @@ The original trial made an asynchronous signed copy without moving the primary.
 The current primary mode is declared above; the delivery contract remains below.
 
 `wrangler.jsonc` has `workers_dev=false`, `preview_urls=false`, scoped routes and
-`SHADOW_CAPTURE_ENABLED="true"`. `manifest.json` records the resource identities
+`SHADOW_CAPTURE_ENABLED="false"`. `manifest.json` records the resource identities
 and observed route fail-open setting; it is not an executable API payload. Its
 `required_request_limit_failure_mode` is a review requirement, not a Wrangler key.
 

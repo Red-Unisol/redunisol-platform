@@ -1,10 +1,11 @@
-# Only a localhost forwarding fallback. The historical database is never mounted.
+# Retired VPS fallback. Explicit manual recovery only; no automatic restart.
 name: metamap-origin-fallback
 services:
   proxy:
+    profiles: [manual-recovery]
     image: ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5
     pull_policy: never
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
