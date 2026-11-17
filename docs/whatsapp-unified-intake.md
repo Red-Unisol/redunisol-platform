@@ -107,6 +107,33 @@ en revisión/resultado incierto permanecieron iguales. Una prueba adicional
 con lote vacío autenticado dio HTTP200 con todos los contadores en cero;
 esa prueba técnica se distingue del mensaje real.
 
+El 17/11/2026 se repitió la ausencia de la URL adicional en el webhook `2508`;
+la URL de Bitrix, Ventas e `IN_MESSAGE` seguían configurados y la autenticación
+habilitada. El último inbox era `37789`, recibido a las `14:15:08Z` (11:15:08
+ART), antes del merge/despliegue del PR #750. Los mensajes nuevos continuaban
+visibles en Bitrix. El endpoint público admitía HEAD 200 y un lote vacío
+autenticado devolvió HTTP200 con cero eventos: no había una prueba de que la
+cola o el receptor estuvieran rechazando esas entregas ausentes.
+
+Se restableció sólo la URL adicional documentada, conservando el destino Bitrix,
+la autenticación y los tipos de evento. Antes se armó una nueva frontera en
+`2026-11-17T15:15:59Z` (12:15:59 ART), sin mover `native-v3-v1` ni
+`deal-message-binding-v1` y sin solicitar reenvío histórico. Edna confirmó el
+guardado a las 12:16:09 ART. El primer callback nuevo comprobado fue
+`21048898401`, inbox `37790`, con fecha original `15:18:46Z`, guardado y procesado
+a las `15:18:48Z`. El menú `2827`, chat `145495` / sesión `317597`, confirmó
+el envío a las `15:19:29Z` y registró la elección de préstamo. Otro ingreso,
+menú `2829`, conservó el responsable del chat (`chat_owner_preserved`). Estos
+resultados prueban recepción/procesamiento y conservación de atención, no una
+transferencia automática de chat.
+
+El historial visible de notificaciones de Edna no identifica el actor ni la
+petición que eliminó la URL. Una integración que reescriba la configuración es
+una hipótesis pendiente de auditoría, no un diagnóstico confirmado. Repetir el
+guardado recupera la entrega, pero no demuestra eliminada la causa de recurrencia.
+No usar la actividad de jobs antiguos como prueba de recepción de chats nuevos:
+verificar siempre un mensaje original posterior al corte por su ID externo.
+
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se
 documentan en [ORG-23571](../kestra/automations/marketing-crm/docs/commercial-rules/ORGANIC_WHATSAPP_23571.md).
