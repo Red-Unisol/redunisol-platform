@@ -74,8 +74,9 @@ tamano y SHA256 del ejecutable completo. Las 80 validaciones completadas
 estaban indexadas con solicitud; ninguna de las 125 validaciones reales
 observadas en la sombra faltaba en la base operativa al verificar.
 
-Los workflows antiguos de deploy y publicacion estan **pausados** para evitar
-escrituras en la VPS. Este cambio prepara ambos para el dedicado, usando
+Los workflows de deploy y publicacion se pausaron durante el corte para evitar
+escrituras en la VPS. Tras integrar el PR #748, ambos quedaron **habilitados
+hacia el dedicado**, usando
 los secretos de environment `METAMAP_SSH_HOST`, `METAMAP_SSH_PORT`,
 `METAMAP_SSH_USER`, `METAMAP_SSH_PRIVATE_KEY` y la variable de host key
 fijada `METAMAP_SSH_KNOWN_HOSTS`. El environment conserva su nombre historico
@@ -95,7 +96,26 @@ las claves anteriores, con `restrict` (sin PTY ni reenvios), y se verifico
 autenticacion solo con clave contra el host con huella fijada.
 Los cuatro secretos `METAMAP_SSH_*` y la variable de confianza quedaron
 configurados en `vps-infra`, sin alterar `VPS_SSH_*` ni la clave de firma.
-Mantener ambos workflows pausados hasta integrar su nuevo destino en main.
+La integracion en main se verifico por las sumas de ambos archivos de workflow
+y despues se habilitaron. El acceso de CI se probo por clave; no se disparo un
+nuevo deploy ni una version del cliente solo para esa comprobacion.
+
+## Cierre de verificacion, 17/11/2026 11:09 ART
+
+El PR #748 quedo integrado en main como
+`60d1127818d6629d51318f34862704f3f32abee8`, incluyendo la preparacion de #729
+y el ensayo de #731. El PR del ensayo se cerro por estar consolidado.
+Los checks remotos se dejaron pendientes, sin esperarlos ni monitorearlos.
+
+La API publica seguia atendida por el dedicado, ambos clientes devolvian 200
+y el acceso anonimo 401. Habia **188 validaciones y 9.521 trazas**;
+**5 validaciones se actualizaron y 292 trazas ocurrieron despues del corte**.
+El escritor antiguo seguia detenido y su proxy de respaldo no montaba base.
+
+El primer backup horario automatico finalizo con `Result=success`,
+snapshot `70a5403b2bd96d8f44fd154a60ed412b0127b8f1df57010dc3d7d300e160c3bb`.
+Ese backup horario es distinto del restore comprobado anteriormente:
+una ejecucion normal no repite el ensayo de restauracion.
 
 ## Antecedente: preparacion y ensayo del 13/11/2026
 
@@ -550,7 +570,7 @@ prueba y egreso controlado; la preparacion actual no inicia ese clon.
 
 La preparacion, migracion de datos, copia cifrada, activacion y sus recibos son
 etapas diferentes. Quedan pendientes completar el inventario de escritores,
-los recibos de datos reales y el corte. El rediseÃƒÂ±o historico de MetaMap no se
+los recibos de datos reales y el corte. El rediseÃƒÆ’Ã‚Â±o historico de MetaMap no se
 toma como evidencia de una arquitectura ya desplegada.
 
 ## Checkpoint de preparacion: 13 de noviembre de 2026
