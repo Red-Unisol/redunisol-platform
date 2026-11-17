@@ -209,7 +209,7 @@ services:
 
   edna-web-worker:
     <<: *edna-worker
-    command: [edna, --queue=edna-web-reconcile, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+    command: [edna, "--queue=edna-web-new,edna-web-reconcile", --sleep=1, --tries=8, --timeout=45, --max-time=3600]
 
   scheduler:
     image: ${APP_IMAGE}

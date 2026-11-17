@@ -71,8 +71,28 @@ class WebFormChatRouting
         return true;
     }
 
+    /** Old work is terminal locally; queued stale jobs then ACK without a CRM call. */
+    public function expireDue(int $limit = 250): int
+    {
+        return DB::transaction(function () use ($limit): int {
+            $rows = DB::table('web_form_chat_routes')->whereIn('state', ['pending', 'waiting', 'unknown'])
+                ->where('created_at', '<=', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))
+                ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
+                ->orderBy('created_at')->limit($limit)->lockForUpdate()->get();
+            $policy = new WebFormChatRetryPolicy;
+            foreach ($rows as $row) {
+                DB::table('web_form_chat_routes')->where('entry_event_id', $row->entry_event_id)
+                    ->update($policy->expiration($row) + ['updated_at' => now()]);
+            }
+
+            return $rows->count();
+        });
+    }
+
     public function poll(int $limit = 25): int
     {
+        $this->expireDue();
+
         return DB::transaction(function () use ($limit): int {
             $queue = app(EdnaWorkQueue::class);
             $rows = $queue->withoutPending(DB::table('web_form_chat_routes'), LinkWebFormChat::class, 'web_form_chat_routes.entry_event_id')
@@ -80,9 +100,11 @@ class WebFormChatRouting
                     $q->whereIn('state', ['pending', 'waiting'])
                         ->orWhere(fn ($unknown) => $unknown->where('state', 'unknown')->whereIn('transfer_state', ['sending', 'unknown']));
                 })
+                ->where('created_at', '>', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))
                 ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('enqueued_at')->orWhere('enqueued_at', '<=', now()->subMinute()))
+                ->orderByRaw('CASE WHEN attempts = 0 THEN 0 ELSE 1 END')
                 ->orderByRaw('COALESCE(available_at, created_at)')->orderBy('entry_event_id')->limit($limit)->lockForUpdate()->get();
             $enqueued = 0;
             foreach ($rows as $row) {
@@ -113,7 +135,10 @@ class WebFormChatRouting
     public function history(string $hash): Builder
     {
         return DB::table('web_form_chat_routes')->where('phone_hash', $hash)
-            ->whereIn('state', ['routed', 'linked', 'preserved', 'waiting'])
+            ->where(function ($q): void {
+                $q->whereIn('state', ['routed', 'linked', 'preserved', 'waiting'])
+                    ->orWhere(fn ($expired) => $expired->where('state', 'expired')->where('reason', 'retry_window_expired'));
+            })
             ->whereNotIn('transfer_state', ['sending', 'unknown'])
             ->whereNotNull('submission_id')->whereNotNull('proof');
     }

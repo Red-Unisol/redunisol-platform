@@ -3,9 +3,11 @@
 use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaMessageBinding;
+use App\Services\JourneyLedger;
 use App\Services\WebFormChatGuard;
 use App\Services\WebFormChatLinker;
 use App\Services\WebFormReceipt;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -593,3 +595,120 @@ test('an existing closed commercial case ends in review without recurring transf
     expect($f->linker->process($f->event->id))->toBe(['state' => 'not_claimed'])
         ->and($f->crm->transferCalls)->toBe(0);
 })->with(['S', 'F']);
+
+test('an eight-hour-old queued route expires before any binding or CRM operation and preserves its evidence', function () {
+    $f = webChatLinkerFixture();
+    $proof = json_encode(webChatLinkerProof($f->event));
+    DB::table('web_form_chat_routes')->update(['created_at' => now()->subHours(8), 'proof' => $proof, 'attempts' => 400]);
+    expect($f->linker->process($f->event->id)['state'])->toBe('not_claimed');
+    $row = webChatLinkerRow($f);
+    expect($row->state)->toBe('expired')->and($row->reason)->toBe('retry_window_expired')
+        ->and($row->proof)->toBe($proof)->and($row->attempts)->toBe(400)
+        ->and($f->binding->calls)->toBe(0)->and($f->crm->calls)->toBe([]);
+    expect($f->linker->process($f->event->id)['state'])->toBe('not_claimed');
+});
+
+test('expiry preserves an uncertain transfer receipt in terminal review without another POST', function (string $transfer) {
+    $f = webChatLinkerFixture();
+    $proof = json_encode(webChatLinkerProof($f->event) + ['transfer_intent' => ['seller_id' => '90231', 'session_id' => '501'], 'transfer_acknowledged' => false]);
+    DB::table('web_form_chat_routes')->update(['state' => 'unknown', 'transfer_state' => $transfer,
+        'created_at' => now()->subHours(9), 'proof' => $proof]);
+    $f->linker->process($f->event->id);
+    expect(webChatLinkerRow($f)->state)->toBe('review')
+        ->and(webChatLinkerRow($f)->reason)->toBe('transfer_unresolved_after_retry_window')
+        ->and(webChatLinkerRow($f)->transfer_state)->toBe($transfer)->and(webChatLinkerRow($f)->proof)->toBe($proof)
+        ->and($f->binding->calls)->toBe(0)->and($f->crm->calls)->toBe([]);
+})->with(['sending', 'unknown']);
+
+test('expiry during the final human check stops the transfer while retaining the linked activity', function () {
+    $f = webChatLinkerFixture();
+    DB::table('web_form_chat_routes')->update(['created_at' => now()->subHours(8)->addSeconds(5)]);
+    $f->guard->beforeInspect = function ($call) {
+        if ($call === 2) {
+            $this->travel(10)->seconds();
+        }
+    };
+    expect($f->linker->process($f->event->id)['state'])->toBe('expired')
+        ->and($f->crm->transferCalls)->toBe(0)->and(webChatLinkerRow($f)->link_state)->toBe('linked');
+});
+
+test('expiry during an applied POST retains uncertainty and never replays the transfer', function () {
+    $f = webChatLinkerFixture();
+    DB::table('web_form_chat_routes')->update(['created_at' => now()->subHours(8)->addSeconds(5)]);
+    $f->crm->transferMode = 'lost_after_apply';
+    $f->crm->beforeCall = function ($method) {
+        if ($method === 'imopenlines.operator.transfer') {
+            $this->travel(10)->seconds();
+        }
+    };
+    expect($f->linker->process($f->event->id)['state'])->toBe('review')
+        ->and($f->crm->transferCalls)->toBe(1)->and(webChatLinkerRow($f)->transfer_state)->toBe('sending');
+    $proof = json_decode(webChatLinkerRow($f)->proof, true);
+    expect($proof['transfer_intent']['seller_id'])->toBe('90231');
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe(1)->and($f->crm->dialog['owner'])->toBe(90231);
+});
+
+test('a positive acknowledgement arriving after expiry stays durable without further CRM calls or replay', function () {
+    $f = webChatLinkerFixture();
+    DB::table('web_form_chat_routes')->update(['created_at' => now()->subHours(8)->addSeconds(5)]);
+    $f->crm->beforeCall = function ($method) {
+        if ($method === 'imopenlines.operator.transfer') {
+            $this->travel(10)->seconds();
+        }
+    };
+    $ledger = Mockery::mock(JourneyLedger::class);
+    $ledger->shouldReceive('record')->once()->withArgs(fn ($type, $data) => $type === 'whatsapp.web_chat_route'
+        && $data['transfer_acknowledged'] === true && $data['state'] === 'review');
+    $ledger->shouldReceive('flush')->once();
+    app()->instance(JourneyLedger::class, $ledger);
+
+    expect($f->linker->process($f->event->id)['state'])->toBe('review')
+        ->and($f->crm->transferCalls)->toBe(1);
+    $proof = json_decode(webChatLinkerRow($f)->proof, true);
+    expect($proof['transfer_acknowledged'])->toBeTrue()
+        ->and($proof['transfer_intent']['seller_id'])->toBe('90231')
+        ->and($f->crm->calls[array_key_last($f->crm->calls)][0])->toBe('imopenlines.operator.transfer');
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe(1)->and($f->crm->dialog['owner'])->toBe(90231);
+});
+
+test('waiting retries use exponential jitter without renewing the original eight-hour deadline', function () {
+    $f = webChatLinkerFixture();
+    $f->binding->proof = null;
+    $created = webChatLinkerRow($f)->created_at;
+    foreach ([[30, 60], [60, 120], [120, 240]] as $bounds) {
+        $before = now();
+        expect($f->linker->process($f->event->id)['state'])->toBe('waiting');
+        $row = webChatLinkerRow($f);
+        $delay = (int) $before->diffInSeconds(CarbonImmutable::parse($row->available_at));
+        expect($delay)->toBeGreaterThanOrEqual($bounds[0])->toBeLessThanOrEqual($bounds[1])
+            ->and($row->created_at)->toBe($created);
+        $this->travelTo(CarbonImmutable::parse($row->available_at)->addSecond());
+    }
+    $this->travelTo(CarbonImmutable::parse($created)->addHours(8));
+    $calls = $f->binding->calls;
+    $f->linker->process($f->event->id);
+    expect(webChatLinkerRow($f)->state)->toBe('expired')->and($f->binding->calls)->toBe($calls);
+});
+
+test('the next retry is capped at expiry even when its backoff is longer than the remaining window', function () {
+    $f = webChatLinkerFixture();
+    $f->binding->proof = null;
+    DB::table('web_form_chat_routes')->update(['created_at' => now()->subHours(8)->addSeconds(10), 'attempts' => 100]);
+    $f->linker->process($f->event->id);
+    expect(CarbonImmutable::parse(webChatLinkerRow($f)->available_at)->toIso8601String())
+        ->toBe(now()->addSeconds(10)->toIso8601String());
+});
+
+test('a proved message is reused on retry while commercial ownership is checked again', function () {
+    $f = webChatLinkerFixture();
+    $f->crm->dealPending = true;
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_case_not_ready')
+        ->and($f->binding->calls)->toBe(1);
+    $this->travelTo(CarbonImmutable::parse(webChatLinkerRow($f)->available_at)->addSecond());
+    $f->crm->dealPending = false;
+    $f->crm->contact['ASSIGNED_BY_ID'] = '29';
+    expect($f->linker->process($f->event->id)['reason'])->toBe('contact_responsible_preserved')
+        ->and($f->binding->calls)->toBe(1)->and($f->crm->transferCalls)->toBe(0);
+});

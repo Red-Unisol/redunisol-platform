@@ -30,6 +30,8 @@ class WebFormChatLinker
 
     private array $proof = [];
 
+    private ?CarbonImmutable $expiresAt = null;
+
     private string $phoneHash;
 
     private ?Lock $chatLock = null;
@@ -47,11 +49,13 @@ class WebFormChatLinker
         $this->deadline = microtime(true) + 90;
         $this->proof = [];
         $this->chatLock = null;
+        $this->expiresAt = null;
         $route = $this->claim();
         if (! $route) {
             return ['state' => 'not_claimed'];
         }
         $this->token = $route->lease_token;
+        $this->expiresAt = (new WebFormChatRetryPolicy)->expiresAt($route);
         try {
             if (! config('edna.enabled') || ! config('edna.intake_crm_enabled')) {
                 $this->decide('waiting', 'crm_routing_disabled');
@@ -246,8 +250,7 @@ class WebFormChatLinker
                 if ($ack !== true) {
                     $this->decide('unknown', 'transfer_acknowledgement_uncertain');
                 }
-                $this->proof['transfer_acknowledged'] = true;
-                $this->write(['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR)]);
+                $this->acknowledgeTransfer();
             } catch (Throwable) {
                 // The provider may have applied the POST. A later worker may only read,
                 // never send the same transfer again over a subsequent human assignment.
@@ -569,9 +572,18 @@ class WebFormChatLinker
     {
         return DB::transaction(function () {
             $row = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->lockForUpdate()->first();
-            if (! $row || in_array($row->state, ['routed', 'linked', 'preserved', 'review'], true)
-                || ($row->lease_until && CarbonImmutable::parse($row->lease_until)->isFuture())
-                || ($row->available_at && CarbonImmutable::parse($row->available_at)->isFuture())) {
+            if (! $row || in_array($row->state, ['routed', 'linked', 'preserved', 'review', 'expired'], true)
+                || ($row->lease_until && CarbonImmutable::parse($row->lease_until)->isFuture())) {
+                return null;
+            }
+            $policy = new WebFormChatRetryPolicy;
+            if ($policy->expired($row)) {
+                DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)
+                    ->update($policy->expiration($row) + ['updated_at' => now()]);
+
+                return null;
+            }
+            if ($row->available_at && CarbonImmutable::parse($row->available_at)->isFuture()) {
                 return null;
             }
             $token = (string) Str::uuid();
@@ -586,6 +598,9 @@ class WebFormChatLinker
 
     private function assertLease(): void
     {
+        if ($this->expiresAt && $this->expiresAt->lessThanOrEqualTo(now())) {
+            $this->decide('expired', 'retry_window_expired');
+        }
         if (microtime(true) >= $this->deadline || ! DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)
             ->where('lease_token', $this->token)->where('lease_until', '>', now())->exists()) {
             $this->decide('waiting', 'routing_lease_expired');
@@ -601,6 +616,19 @@ class WebFormChatLinker
         }
     }
 
+    /** Store a received acknowledgement even if the retry window ended during the POST. */
+    private function acknowledgeTransfer(): void
+    {
+        $proof = $this->proof;
+        $proof['transfer_acknowledged'] = true;
+        if (DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)
+            ->where('lease_token', $this->token)->where('lease_until', '>', now())
+            ->update(['proof' => json_encode($proof, JSON_THROW_ON_ERROR), 'updated_at' => now()]) !== 1) {
+            $this->decide('waiting', 'routing_lease_superseded');
+        }
+        $this->proof = $proof;
+    }
+
     private function call(string $method, array $params = []): mixed
     {
         $this->assertLease();
@@ -610,12 +638,25 @@ class WebFormChatLinker
 
     private function finish(string $state, string $reason, array $fields = []): array
     {
+        $route = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();
+        $policy = new WebFormChatRetryPolicy;
+        $next = null;
+        if ($route && in_array($state, ['waiting', 'unknown', 'expired'], true) && $policy->expired($route)) {
+            $expiration = $policy->expiration($route);
+            $state = $expiration['state'];
+            $reason = $expiration['reason'];
+            $fields = array_replace($fields, $expiration);
+        } elseif ($route && in_array($state, ['waiting', 'unknown'], true)) {
+            $seconds = $policy->delaySeconds((int) $route->attempts);
+            $next = CarbonImmutable::now()->addSeconds($state === 'unknown' ? max(300, $seconds) : $seconds)
+                ->min($policy->expiresAt($route));
+        }
         if ($state === 'preserved' && ! isset($fields['transfer_state'])) {
             $fields['transfer_state'] = 'preserved';
         }
         $updated = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->where('lease_token', $this->token)->update($fields + [
             'state' => $state, 'reason' => $reason, 'lease_token' => null, 'lease_until' => null,
-            'available_at' => now()->addSeconds($state === 'unknown' ? 300 : 60), 'updated_at' => now(),
+            'available_at' => $next, 'enqueued_at' => null, 'updated_at' => now(),
         ]);
         if ($updated !== 1) {
             return ['state' => 'superseded', 'reason' => 'routing_lease_superseded'];

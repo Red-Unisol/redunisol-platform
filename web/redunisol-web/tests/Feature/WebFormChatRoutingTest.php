@@ -4,6 +4,7 @@ use App\Jobs\LinkWebFormChat;
 use App\Jobs\ReceiveEdnaInKestra;
 use App\Jobs\SendEdnaFlow;
 use App\Services\AttributionJourney;
+use App\Services\WebFormChatRetryPolicy;
 use App\Services\WebFormChatRouting;
 use App\Services\WebFormReceipt;
 use Illuminate\Support\Facades\Crypt;
@@ -251,8 +252,9 @@ test('old waiting retries do not starve newer overdue work', function () {
     }
     $overdue = routeHistory(['state' => 'pending', 'created_at' => now()->subMinutes(30), 'available_at' => now()->subMinutes(30)]);
 
-    expect(app(WebFormChatRouting::class)->poll())->toBe(25);
-    Queue::assertPushed(LinkWebFormChat::class, 25);
+    expect(app(WebFormChatRouting::class)->poll())->toBe(1);
+    Queue::assertPushed(LinkWebFormChat::class, 1);
+    expect(DB::table('web_form_chat_routes')->where('state', 'expired')->count())->toBe(25);
     Queue::assertPushed(LinkWebFormChat::class, fn ($job) => $job->entryEventId === $overdue->entry_event_id);
     expect(Queue::pushed(LinkWebFormChat::class)->first()->entryEventId)->toBe($overdue->entry_event_id);
     Http::assertNothingSent();
@@ -302,3 +304,64 @@ test('routing status shows durable outcomes without dispatching or changing work
     Queue::assertNothingPushed();
     Http::assertNothingSent();
 });
+
+test('expiry sweeps preserve active leases and uncertain receipts and never dispatch stale work', function () {
+    $old = routeHistory(['state' => 'waiting', 'created_at' => now()->subHours(9)]);
+    $active = routeHistory(['state' => 'waiting', 'created_at' => now()->subHours(9), 'lease_token' => 'active', 'lease_until' => now()->addMinute()]);
+    $unknown = routeHistory(['state' => 'unknown', 'transfer_state' => 'unknown', 'created_at' => now()->subHours(9), 'proof' => json_encode(['transfer_intent' => ['seller_id' => '29']])]);
+    $proof = $unknown->proof;
+    expect(app(WebFormChatRouting::class)->poll())->toBe(0)
+        ->and(DB::table('web_form_chat_routes')->where('entry_event_id', $old->entry_event_id)->value('state'))->toBe('expired')
+        ->and(DB::table('web_form_chat_routes')->where('entry_event_id', $active->entry_event_id)->value('lease_token'))->toBe('active')
+        ->and(DB::table('web_form_chat_routes')->where('entry_event_id', $unknown->entry_event_id)->value('state'))->toBe('review')
+        ->and(DB::table('web_form_chat_routes')->where('entry_event_id', $unknown->entry_event_id)->value('proof'))->toBe($proof);
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('a new message remains eligible after the same persons older work expires', function () {
+    routeHistory(['state' => 'waiting', 'created_at' => now()->subHours(9)]);
+    app(WebFormChatRouting::class)->poll();
+    $new = routeIncomingEvent();
+    expect(app(WebFormChatRouting::class)->schedule($new->id))->toBeTrue()
+        ->and(DB::table('jobs')->sole()->queue)->toBe('edna-web-new');
+});
+
+test('new first attempts win a bounded poll over older due retries', function () {
+    $retry = routeHistory(['state' => 'waiting', 'attempts' => 5, 'created_at' => now()->subHour(), 'available_at' => now()->subMinutes(20)]);
+    $fresh = routeHistory(['state' => 'pending', 'attempts' => 0, 'created_at' => now()->subMinute(), 'available_at' => now()->subSecond()]);
+    expect(app(WebFormChatRouting::class)->poll(1))->toBe(1);
+    Queue::assertPushed(LinkWebFormChat::class, fn ($job) => $job->entryEventId === $fresh->entry_event_id);
+    Queue::assertNotPushed(LinkWebFormChat::class, fn ($job) => $job->entryEventId === $retry->entry_event_id);
+    expect(DB::table('jobs')->sole()->queue)->toBe('edna-web-new');
+});
+
+test('jitter stays within exponential ranges and safely caps very large attempt counts', function (int $attempt, int $low, int $high) {
+    $policy = new WebFormChatRetryPolicy;
+    foreach (range(1, 8) as $_) {
+        expect($policy->delaySeconds($attempt))->toBeGreaterThanOrEqual($low)->toBeLessThanOrEqual($high);
+    }
+})->with([[0, 30, 60], [1, 30, 60], [2, 60, 120], [3, 120, 240], [4, 240, 480], [5, 480, 960], [6, 900, 1800], [1140, 900, 1800]]);
+
+test('a new message may discover expired proven history without reviving its old work', function () {
+    $old = routeHistory(['state' => 'waiting', 'attempts' => 20, 'created_at' => now()->subHours(9)]);
+    $routing = app(WebFormChatRouting::class);
+    expect($routing->expireDue())->toBe(1);
+    $event = routeIncomingEvent('Tengo una nueva consulta');
+    expect($routing->receiveReentry($event, routePayload($event)))->toBeTrue();
+    $new = DB::table('web_form_chat_routes')->where('entry_event_id', $event->id)->first();
+    expect($new->state)->toBe('pending')->and($new->submission_id)->toBeNull()->and($new->proof)->toBeNull()
+        ->and(DB::table('web_form_chat_routes')->where('entry_event_id', $old->entry_event_id)->first()->state)->toBe('expired')
+        ->and($routing->schedule($old->entry_event_id))->toBeFalse();
+    Queue::assertPushed(LinkWebFormChat::class, 1);
+    Queue::assertPushed(LinkWebFormChat::class, fn ($job) => $job->entryEventId === $event->id);
+    Http::assertNothingSent();
+});
+
+test('an expired history hint still excludes uncertain transfers', function (string $transfer) {
+    routeHistory(['state' => 'expired', 'reason' => 'retry_window_expired', 'transfer_state' => $transfer]);
+    $event = routeIncomingEvent();
+    expect(app(WebFormChatRouting::class)->receiveReentry($event, routePayload($event)))->toBeFalse();
+    Queue::assertNotPushed(LinkWebFormChat::class);
+    Http::assertNothingSent();
+})->with(['sending', 'unknown']);
