@@ -1,0 +1,12 @@
+---
+- name: Prepare inactive MetaMap files without migrating or activating the service
+  hosts: metamap_server_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: metamap_server
+      tags: [metamap]

@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly MetaMap recent state backup
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=120
+Persistent=true
+Unit=metamap-recent-backup.service
+[Install]
+WantedBy=timers.target

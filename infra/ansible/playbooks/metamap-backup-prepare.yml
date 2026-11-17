@@ -1,0 +1,12 @@
+---
+- name: Prepare a separate encrypted MetaMap repository and synthetic recovery proof
+  hosts: metamap_backup_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: metamap_backup
+      tags: [metamap_backup]
