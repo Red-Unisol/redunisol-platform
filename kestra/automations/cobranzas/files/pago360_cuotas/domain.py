@@ -30,22 +30,21 @@ def cents(value: str | int | Decimal) -> int:
 
 
 
-def resolve_currency(provider_currency: str | None, configured_currency: str | None = None) -> str:
-    """Moneda normalizada por BACKEND, nunca por el cuerpo del webhook/cliente.
+CIRCUIT_CURRENCY = "ARS"
 
-    El usuario definió este circuito en ARS (17/11/2026). Cuando el proveedor
-    omita moneda, el adaptador podrá usar la configuración explícita ARS del
-    backend. No sustituye una moneda contradictoria ni valida otros datos.
+
+def resolve_currency(provider_currency: str | None, configured_currency: str | None = None) -> str:
+    """ARS es la configuración fija de negocio; no requiere una variable externa.
+
+    Solo procesa moneda leída por backend desde la respuesta autenticada.
+    Mantiene el parámetro previo por compatibilidad, sin permitir otra moneda.
+    Si el proveedor omite el dato, el origen es negocio, nunca respuesta.
     """
-    if configured_currency not in (None, "", "ARS"):
+    if configured_currency not in (None, "", CIRCUIT_CURRENCY):
         raise ContractError("Este circuito solo admite configuración ARS")
-    if provider_currency == "ARS":
-        return "ARS"
-    if provider_currency not in (None, ""):
+    if provider_currency not in (None, "", CIRCUIT_CURRENCY):
         raise ContractError("La moneda del proveedor no coincide con ARS")
-    if configured_currency == "ARS":
-        return "ARS"
-    raise ContractError("Falta moneda del proveedor o configuración explícita del backend")
+    return CIRCUIT_CURRENCY
 
 
 def identifier(value: str) -> str:

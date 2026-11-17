@@ -397,13 +397,21 @@ class Pago360Tests(unittest.TestCase):
         for missing in [None, '']:
             self.assertEqual(resolve_currency(missing, 'ARS'), 'ARS')
 
-    def test_missing_currency_without_backend_configuration_is_blocked(self):
-        for configured in [None, '']:
-            with self.assertRaises(ContractError):
-                resolve_currency(None, configured)
+    def test_missing_currency_uses_fixed_business_ars_without_environment_variable(self):
+        self.assertEqual(resolve_currency(None), 'ARS')
+        for configured in [None, '', 'ARS']:
+            for missing in [None, '']:
+                self.assertEqual(resolve_currency(missing, configured), 'ARS')
+
+    def test_business_ars_allows_normalized_paid_evidence_without_optional_setting(self):
+        repo, provider, legacy, worker = self.fixture()
+        provider.verify.return_value = replace(payment(repo.operation), currency=resolve_currency(None))
+        self.assertEqual(worker.run('operation-test', 'execution-ars').status, 'APPLIED')
+        self.assertEqual(legacy.calls, ['9001'])
 
     def test_backend_ars_cannot_override_a_contradictory_provider_currency(self):
-        with self.assertRaises(ContractError): resolve_currency('USD', 'ARS')
+        for configured in [None, '', 'ARS']:
+            with self.assertRaises(ContractError): resolve_currency('USD', configured)
         with self.assertRaises(ContractError): resolve_currency('ARS', 'USD')
 
     def test_immutable_snapshot_and_exact_cents(self):

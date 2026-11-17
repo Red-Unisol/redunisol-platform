@@ -25,13 +25,21 @@ El usuario confirmó que este circuito opera siempre en pesos argentinos. Se
 adopta **ARS como definición de negocio**, sin exigir una confirmación escrita
 adicional del proveedor. Esto no se presenta como un dato observado en su API.
 
-Si Pago360 omite moneda, el futuro adaptador de backend podrá normalizarla con
-`PAGOS360_MONEDA_CONTRATO=ARS`, configuración ya propuesta por el portal. La
-utilidad `resolve_currency` acepta esa configuración explícita; nunca reemplaza
-una moneda distinta informada por el proveedor. No cambiar reglas de referencia,
-importe realmente cobrado, fecha o estado. No tomar esta configuración del
-frontend ni del body no verificado del webhook. Conservar su origen en la
-evidencia del backend. En esta PR no se configuraron secretos ni variables reales.
+La moneda queda fija en el backend del núcleo: `CIRCUIT_CURRENCY = "ARS"`.
+`resolve_currency` utiliza esa definición cuando Pago360 omite moneda, sin
+requerir una variable de entorno para habilitarla. Mantiene el parámetro opcional
+anterior por compatibilidad y rechaza cualquier valor distinto de ARS. Tampoco
+reemplaza una moneda distinta informada por el proveedor.
+
+El portal deberá aplicar el mismo valor fijo en su propuesta preparada: no dejar
+la ausencia de `PAGOS360_MONEDA_CONTRATO` como bloqueo. Puede conservar la variable
+opcional anterior por compatibilidad, pero no admitir una configuración distinta.
+Conservar `moneda_fuente=configuracion_negocio` cuando el dato no venga de
+Pago360; usar `respuesta` solo si realmente informa ARS. No cambiar reglas de
+referencia, importe efectivamente cobrado, fecha o estado. No tomar moneda del
+frontend ni del body no verificado del webhook. Esto no habilita el adaptador
+real ni aplica cambios al portal: en esta PR no se cambiaron variables o secretos
+operativos y la propuesta de Lovable aún debe incorporar y probar ese ajuste.
 
 Disparador acordado: **el backend de Préstamos confirma y guarda el pago, y
 luego avisa a Kestra** mediante su webhook autenticado. Se conserva el receptor
@@ -216,8 +224,8 @@ Ejecutar desde la raíz de Platform:
 git diff --check
 ```
 
-Resultado local de este incremento: **66 pruebas de Cobranzas correctas**, de
-las cuales 34 son nuevas del motor Pago360; **13 pruebas existentes** de
+Resultado local de este incremento: **67 pruebas de Cobranzas correctas**, de
+las cuales 35 son nuevas del motor Pago360; **13 pruebas existentes** de
 `CobrarPrestamoGateway` y `CobrarRefinanciacionSolicitud` correctas. Estructura
 Kestra, dry-run y `git diff --check` correctos. Todas estas comprobaciones usan
 contratos/dobles locales; no hubo autenticación o escritura real en Pago360,
