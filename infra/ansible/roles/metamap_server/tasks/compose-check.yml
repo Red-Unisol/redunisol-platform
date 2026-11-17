@@ -1,0 +1,30 @@
+---
+- name: Read the installed Compose configuration validation options
+  ansible.builtin.command:
+    argv: [docker, compose, config, --help]
+  register: metamap_compose_options
+  changed_when: false
+  check_mode: false
+
+- name: Require validation without resolving the missing private environment file
+  ansible.builtin.assert:
+    that:
+      - "'--no-env-resolution' in metamap_compose_options.stdout"
+    fail_msg: Compose must support config --no-env-resolution; never substitute optional runtime credentials.
+
+- name: Validate the activation profile as configuration only without resolving secrets
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ metamap_compose_project }}"
+      - --file
+      - "{{ metamap_platform_dir }}/compose.yml"
+      - --profile
+      - activation
+      - config
+      - --no-env-resolution
+      - --quiet
+  changed_when: false
+  check_mode: false

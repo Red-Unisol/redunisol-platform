@@ -35,6 +35,7 @@ foundation_monitoring_expected_services:
   - ssh.service
   - apache2.service
   - fail2ban.service
+  - metamap-origin.service
 foundation_external_monitoring_configured: false
 foundation_backups_enabled: true
 foundation_backups_package: restic=0.18.0-1+b4

@@ -19,8 +19,8 @@ class FakeSFTP:
         self.fail_pointer_once = False
 
     def path(self, name):
-        assert name.startswith(publisher.ROOT + "/")
-        return self.root / name[len(publisher.ROOT) + 1:]
+        assert name.startswith(publisher.update_root() + "/")
+        return self.root / name[len(publisher.update_root()) + 1:]
 
     def __enter__(self): return self
     def __exit__(self, *_): pass
@@ -54,6 +54,17 @@ class FakeSSH:
 
 
 class PublishTests(unittest.TestCase):
+    def test_destination_is_explicit_and_allowlisted(self):
+        with patch.dict(os.environ, {"TRANSFERENCIAS_UPDATE_ROOT": publisher.DEDICATED_ROOT}):
+            self.assertEqual(publisher.update_root(), publisher.DEDICATED_ROOT)
+        with patch.dict(os.environ, {"TRANSFERENCIAS_UPDATE_ROOT": "/tmp/unexpected"}):
+            with self.assertRaises(ValueError):
+                publisher.update_root()
+
+    def test_dedicated_resume_and_immutable_publication(self):
+        with patch.dict(os.environ, {"TRANSFERENCIAS_UPDATE_ROOT": publisher.DEDICATED_ROOT}):
+            self.test_resume_interrupted_promotion_idempotency_and_no_downgrade()
+
     def test_resume_interrupted_promotion_idempotency_and_no_downgrade(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1,0 +1,16 @@
+---
+- name: Inspect the exact selected MetaMap image without contacting the registry
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --host
+      - unix:///var/run/docker.sock
+      - image
+      - inspect
+      - "{{ metamap_image }}"
+      - --format
+      - "{{ '{{json .RepoDigests}}' }}"
+  register: metamap_image_inspection
+  changed_when: false
+  failed_when: false
+  check_mode: false

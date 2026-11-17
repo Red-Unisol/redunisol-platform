@@ -1,0 +1,27 @@
+# Only a localhost forwarding fallback. The historical database is never mounted.
+name: metamap-origin-fallback
+services:
+  proxy:
+    image: ghcr.io/red-unisol/metamap-platform-server@sha256:f7ecf3631daf2ee5dddf7a4f1772ef6fd71fa0eb00c43add4152de4d7f7b54a5
+    pull_policy: never
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:{{ metamap_fallback_port }}:8000"
+    environment:
+      PYTHONPATH: /fallback
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: [python, -m, uvicorn, "fallback_proxy:app", --host, 0.0.0.0, --port, "8000", --no-access-log]
+    volumes:
+      - ./fallback_proxy.py:/fallback/fallback_proxy.py:ro
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16777216"]
+    logging:
+      driver: local
+      options:
+        max-size: "1m"
+        max-file: "2"

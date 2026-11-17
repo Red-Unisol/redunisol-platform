@@ -2,8 +2,7 @@ name: Deploy MetaMap Server Operativo
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'apps/metamap-platform/server/**'
       - '.github/workflows/deploy-metamap-server-dev.yml'
@@ -18,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # El destino historico "dev" es el runtime operativo de Transferencias.
+  # Historical workflow/job names remain compatible; the operational host is dedicated.
   deploy-dev:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -26,10 +25,10 @@ jobs:
     env:
       IMAGE_NAME: ghcr.io/red-unisol/metamap-platform-server
       IMAGE_TAG: dev-${{ github.sha }}
-      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
-      SSH_USER: ${{ secrets.VPS_SSH_USER }}
-      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+      SSH_HOST: ${{ secrets.METAMAP_SSH_HOST }}
+      SSH_PORT: ${{ secrets.METAMAP_SSH_PORT }}
+      SSH_USER: ${{ secrets.METAMAP_SSH_USER }}
+      PINNED_KNOWN_HOSTS: ${{ vars.METAMAP_SSH_KNOWN_HOSTS }}
       PUBLIC_HEALTHCHECK_URL: https://kestra.redunisol.com.ar/metamap-platform/health
     steps:
       - name: Allow manual operational deploy only from main by Nasst
@@ -37,25 +36,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "${GITHUB_ACTOR}" = "Nasst" ]
-          [ "${GITHUB_REF}" = "refs/heads/main" ]
+          [ "$GITHUB_ACTOR" = "Nasst" ]
+          [ "$GITHUB_REF" = "refs/heads/main" ]
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install tooling
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install -r kestra/tools/requirements.txt
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -79,117 +67,59 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE_NAME }}:dev-latest
 
-      - name: Load SSH key
+      - name: Load dedicated SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.METAMAP_SSH_PRIVATE_KEY }}
 
-      - name: Trust target host
+      - name: Trust pinned dedicated host
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$PINNED_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PINNED_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Decrypt runtime env
+      - name: Upload dedicated deployment specification
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
-          python kestra/tools/manage_encrypted_env.py decrypt \
-            --key-file "$RUNNER_TEMP/runtime-env.key" \
-            --input apps/metamap-platform/server/deploy/metamap-platform-server.dev.env.enc \
-            --output apps/metamap-platform/server/deploy/metamap-platform-server.dev.env \
-            --force
+          stage="/run/redunisol-metamap-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'REMOTE_STAGING_DIR=%s\n' "$stage" >> "$GITHUB_ENV"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "install -d -m 700 '$stage' '$stage/registry'"
+          scp -P "$SSH_PORT" apps/metamap-platform/server/deploy/docker-compose.dedicated.yml "$SSH_USER@$SSH_HOST:$stage/compose.yml"
+          scp -P "$SSH_PORT" apps/metamap-platform/server/deploy/deploy-dedicated.sh "$SSH_USER@$SSH_HOST:$stage/deploy.sh"
 
-      - name: Prepare deployment files
+      - name: Authenticate dedicated image pull via stdin
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | ssh -o BatchMode=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "docker --config '$REMOTE_STAGING_DIR/registry' login ghcr.io --username '$GHCR_USERNAME' --password-stdin" >/dev/null
+
+      - name: Deploy on dedicated with a consistent pre-deploy backup
         shell: bash
         run: |
           set -euo pipefail
-          cp apps/metamap-platform/server/deploy/metamap-platform-server.dev.env "$RUNNER_TEMP/metamap-platform-server.env"
-          sed -i 's/\r$//' "$RUNNER_TEMP/metamap-platform-server.env"
-          if [ -n "$(tail -c 1 "$RUNNER_TEMP/metamap-platform-server.env")" ]; then
-            printf '\n' >> "$RUNNER_TEMP/metamap-platform-server.env"
-          fi
-          printf 'APP_IMAGE=%s\n' "${IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/metamap-platform-server.env"
-          set -a
-          . "$RUNNER_TEMP/metamap-platform-server.env"
-          set +a
-          printf 'TARGET_DIR=%s\n' "$TARGET_DIR" >> "$GITHUB_ENV"
+          ssh -o BatchMode=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "bash '$REMOTE_STAGING_DIR/deploy.sh' '$REMOTE_STAGING_DIR' '$GITHUB_SHA'"
 
-      - name: Upload deployment files
+      - name: Verify public revision
         shell: bash
         run: |
           set -euo pipefail
-          REMOTE_STAGING_DIR="/tmp/metamap-platform-server-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
-          scp -P "$SSH_PORT" apps/metamap-platform/server/deploy/docker-compose.vps.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
-          scp -P "$SSH_PORT" "$RUNNER_TEMP/metamap-platform-server.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+          curl -fsS --retry 3 --max-time 30 -A 'MetaMap-Deployment-Verification/1.0' "$PUBLIC_HEALTHCHECK_URL" \
+            | python3 -c 'import json,os,sys; v=json.load(sys.stdin); assert v["status"]=="ok" and v["git_sha"]==os.environ["GITHUB_SHA"]; print(v)'
 
-      - name: Deploy on VPS
+      - name: Clean dedicated staging credentials
+        if: always() && env.REMOTE_STAGING_DIR != ''
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" "${{ github.actor }}" "${{ secrets.GITHUB_TOKEN }}" <<'EOF'
-          set -euo pipefail
-          target_dir="$1"
-          staging_dir="$2"
-          ghcr_username="$3"
-          ghcr_token="$4"
-          compose_project_name=""
-
-          install -d -m 755 "$target_dir"
-
-          set -a
-          . "$staging_dir/.env"
-          set +a
-
-          compose_project_name="${COMPOSE_PROJECT_NAME:-$(basename "$target_dir")}"
-
-          echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
-
-          cd "$target_dir"
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
-
-          status_code=""
-          for attempt in $(seq 1 12); do
-            status_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3031/health || true)"
-            if [ "$status_code" = "200" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ "$status_code" != "200" ]; then
-            docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120
-            exit 1
-          fi
-
-          cp "$staging_dir/.env" "$target_dir/.env"
-          cp "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
-          docker image prune -f >/dev/null
-          EOF
-
-      - name: Verify public healthcheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsS "$PUBLIC_HEALTHCHECK_URL"
-
-      - name: Clean remote staging files
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf '$REMOTE_STAGING_DIR'"
-
-      - name: Clean local decrypted files
-        if: always()
-        shell: bash
-        run: |
-          rm -f "$RUNNER_TEMP/runtime-env.key"
-          rm -f apps/metamap-platform/server/deploy/metamap-platform-server.dev.env
+          [[ "$REMOTE_STAGING_DIR" =~ ^/run/redunisol-metamap-deploy-[0-9]+-[0-9]+$ ]]
+          ssh -o BatchMode=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf -- '$REMOTE_STAGING_DIR'"

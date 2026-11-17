@@ -1,0 +1,38 @@
+---
+- name: Validate the shadow stop boundary
+  ansible.builtin.import_tasks: contract.yml
+
+- name: Require a separate explicit shadow stop authorization
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or metamap_shadow_stop_authorized
+      - ansible_check_mode or metamap_shadow_revision is match('^[0-9a-f]{40}$')
+    fail_msg: Stop requires metamap_shadow_stop_authorized=true and the reviewed SHA40; it never deletes state.
+
+- name: Stop only the owned shadow outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Inspect shadow ownership before stopping anything
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -, owned]
+        stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-control.py', rstrip=false) }}"
+      register: metamap_shadow_before_stop
+      changed_when: false
+
+    - name: Stop the shadow container while retaining its SQLite files network and private environment
+      ansible.builtin.command:
+        argv: [docker, --host, unix:///var/run/docker.sock, container, stop, --time, "15", metamap-webhook-shadow]
+      changed_when: true
+      when: (metamap_shadow_before_stop.stdout | from_json).running
+
+    - name: Read the stopped shadow without modifying data
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -, owned]
+        stdin: "{{ lookup('ansible.builtin.file', role_path ~ '/files/shadow-control.py', rstrip=false) }}"
+      register: metamap_shadow_after_stop
+      changed_when: false
+
+    - name: Require the shadow to be stopped without removing state
+      ansible.builtin.assert:
+        that:
+          - not (metamap_shadow_after_stop.stdout | from_json).running
