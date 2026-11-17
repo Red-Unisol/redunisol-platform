@@ -5,22 +5,32 @@ import {
   normalizeDocumento,
 } from "../services/SocioInputNormalizer";
 import {
+  InvalidSocioRequestError,
   SocioCuitDuplicateError,
   SocioDocumentoDuplicateError,
 } from "../../domain/socios-errors";
+import { SOCIO_CATEGORIA_POR_DEFECTO } from "../../domain/SocioCategoria";
 import type { SocioRepository } from "../../domain/repositories/SocioRepository";
 import type { CrearSocioMutualGateway } from "../../infrastructure/services/CrearSocioMutualGateway";
 
+export type SolicitudParaAltaSocio = {
+  createdAt: Date;
+  titular: { cuit: string | null; nroDocumento: string | null } | null;
+};
+
 type Dependencies = {
+  findSolicitudParaAlta: (id: string) => Promise<SolicitudParaAltaSocio | null>;
   crearSocioMutualGateway: CrearSocioMutualGateway;
   repository: SocioRepository;
 };
 
 export class CreateSocioUseCase {
+  private readonly findSolicitudParaAlta: Dependencies["findSolicitudParaAlta"];
   private readonly crearSocioMutualGateway: CrearSocioMutualGateway;
   private readonly repository: SocioRepository;
 
   constructor(dependencies: Dependencies) {
+    this.findSolicitudParaAlta = dependencies.findSolicitudParaAlta;
     this.crearSocioMutualGateway = dependencies.crearSocioMutualGateway;
     this.repository = dependencies.repository;
   }
@@ -34,6 +44,8 @@ export class CreateSocioUseCase {
       throw new SocioCuitDuplicateError();
     }
 
+    const categoria = input.categoria ?? SOCIO_CATEGORIA_POR_DEFECTO;
+    await this.validateSolicitudTitular(input, cuit);
     const domicilio = {
       calle: input.domicilioCalle,
       codigoPostal: input.domicilioCodigoPostal ?? null,
@@ -54,6 +66,7 @@ export class CreateSocioUseCase {
       const legacyResult = await this.crearSocioMutualGateway.crear({
         tipoPersona: "FISICA",
         apellido: input.apellido,
+        categoria,
         celular: input.celular ?? null,
         ...(input.cbu ? { cbu: input.cbu } : {}),
         cuit,
@@ -89,6 +102,7 @@ export class CreateSocioUseCase {
 
     const legacyResult = await this.crearSocioMutualGateway.crear({
       tipoPersona: "JURIDICA",
+      categoria,
       celular: input.celular ?? null,
       ...(input.cbu ? { cbu: input.cbu } : {}),
       cuit,
@@ -117,5 +131,23 @@ export class CreateSocioUseCase {
       tipoDocumento: null,
       tipoPersona: "JURIDICA",
     });
+  }
+
+  private async validateSolicitudTitular(input: CreateSocioDto, cuit: string) {
+    if (!input.solicitudId) return;
+
+    const solicitud = await this.findSolicitudParaAlta(input.solicitudId);
+    if (!solicitud) {
+      throw new InvalidSocioRequestError("No se encontro la solicitud para dar de alta al socio.");
+    }
+    const titular = solicitud.titular;
+    const sameCuit = titular?.cuit && normalizeCuit(titular.cuit) === cuit;
+    const sameDocumento = !titular?.cuit && input.tipoPersona === "FISICA"
+      && titular?.nroDocumento
+      && normalizeDocumento(titular.nroDocumento) === normalizeDocumento(input.nroDocumento);
+    if (!sameCuit && !sameDocumento) {
+      throw new InvalidSocioRequestError("El socio no coincide con el titular de la solicitud.");
+    }
+    // La fecha del alta se calcula en el gateway: siempre el dia de Argentina.
   }
 }

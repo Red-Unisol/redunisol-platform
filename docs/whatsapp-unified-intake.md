@@ -1,6 +1,111 @@
 # Intake unificado de WhatsApp Ventas
 
+## Corrección de vinculación para ingresos nuevos (16/11/2026)
+
+El deploy productivo ejecuta `edna:intake-cutover activate` después de verificar
+las imágenes de todos los workers y la salud HTTP. El primer llamado conserva
+en `edna_intake_cutovers` el máximo ID del inbox y la fecha UTC. Los llamados
+posteriores no cambian ese corte ni encolan recuperaciones. Sólo los eventos con
+ID posterior y fecha original Edna posterior al corte usan la nueva resolución;
+un callback antiguo entregado tarde tampoco se considera nuevo. La migración
+crea tablas, sin modificar registros ni reencolar casos anteriores.
+
+Para esos ingresos, `EdnaMessageBinding` prueba mensaje, sesión y actividad
+nativos. Un prospecto original sin contacto ni caso anterior conserva el contrato
+de enriquecimiento habitual, incluyendo ahora el `activity_id` real que exige el
+control de pauta. Contactos y gestiones existentes usan una prueba local versión
+2, sin reservar nuevamente el `lead_id` único de un caso anterior.
+
+Una respuesta v3 real completada para una identidad existente se procesa mediante
+el contrato de perfil confirmado ya desplegado (`organic-profile-reuse-v1`), con
+proveniencia `edna_intake_request` y su fecha real. El transporte Flow y su respuesta
+siguen en sus registros originales: no se fabrica un menú, una elección ni otro
+envío. Se conserva la atribución del ingreso. El consumidor comprueba nuevamente
+CUIL, mensaje nativo, identidad y gestiones vigentes antes de cualquier escritura.
+Las ambigüedades y decisiones comerciales protegidas siguen en revisión.
+
+Si devuelve una única negociación ya asignada, `edna_intake_chat_routes` conserva
+prueba, destino, intención, acuse y resultado. La transferencia comparte el lock
+por chat con el menú y el puente web. Se releen negociación e identidad, y la
+atención humana se comprueba otra vez inmediatamente antes del único POST. Un
+resultado incierto sólo se concilia por lecturas; `observed` o `not_needed` no
+prueban autoría automática. El journal usa `whatsapp.native_intake_route` y exige
+la misma correlación con el evento nativo para atribuir una derivación.
+
+Un recibo web que sólo comparte teléfono ya no intercepta estos nuevos mensajes
+sin referencia: pasan al menú o a pauta y verifican la identidad por el recorrido
+correspondiente. Una referencia explícita inválida sigue en revisión. Esto no
+selecciona una solicitud por teléfono ni modifica los recibos históricos.
+
+El cambio no restablece callbacks que el proveedor no esté entregando. Para
+verificar el corte: `php artisan edna:intake-cutover status`. Un rollback debe
+conservar los consumidores nuevos mientras existan jobs `RouteEdnaIntakeChat`;
+no borrar el corte ni reactivar solicitudes anteriores como forma de recuperación.
+
+## Actividades de chat pertenecientes a negociaciones (17/11/2026)
+
+El resolvedor de mensajes web también busca negociaciones relacionadas por los
+IDs de prospectos y contactos cuyo teléfono ya fue verificado. Lee sus
+actividades `IMOPENLINES_SESSION` aunque la actividad pertenezca exclusivamente
+al deal. La relación sólo descubre candidatos: la prueba sigue exigiendo el ID
+externo exacto, sesión, chat, canal y emisor. Páginas completas, relaciones no
+verificables y pruebas múltiples quedan pendientes/revisión, sin elegir el primer
+resultado. No se selecciona vendedor por teléfono ni se crean fichas.
+
+El despliegue productivo ejecuta `php artisan edna:deal-message-binding activate`
+tras comprobar imágenes y salud. Guarda una frontera inmutable
+`deal-message-binding-v1` en `edna_intake_cutovers`: sólo inbox IDs posteriores
+y fechas originales posteriores al corte ganan esta búsqueda adicional. Repetir
+el deploy no mueve la frontera, no modifica otros cortes ni encola recuperaciones.
+Los mensajes anteriores conservan su resolución original; este cambio no recupera
+los casos detectados durante el diagnóstico. `status` permite leer la frontera.
+
+Los controles del puente sobre identidad, negociación vigente, sesión abierta,
+atención humana, lock compartido y lectura final antes del único POST se
+mantienen. Encontrar una actividad no demuestra una transferencia del chat.
+
 ## Alcance y escritor único
+
+### Restablecimiento de callbacks sin reprocesamiento
+
+Antes de restablecer una entrega detenida en Edna, desplegar el receptor con
+`edna:callback-reception` y ejecutar `php artisan edna:callback-reception arm`
+inmediatamente antes del cambio del proveedor. Guarda una frontera adicional
+append-only en `edna_intake_cutovers`; no altera el corte de intake nativo ni
+encola recuperaciones. Cada armado puede avanzar el límite, nunca retrocederlo.
+Los callbacks autenticados con fecha original anterior se acusan con HTTP200 e
+`ignored`, sin guardarlos ni despacharlos al bot. Las fechas no verificables se
+cuentan como `invalid`. Sólo se registran IDs técnicos y motivo de exclusión.
+`status` muestra el límite efectivo sin modificar datos. El deploy no arma
+automáticamente este filtro: se hace al restablecer deliberadamente el proveedor.
+
+No reemplazar los destinos de Edna sin releerlos: un webhook adicional puede
+reemplazar la entrega del principal para ese canal. Conservar Bitrix y el bot,
+el canal 2423, los tipos de evento y la autenticación existentes. No solicitar
+reenvío histórico. Verificar luego un mensaje nuevo por ID externo en el inbox
+y su procesamiento, preservando las comprobaciones de atención humana.
+
+Configuración deseada del proveedor para Ventas: webhook `2508`,
+`Red Unisol Main`, sender `Red Unisol - Ventas` / subject `2423`, únicamente
+`IN_MESSAGE`, con autenticación habilitada y su clave existente conservada.
+La URL principal es
+`https://redunisol.bitrix24.es/bitrix/tools/messageservice/callback_ednaru.php`
+y la URL adicional es `https://redunisol.com.ar/api/webhooks/edna/incoming`.
+No regenerar la clave ni sustituir el destino de Bitrix al recuperar el bot.
+
+El 16/11/2026 se observó vacía esa URL adicional y se restableció después de
+desplegar el PR #742 (`f4520818365d365bc6cb2429ce381ba1a1f84d12`). No se
+confirmó quién ni cómo la había eliminado. El límite de recepción quedó en
+`2026-11-16T22:56:57Z` (19:56:57 ART), con inbox previo `37216`, sin mover
+`native-v3-v1`. Edna confirmó el guardado y comprobó el receptor con HEAD 200.
+El primer mensaje real posterior, `21038026201`, quedó en inbox `37217` a
+las `22:58:01Z` y fue procesado a las `22:58:03Z` como `unified_intake_entry`.
+El menú `2433` conservó la deduplicación de la sesión
+(`menu_already_reserved_for_session`); no se afirma un nuevo envío ni una
+transferencia por ese ingreso. Las huellas de las 575 solicitudes históricas
+en revisión/resultado incierto permanecieron iguales. Una prueba adicional
+con lote vacío autenticado dio HTTP200 con todos los contadores en cero;
+esa prueba técnica se distingue del mensaje real.
 
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se

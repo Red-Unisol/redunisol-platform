@@ -244,6 +244,10 @@ jobs:
             docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120 php-fpm web
             exit 1
           fi
+          # Arm the immutable new-entry boundary only after all runtime images
+          # and application health have been verified. Never requeues old work.
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:intake-cutover activate < /dev/null
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:deal-message-binding activate < /dev/null
           EOF
 
       - name: Finalize deploy on VPS

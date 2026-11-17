@@ -22,7 +22,19 @@ import { SociosRoutes } from "./presentation/SociosRoutes";
 
 type CreateSociosRouterDependencies = {
   getCurrentUserUseCase: GetCurrentUserUseCase;
+  listLocalidadesUseCase: ListLocalidadesUseCase;
 };
+
+// Catalogo de localidades de Vimarx (~22.000, en memoria). Se crea una vez en
+// app.ts y lo comparten el alta de socio y la solicitud, que guarda su ID.
+export function createLocalidadesCatalog() {
+  return new ListLocalidadesUseCase({
+    gateway: new EvaluateListLocalidadesGateway({
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    }),
+  });
+}
 
 export function createSociosRouter(
   dependencies: CreateSociosRouterDependencies,
@@ -37,10 +49,6 @@ export function createSociosRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
-  const evaluateListLocalidadesGateway = new EvaluateListLocalidadesGateway({
-    baseUrl: env.LEGACY_API_BASE_URL,
-    timeoutMs: env.LEGACY_API_TIMEOUT_MS,
-  });
   const checkSocioCuitDuplicateUseCase = new CheckSocioCuitDuplicateUseCase({
     repository: sociosRepository,
   });
@@ -49,6 +57,10 @@ export function createSociosRouter(
       repository: sociosRepository,
     });
   const createSocioUseCase = new CreateSocioUseCase({
+    findSolicitudParaAlta: (id) => prisma.solicitud.findUnique({
+      where: { id },
+      select: { createdAt: true, titular: { select: { cuit: true, nroDocumento: true } } },
+    }),
     crearSocioMutualGateway,
     repository: sociosRepository,
   });
@@ -58,9 +70,7 @@ export function createSociosRouter(
   const getSocioByIdUseCase = new GetSocioByIdUseCase({
     repository: sociosRepository,
   });
-  const listLocalidadesUseCase = new ListLocalidadesUseCase({
-    gateway: evaluateListLocalidadesGateway,
-  });
+  const { listLocalidadesUseCase } = dependencies;
   const listSociosUseCase = new ListSociosUseCase({
     repository: sociosRepository,
   });

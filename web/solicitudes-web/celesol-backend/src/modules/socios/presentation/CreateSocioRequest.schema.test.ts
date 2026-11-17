@@ -89,6 +89,28 @@ describe("createSocioBodySchema", () => {
     });
   });
 
+  it("accepts the categoria of the socio and rejects unknown ones", () => {
+    const base = {
+      cuit: "30712345671",
+      domicilioCalle: "Belgrano",
+      domicilioLocalidad: "12",
+      razonSocial: "Constructora El Alba S.A.",
+      tipoPersona: "JURIDICA",
+    };
+
+    for (const categoria of ["ADHERENTE_CONVENIO", "AMEJUCA", "MUDON"]) {
+      const parsed = createSocioBodySchema.parse({ ...base, categoria });
+      assert.equal(parsed.categoria, categoria);
+    }
+
+    assert.equal(createSocioBodySchema.parse(base).categoria, undefined);
+    assert.equal(
+      createSocioBodySchema.safeParse({ ...base, categoria: "CLUB_MUTUAL" })
+        .success,
+      false,
+    );
+  });
+
   it("rejects persona fisica without domicilioCalle", () => {
     assert.equal(
       createSocioBodySchema.safeParse({
@@ -513,4 +535,14 @@ describe("createSocioBodySchema", () => {
       false,
     );
   });
+  it("accepts a solicitud UUID but rejects client-supplied dates and categories", () => {
+    const base = { tipoPersona: "JURIDICA", razonSocial: "Empresa de prueba",
+      cuit: "30123456789", domicilioCalle: "Prueba", domicilioLocalidad: "12" };
+    const solicitudId = "a9358cdd-93f8-40f6-969d-a502b81de53f";
+    assert.equal(createSocioBodySchema.parse({ ...base, solicitudId }).solicitudId, solicitudId);
+    for (const extra of [{ solicitudId: "invalido" }, { fechaAlta: "2020-01-01" }, { categoria: 2 }]) {
+      assert.equal(createSocioBodySchema.safeParse({ ...base, ...extra }).success, false);
+    }
+  });
+
 });

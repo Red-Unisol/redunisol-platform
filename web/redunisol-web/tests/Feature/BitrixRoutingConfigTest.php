@@ -8,7 +8,7 @@ test('it exposes the current seller pools when no custom configuration exists', 
     $this->getJson('/api/internal/bitrix-routing')
         ->assertOk()
         ->assertJsonPath('catamarca_general.0', 68579)
-        ->assertJsonPath('policia_federal_caba', [8057])
+        ->assertJsonPath('policia_federal_caba', [])
         ->assertJsonPath('cordoba_unc', [53121]);
 });
 
@@ -44,7 +44,7 @@ test('an authenticated user can open the routing settings page', function () {
 test('federal police sellers can be changed and paused without changing other pools', function () {
     app(BitrixRoutingConfig::class)->save([
         'policia_federal_caba' => [
-            ['user_id' => 8057, 'paused' => true],
+            ['user_id' => 128399, 'paused' => true],
             ['user_id' => 53121, 'paused' => false],
         ],
     ]);
@@ -112,3 +112,34 @@ test('a paused legacy group stays paused after the split', function () {
         ->assertJsonPath('santa_fe', [])
         ->assertJsonPath('mutual_paii', []);
 });
+
+test('retired stored sellers are excluded while current sellers keep their order and pauses', function (bool $retiredPaused) {
+    $stored = [
+        ['user_id' => 10451, 'paused' => false],
+        ['user_id' => 8057, 'paused' => $retiredPaused],
+        ['user_id' => 128399, 'paused' => true],
+        ['user_id' => 128877, 'paused' => false],
+    ];
+    BitrixRoutingBucket::query()->create(['key' => 'catamarca_general', 'sellers' => $stored]);
+    $config = app(BitrixRoutingConfig::class);
+
+    expect(BitrixRoutingConfig::sellerOptions())->not->toHaveKey(8057)
+        ->and(BitrixRoutingConfig::sellerOptions()[128877])->toBe('Patricia Barboza')
+        ->and($config->forForm()['catamarca_general'])->toBe([
+            ['user_id' => 10451, 'paused' => false],
+            ['user_id' => 128399, 'paused' => true],
+            ['user_id' => 128877, 'paused' => false],
+        ]);
+
+    $this->getJson('/api/internal/bitrix-routing')->assertOk()
+        ->assertJsonPath('catamarca_general', [10451, 128877]);
+
+    expect(BitrixRoutingBucket::find('catamarca_general')->sellers)->toBe($stored);
+
+    $config->save(['catamarca_general' => $stored]);
+    expect(BitrixRoutingBucket::find('catamarca_general')->sellers)->toBe([
+        ['user_id' => 10451, 'paused' => false],
+        ['user_id' => 128399, 'paused' => true],
+        ['user_id' => 128877, 'paused' => false],
+    ]);
+})->with([true, false]);

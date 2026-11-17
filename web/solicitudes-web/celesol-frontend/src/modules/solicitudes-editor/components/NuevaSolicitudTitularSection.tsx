@@ -282,18 +282,30 @@ export function DatosTitularFields({
         </StackedField>
         <StackedField className="sm:col-span-4" label="Localidad">
           {/* El mismo buscador de Vimarx que el alta de socio, pero opcional.
-              Se guarda el nombre: el finalizar y la revision documental leen
-              la localidad de la solicitud como texto. */}
+              Se manda el ID de Vimarx (lo usa "Crear socio"); el nombre es
+              solo para mostrar y el backend guarda el suyo. */}
           <Controller
             control={control}
-            name="localidad"
-            render={({ field }) => (
-              <LocalidadSelect
-                onBlur={field.onBlur}
-                onClear={() => field.onChange("")}
-                onPick={(localidad) => field.onChange(localidad.nombre)}
-                value=""
-                valueLabel={field.value ?? ""}
+            name="localidadId"
+            render={({ field: idField }) => (
+              <Controller
+                control={control}
+                name="localidad"
+                render={({ field }) => (
+                  <LocalidadSelect
+                    onBlur={field.onBlur}
+                    onClear={() => {
+                      field.onChange("");
+                      idField.onChange("");
+                    }}
+                    onPick={(localidad) => {
+                      field.onChange(localidad.nombre);
+                      idField.onChange(localidad.id);
+                    }}
+                    value=""
+                    valueLabel={field.value ?? ""}
+                  />
+                )}
               />
             )}
           />

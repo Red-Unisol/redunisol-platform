@@ -26,6 +26,8 @@ import { canEditSolicitud } from "../services/SolicitudPermissions";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 import { assertLinkedLoanAmountEditable, type LinkedLoanReader } from "../services/LinkedLoanRules";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
+import type { LocalidadCatalog } from "../../domain/services/LocalidadCatalog";
+import { resolveTitularLocalidad } from "../services/ResolveTitularLocalidad";
 
 type Dependencies = {
   fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
@@ -33,6 +35,7 @@ type Dependencies = {
   repository: SolicitudesCoreRepository;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   linkedLoanReader?: LinkedLoanReader;
+  localidadCatalog?: LocalidadCatalog;
 };
 
 export class UpdateSolicitudUseCase {
@@ -40,6 +43,7 @@ export class UpdateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly repository: SolicitudesCoreRepository;
   private readonly linkedLoanReader?: LinkedLoanReader;
+  private readonly localidadCatalog?: LocalidadCatalog;
   private readonly simularCuotaSolicitud: Pick<
     SimularCuotaSolicitud,
     "execute"
@@ -50,6 +54,7 @@ export class UpdateSolicitudUseCase {
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.repository = dependencies.repository;
     this.linkedLoanReader = dependencies.linkedLoanReader;
+    this.localidadCatalog = dependencies.localidadCatalog;
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
   }
 
@@ -168,7 +173,11 @@ export class UpdateSolicitudUseCase {
     }
 
     if (input.titular) {
-      patch.titular = { ...input.titular };
+      const { localidadId, ...titular } = input.titular;
+      patch.titular = {
+        ...titular,
+        ...(await resolveTitularLocalidad(this.localidadCatalog, localidadId)),
+      };
     }
 
     if (input.datosLaborales) {

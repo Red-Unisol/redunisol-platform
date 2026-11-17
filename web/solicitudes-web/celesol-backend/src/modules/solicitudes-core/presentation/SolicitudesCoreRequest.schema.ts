@@ -36,6 +36,13 @@ const titularFechaNacimientoSchema = z
     message: `titular.fechaNacimiento must correspond to an age between ${MIN_TITULAR_AGE_YEARS} and ${MAX_TITULAR_AGE_YEARS} years`,
   });
 
+// La localidad del titular viaja por su ID de Vimarx; el nombre lo pone el
+// backend. No se acepta texto libre.
+const localidadIdSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, "titular.localidadId must be a Vimarx localidad ID");
+
 const nullableTrimmedStringSchema = z.union([
   z.string().trim().min(1),
   z.null(),
@@ -181,7 +188,7 @@ export const createSolicitudBodySchema = z.object({
     email: z.string().trim().email().optional(),
     estadoCivil: z.string().trim().min(1).optional(),
     fechaNacimiento: titularFechaNacimientoSchema.optional(),
-    localidad: z.string().trim().min(1).optional(),
+    localidadId: localidadIdSchema.optional(),
     nacionalidad: z.string().trim().min(1).optional(),
     nombre: z.string().trim().min(1),
     nroDocumento: z.string().trim().min(1),
@@ -408,7 +415,7 @@ export const patchSolicitudBodySchema = z.object({
       fechaNacimiento: z
         .union([titularFechaNacimientoSchema, z.null()])
         .optional(),
-      localidad: nullableTrimmedStringSchema.optional(),
+      localidadId: z.union([localidadIdSchema, z.null()]).optional(),
       nacionalidad: nullableTrimmedStringSchema.optional(),
       nombre: z.string().trim().min(1).optional(),
       nroDocumento: z.string().trim().min(1).optional(),

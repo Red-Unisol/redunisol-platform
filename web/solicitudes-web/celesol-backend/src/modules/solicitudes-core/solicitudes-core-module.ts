@@ -134,12 +134,14 @@ import { VimarxVisibilidadVendedorResolver } from "./infrastructure/services/Vim
 import { FinSolicitudController } from "./presentation/FinSolicitudController";
 import { FinSolicitudRoutes } from "./presentation/FinSolicitudRoutes";
 import { Router } from "express";
+import type { LocalidadCatalog } from "./domain/services/LocalidadCatalog";
 import { addExternalPaymentRoutes } from "../transferencias-integration/external-payment-routes";
 import { ExternalPaymentService } from "../transferencias-integration/ExternalPaymentService";
 import { createPayWorkflow } from "../transferencias-integration/workflow";
 
 type CreateSolicitudesCoreRouterDependencies = {
   getCurrentUserUseCase: GetCurrentUserUseCase;
+  localidadCatalog: LocalidadCatalog;
 };
 
 export function createSolicitudesCoreRouter(
@@ -270,6 +272,7 @@ export function createSolicitudesCoreRouter(
   const createSolicitudUseCase = new CreateSolicitudUseCase({
     consultarCredixsaAlCrearSolicitud,
     lineasPrestamoCatalog,
+    localidadCatalog: dependencies.localidadCatalog,
     repository: solicitudesCoreRepository,
     simularCuotaSolicitud,
     workflowStateCatalog,
@@ -290,6 +293,7 @@ export function createSolicitudesCoreRouter(
   });
   const updateSolicitudUseCase = new UpdateSolicitudUseCase({
     linkedLoanReader,
+    localidadCatalog: dependencies.localidadCatalog,
     fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
@@ -674,7 +678,7 @@ export function createSolicitudesCoreRouter(
 }
 
 export function createSolicitudesCoreAdminRouter(
-  dependencies: CreateSolicitudesCoreRouterDependencies,
+  dependencies: Pick<CreateSolicitudesCoreRouterDependencies, "getCurrentUserUseCase">,
 ) {
   const solicitudFieldAccessAdminDatasource =
     new SolicitudFieldAccessAdminPrismaDatasource(prisma);

@@ -67,6 +67,60 @@ try {
     assert.equal(await save.isEnabled(), true);
     await save.click();
     assert.equal("cbu" in JSON.parse(await payload.innerText()), false);
+    for (const [label, categoria] of [
+      ["AMEJUCA", "AMEJUCA"],
+      ["Mudon", "MUDON"],
+      ["Adherente convenio", "ADHERENTE_CONVENIO"],
+    ]) {
+      await page
+        .getByRole("button", { name: "Abrir alta de socio", exact: true })
+        .click();
+      const category = page.getByRole("button", {
+        name: "Categoría del socio",
+        exact: true,
+      });
+      assert.equal(await category.isEnabled(), true);
+      await category.scrollIntoViewIfNeeded();
+      await category.click();
+      await page.getByRole("button", { name: label, exact: true }).click();
+      await save.click();
+      assert.equal(JSON.parse(await payload.innerText()).categoria, categoria);
+    }
+    for (const [linea, label, categoria] of [
+      ["AMEJUCA PREMIUM", "AMEJUCA", "AMEJUCA"],
+      ["MUDON HABERES", "Mudon", "MUDON"],
+      ["NUEVOS CBU", "Adherente convenio", "ADHERENTE_CONVENIO"],
+    ]) {
+      await page.goto(
+        new URL("/socio-create?linea=" + encodeURIComponent(linea), base).href,
+      );
+      await page
+        .getByRole("button", { name: "Abrir alta de socio", exact: true })
+        .click();
+      const category = page.getByRole("button", {
+        name: "Categoría del socio",
+        exact: true,
+      });
+      assert.equal(await category.isDisabled(), true);
+      assert.equal((await category.innerText()).trim(), label);
+      await category.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(output, `${name}-${categoria}.png`),
+      });
+      await save.click();
+      const savedCategory = JSON.parse(
+        await page.getByTestId("saved-payload").innerText(),
+      );
+      assert.equal(savedCategory.categoria, categoria);
+      assert.equal(savedCategory.cbu, "0110000699111100000248");
+      if (name === "mobile") {
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        );
+      }
+    }
     assert.deepEqual(errors, []);
     report.push({
       name,
@@ -75,6 +129,8 @@ try {
       rejectsInvalidCbu: true,
       sendsTitularCbu: true,
       optionalCbu: true,
+      manualCategories: true,
+      automaticCategories: true,
     });
     await page.close();
   }

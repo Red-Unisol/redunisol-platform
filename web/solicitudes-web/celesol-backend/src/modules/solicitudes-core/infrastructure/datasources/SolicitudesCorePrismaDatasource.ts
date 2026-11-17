@@ -248,6 +248,7 @@ export class SolicitudesCorePrismaDatasource {
             ? new Date(`${input.titular.fechaNacimiento}T00:00:00.000Z`)
             : null,
           localidad: input.titular.localidad,
+          localidadId: input.titular.localidadId ?? null,
           nombre: input.titular.nombre,
           personaExpuestaPoliticamente:
             input.titular.personaExpuestaPoliticamente,
@@ -979,6 +980,7 @@ export class SolicitudesCorePrismaDatasource {
                   patch.titular.fechaNacimiento,
                 ),
                 localidad: patch.titular.localidad,
+                localidadId: patch.titular.localidadId,
                 nombre: patch.titular.nombre,
                 personaExpuestaPoliticamente:
                   patch.titular.personaExpuestaPoliticamente,

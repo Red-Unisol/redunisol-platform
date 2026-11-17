@@ -120,7 +120,6 @@ const createInput = (): CreateSolicitudInput => ({
     domicilioCalle: "Siempre Viva",
     email: "juan@example.com",
     estadoCivil: "Soltero",
-    localidad: "CABA",
     nacionalidad: "Argentina",
     nombre: "Juan",
     nroDocumento: "33344455",

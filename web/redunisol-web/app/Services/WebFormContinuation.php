@@ -25,6 +25,12 @@ class WebFormContinuation
         preg_match_all('/\(solicitud:\s*([A-Za-z0-9]{32})\)/i', $text, $matches);
         $receipt = null;
         $reason = null;
+        // A receipt sharing a phone is not a verified continuation. New entries
+        // without an explicit reference retain the paid/menu path, whose native
+        // message and declared identity are checked before any CRM mutation.
+        if (! preg_match('/\(solicitud\s*:/i', $text) && app(EdnaFreshIntake::class)->entry($event)) {
+            return null;
+        }
         if (preg_match('/\(solicitud\s*:/i', $text)) {
             if (count($matches[1]) === 1 && preg_match_all('/\(solicitud\s*:/i', $text) === 1) {
                 $receipt = DB::table('web_form_receipts')->where('reference_hash', hash('sha256', $matches[1][0]))

@@ -25,6 +25,9 @@ function formatLocalidad(localidad: Localidad) {
 
 type LocalidadSelectProps = {
   disabled?: boolean;
+  // Texto con el que arranca la busqueda si no hay localidad elegida: el
+  // nombre que trae una solicitud vieja, que no guardaba el ID.
+  initialSearch?: string;
   invalid?: boolean;
   onBlur?: () => void;
   onChange?: (id: string) => void;
@@ -43,6 +46,7 @@ type LocalidadSelectProps = {
  */
 export function LocalidadSelect({
   disabled,
+  initialSearch,
   invalid,
   onBlur,
   onChange,
@@ -65,6 +69,8 @@ export function LocalidadSelect({
     if (!nextOpen) {
       setSearchTerm("");
       onBlur?.();
+    } else if (initialSearch && !value) {
+      setSearchTerm(initialSearch);
     }
 
     setOpen(nextOpen);
@@ -115,7 +121,9 @@ export function LocalidadSelect({
                 ? formatLocalidad(selected)
                 : currentQuery.isFetching
                   ? "Cargando..."
-                  : "Buscar localidad"}
+                  : initialSearch
+                    ? `${initialSearch}: elegí de la lista`
+                    : "Buscar localidad"}
             </span>
           )}
           <ChevronDown className="size-4 shrink-0 text-foreground-secondary" />

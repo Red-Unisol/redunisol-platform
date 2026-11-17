@@ -209,6 +209,29 @@ publicar archivos.
   checkpoint y en el Excel, sin enviarlos a Caja
 - una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
 
+### Diagnostico de CIDI y Caja
+
+Los eventos `caja_session_open_started/completed/failed` registran si el login es
+inicial, por antiguedad (`max_age`) o por `401/403`, la edad de la sesion y el
+numero de intento. Los eventos `caja_http_error` y `caja_network_error` conservan
+etapa, metodo, path sin query, duracion, estado HTTP o tipo de excepcion y un
+`diagnostic_id` para correlacionar el fallo con los reintentos.
+
+La respuesta de error incluye `error`, `error_description` y el `resultado`
+anidado de CIDI, o el texto si no es JSON. Se conservan los headers de tipo de
+contenido, fecha, `Retry-After` e identificadores de request/correlacion. Se
+redactan credenciales, tokens, cookies, payloads cifrados conocidos y campos
+personales reconocidos antes de emitir o persistir. Nunca se vuelcan los
+headers ni los cuerpos de las solicitudes. El cuerpo de error sanitizado tiene
+un limite de 32.768 caracteres serializados, con marca explicita de truncado.
+
+Cada intento fallido queda en los logs de Kestra (`caja_query_retry/failed`),
+incluso si el siguiente intento funciona. El fallo definitivo conserva
+`error_details` en el checkpoint, junto al error legible que aparece en el Excel.
+Los checkpoints anteriores sin ese campo siguen siendo compatibles. El resumen
+de una tanda cortada por errores consecutivos incluye el ultimo motivo.
+Estos eventos no cambian la renovacion, los reintentos ni el calendario.
+
 Inputs manuales opcionales:
 
 - `run_date`: fecha de checkpoint e historico, `YYYY-MM-DD`; por defecto fecha
@@ -1067,6 +1090,27 @@ logica que lo administra viven en Git.
 - `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
 
 Cada trigger fija explicitamente el input interno `run_mode` (`monthly`, `resume` o `manual`). El worker no infiere el modo desde metadatos del trigger: `resume` nunca crea una corrida nueva y solo continua una corrida activa.
+
+La reanudacion consulta primero el KV `mudon_credixsa_report.resume_state.v1`
+del mismo namespace y un helper de biblioteca estandar con runner `Process`.
+Una marca `idle` evita arrancar Docker; la ejecucion conserva sus salidas
+habituales con `status=idle`. Monthly, manual, `retry_errors` y las consultas
+explicitas de estado siempre pueden llegar al estado SQLite real.
+
+Antes de cada lote se escribe `pending`. Solo un resultado satisfactorio sin
+pendientes, `idle`, `completed` o `completed_with_errors`, permite volver a
+`idle`; un fallo, timeout o cancelacion deja pendiente la reanudacion. Una
+consulta `mode=status` no desactiva esa marca. El KV expira al dia: al faltar,
+expirar o contener un valor desconocido se ejecuta una comprobacion completa,
+incluido el primer sondeo posterior al despliegue. No requiere migrar SQLite,
+nuevos secretos ni montar el cache en el proceso principal de Kestra. Tras una
+restauracion externa del SQLite, ejecutar una reanudacion manual o eliminar
+esta marca para verificar inmediatamente el estado restaurado.
+
+El lote usa `pullPolicy: IF_NOT_PRESENT`. Reutiliza la imagen local; para
+adoptar una imagen nueva se debe cambiar su tag/digest en Git o refrescarla
+durante un despliegue operativo autorizado. Mover `latest` en GHCR no sustituye
+automaticamente la imagen que ya esta cacheada en el host.
 
 Body manual opcional:
 

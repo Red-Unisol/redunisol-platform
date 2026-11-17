@@ -138,6 +138,7 @@ export type UpdateSolicitudCorePatch = {
     domicilioCalle?: string | null;
     email?: string | null;
     localidad?: string | null;
+    localidadId?: string | null;
     nombre?: string;
     nroDocumento?: string;
     nroPuerta?: string | null;
