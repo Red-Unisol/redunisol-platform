@@ -3,6 +3,8 @@ export const SOURCE_HOST = "kestra.redunisol.com.ar";
 export const SOURCE_PATH = "/metamap-platform/api/v1/metamap/webhooks";
 export const DELIVERY_URL = "https://metamap-origin.redunisol.com.ar/metamap-shadow/deliveries";
 export const MAX_RAW_BYTES = 40000;
+export const PRIMARY_ORIGIN = "metamap-origin.redunisol.com.ar";
+export const SOURCE_PREFIX = "/metamap-platform/";
 const MAX_ACK_BYTES = 2048;
 const HEX = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -97,7 +99,7 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
     } catch { /* logging is never a delivery or primary-response dependency */ }
   }
 
-  async function capture(request, env, primaryStatus) {
+  async function capture(request, env, primaryStatus, strict = false) {
     if (!env.SHADOW_QUEUE?.send || typeof env.METAMAP_WEBHOOK_SECRET !== "string" ||
         env.METAMAP_WEBHOOK_SECRET.length === 0) {
       abandon(request.body);
@@ -132,8 +134,10 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
     try {
       await env.SHADOW_QUEUE.send(envelope, { contentType: "json" });
       record("shadow_enqueued", envelope, { primary_status: envelope.primary_status });
+      return envelope;
     } catch {
       record("shadow_capture_failed", envelope, { reason: "queue_send_failed" });
+      if (strict) throw new CopyFailure("queue_send_failed");
     }
   }
 
@@ -196,6 +200,30 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
 
   return {
     async fetch(request, env, ctx) {
+      const route = new URL(request.url);
+      const eligible = route.hostname === SOURCE_HOST && route.protocol === "https:" &&
+        route.port === "" && route.pathname.startsWith(SOURCE_PREFIX);
+      const mode = env.PRIMARY_MODE ?? "vps";
+      if (eligible && !["vps", "hold", "dedicated"].includes(mode)) {
+        return new Response("MetaMap route configuration unavailable", { status: 503 });
+      }
+      if (eligible && mode === "hold" && matchesSource(request)) {
+        try {
+          // 202 is a ledger marker only. The producer receives 200 only after durable enqueue.
+          const saved = await capture(request, env, Promise.resolve(202), true);
+          return Response.json({ processing_status: "queued_for_cutover", delivery_id: saved.delivery_id },
+            { headers: { "Cache-Control": "no-store", "X-Metamap-Cutover": "hold" } });
+        } catch (error) {
+          const status = error?.code === "oversize" ? 413 :
+            ["invalid_signature", "invalid_signature_or_metadata"].includes(error?.code) ? 401 : 503;
+          return new Response("Webhook not acknowledged; retry required", { status,
+            headers: { "Cache-Control": "no-store", "Retry-After": "15" } });
+        }
+      }
+      if (eligible && mode === "hold" && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+        return new Response("MetaMap migration in progress; retry shortly", { status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "15", "X-Metamap-Cutover": "hold" } });
+      }
       let copy;
       try {
         if (env.SHADOW_CAPTURE_ENABLED === "true" && matchesSource(request)) copy = request.clone();
@@ -203,7 +231,15 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
 
       // Start the original request before any body read, HMAC or queue operation.
       // Return its original Response object, streaming body, status and headers untouched.
-      const primary = fetchImpl(request);
+      let upstream = request;
+      if (eligible && mode === "dedicated") {
+        const destination = new URL(request.url);
+        destination.hostname = PRIMARY_ORIGIN;
+        upstream = new Request(destination, request);
+        upstream.headers.delete("host");
+        upstream.headers.set("User-Agent", "RedUnisol-MetaMap-Proxy/1.0");
+      }
+      const primary = fetchImpl(upstream);
       if (copy) {
         const status = Promise.resolve(primary).then((response) => response.status, () => null);
         const background = capture(copy, env, status).catch((error) =>
@@ -213,7 +249,13 @@ export function createWorker({ fetchImpl = (...arguments_) => fetch(...arguments
         try { ctx.waitUntil(background); }
         catch { record("shadow_capture_failed", null, { reason: "wait_until_failed" }); }
       }
-      return primary;
+      const response = await primary;
+      if (eligible && mode !== "vps") {
+        const headers = new Headers(response.headers);
+        headers.set("X-Metamap-Cutover", mode);
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
     },
 
     async queue(batch, env) {
