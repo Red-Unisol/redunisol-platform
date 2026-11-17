@@ -1,6 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/shared/services/http/api-client";
 
+export type LoanGenerationCheck = {
+  requestId: string;
+  expectedUpdatedAt: string;
+  checkedAt: string;
+  status: "match" | "empty" | "ambiguous" | "blocked" | "unavailable";
+  reason: string;
+  canRecover: boolean;
+  canRelease: boolean;
+  candidate: {
+    id: string;
+    account: string | null;
+    createdAt: string | null;
+    amount: number | null;
+    cuotas: number | null;
+    primerVencimiento: string | null;
+  } | null;
+};
+
 export type LinkedLoanStatus = {
   status: "none" | "active" | "cancelled" | "unavailable";
   currentLoanId: string | null;
