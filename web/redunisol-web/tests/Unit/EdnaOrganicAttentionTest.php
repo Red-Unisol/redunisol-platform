@@ -145,6 +145,36 @@ test('a related contact manual owner is preserved even when entity data only lis
     expect($snapshot['records'])->toHaveCount(2)->and($service->canTransfer($snapshot, 5737))->toBeFalse();
 });
 
+test('only the explicit other inquiry to Tincho can retain a different contact commercial owner', function () {
+    $fake = new OrganicAttentionReadFake;
+    $fake->records['lead:700']['CONTACT_ID'] = '800';
+    $fake->records['contact:800'] = ['ID' => '800', 'ASSIGNED_BY_ID' => '71283'];
+    $service = new EdnaOrganicAttention($fake);
+    $snapshot = $service->snapshot(organicAttentionProof());
+    expect($service->canTransfer($snapshot, 5737))->toBeFalse()
+        ->and($service->canTransfer($snapshot, 5737, true))->toBeTrue()
+        ->and($service->canTransfer($snapshot, 29, true))->toBeFalse();
+    $fake->records['lead:700']['ASSIGNED_BY_ID'] = '29';
+    expect($service->canTransfer($service->snapshot(organicAttentionProof()), 5737, true))->toBeFalse();
+});
+
+test('other inquiry routing requires unchanged CRM responsibility before and after the chat transfer', function (string $change) {
+    $fake = new OrganicAttentionReadFake;
+    $fake->records['lead:700']['CONTACT_ID'] = '800';
+    $fake->records['contact:800'] = ['ID' => '800', 'ASSIGNED_BY_ID' => '71283'];
+    $service = new EdnaOrganicAttention($fake);
+    $before = $service->snapshot(organicAttentionProof());
+    expect($service->compatible($before, $before, 5737, false, true))->toBeTrue();
+    $fake->dialog['owner'] = 5737;
+    $fake->records['lead:700']['ASSIGNED_BY_ID'] = '5737';
+    if ($change === 'contact') {
+        $fake->records['contact:800']['ASSIGNED_BY_ID'] = '5737';
+    } elseif ($change === 'lead_stage') {
+        $fake->records['lead:700']['STATUS_ID'] = 'IN_PROCESS';
+    }
+    expect($service->compatible($before, $service->snapshot(organicAttentionProof()), 5737, true, true))->toBe($change === 'same');
+})->with(['same', 'contact', 'lead_stage']);
+
 test('all contacts and companies in plural relationships are read without an arbitrary winner', function () {
     $fake = new OrganicAttentionReadFake;
     $fake->records['lead:700']['CONTACT_IDS'] = ['800', '801'];

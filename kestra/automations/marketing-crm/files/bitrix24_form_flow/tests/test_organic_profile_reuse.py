@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from bitrix24_form_flow.form_processor import organic_profile_reuse as reuse
 from bitrix24_form_flow.form_processor.whatsapp_intake import process
-from bitrix24_form_flow.form_processor.lead_service import build_prequalification_input_from_lead
+from bitrix24_form_flow.form_processor.lead_service import MissingLeadFieldError, build_prequalification_input_from_lead
 from bitrix24_form_flow.form_processor.qualification import evaluate_prequalification
 from test_whatsapp_intake import CASE, CONFIG, CUIL, PHONE, IntakeCrm
 
@@ -73,6 +73,26 @@ class OrganicProfileReuseTests(unittest.TestCase):
         clock = patch.object(reuse, "now_utc", return_value=NOW)
         clock.start()
         self.addCleanup(clock.stop)
+
+    def test_caja_reused_profile_reaches_qualification_without_inventing_a_payment_bank(self):
+        api = OrganicCrm()
+        request = payload()
+        request["answer"] = {"provincia": "cordoba", "situacion_cordoba": "jubilado",
+                             "organismo": "caja_cordoba", "cuil": CUIL}
+        result = process(request, env=ENV, client=api)
+        self.assertEqual(result["action"], "queued")
+        lead = api.leads[result["lead_id"]]
+        original = copy.deepcopy(lead)
+        self.assertEqual(lead["UF_CRM_WA_SUBFLOW"], "organic_profile_reuse")
+        self.assertFalse(lead.get(api.config.fields.lead_payment_bank))
+        qualification = build_prequalification_input_from_lead(lead, api.config)
+        self.assertIsNone(qualification.payment_bank)
+        self.assertTrue(evaluate_prequalification(qualification).qualified)
+        self.assertEqual(lead, original)
+        # The exemption does not make another organism or a generic subflow eligible.
+        for changes in [{"UF_CRM_WA_ORGANISMO": "otro"}, {"UF_CRM_WA_SUBFLOW": "unknown"}]:
+            with self.subTest(changes=changes), self.assertRaises(MissingLeadFieldError):
+                build_prequalification_input_from_lead({**lead, **changes}, api.config)
 
     def test_contact_proven_native_guest_enters_the_same_current_qualification_without_faking_a_flow(self):
         api = OrganicCrm()

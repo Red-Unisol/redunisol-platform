@@ -122,6 +122,15 @@ lectura previa de atención, responsables y sesión. El texto escrito libremente
 no autoriza una selección: se valida el token opaco por envío, teléfono,
 subject, conversación, vencimiento y selección única.
 
+Para `Otra consulta`, el responsable comercial de un **contacto** puede conservarse
+mientras el chat se transfiere al destino configurado. Esta excepción no cambia
+responsables CRM ni se aplica al préstamo, a leads, negociaciones o empresas.
+Las lecturas anterior y posterior deben conservar exactamente el contacto y su
+responsable; una modificación concurrente detiene la acción o deja su resultado
+para revisión. La intención durable guarda `routing_policy=other_inquiry`; las
+intenciones anteriores conservan la política estricta. La atención humana real
+(aceptación, respuesta o transferencia previa) sigue bloqueando en todos los casos.
+
 ### Pauta y atribución de la entrada
 
 El receptor admite respuestas `BUTTON`, conserva su payload y referencias al
@@ -258,6 +267,13 @@ normal por UUID, conservando responsables y reevaluando los criterios vigentes.
 Sólo `reused_not_valid` con `write_attempted=false` habilita pedir el v3 después
 de consultar ese endpoint. Un resultado incierto nunca habilita ese fallback.
 
+La preclasificación reconoce también `organic_profile_reuse` en la ruta explícita
+de jubilado provincial de Caja de Córdoba sin banco informado, igual que el
+ingreso unificado. No inventa un banco ni extiende la excepción a otras provincias,
+organismos o categorías. Esta corrección requiere publicar los namespace files
+de Marketing CRM, además del despliegue web para workers y derivación a Tincho.
+No se reenvían consultas ya recibidas ni se reabren las que esperan actualización.
+
 Desplegar primero el consumidor Kestra compatible y comprobar sus archivos/flow;
 luego activar Web. Antes de cualquier despliegue general deben estar en Git los
 resguardos de asignación manual que ya estén activos en runtime. Para rollback,
@@ -281,13 +297,18 @@ Los pollers excluyen estas reservas antes de seleccionar su lote acotado.
 La conexión debe ser la misma base de datos del ledger y el insert de cola
 debe ocurrir en la transacción; una configuración incompatible falla sin enviar.
 
-El único worker de Ventas atiende por orden `edna-inbox`, `edna` y
-`edna-web-reconcile`. Primero captura entradas; después procesa menú, v3 y
-préstamos; finalmente atiende los reintentos del puente web. La prioridad se
-aplica al tomar el siguiente job: no interrumpe el que ya está ejecutándose ni
-añade emisores simultáneos. El destino físico de la cola no modifica el comando
-serializado ni la identidad de sus reservas. Los jobs del puente ya existentes
-en `edna` siguen siendo válidos durante la transición.
+Ventas tiene un consumidor por cola: `edna-inbox-worker` recibe entradas de
+`edna-inbox`, `edna-worker` procesa menú/v3/préstamos en `edna`, y
+`edna-web-worker` consume `edna-web-reconcile`. Así los reintentos del menú no
+impiden ejecutar el puente web ni capturar callbacks. Cada cola tiene un solo
+worker; no se escala el envío sin límite. Los tres comparten las reservas
+durables y los locks por chat existentes, y cada acción vuelve a verificar
+sesión y atención humana. Compose concede 130 segundos de parada para que
+termine el job actual (máximo 115 segundos, visibilidad de cola 120 segundos).
+Los workflows dev/prod verifican los tres servicios y su imagen efectiva.
+El destino físico no modifica el comando serializado ni sus reservas. Los jobs
+del puente ya existentes en `edna` siguen siendo válidos durante la transición.
+El despliegue no reabre estados terminales, mueve cortes ni reencola históricos.
 
 La recuperación operativa es explícita y separada del scheduler:
 
