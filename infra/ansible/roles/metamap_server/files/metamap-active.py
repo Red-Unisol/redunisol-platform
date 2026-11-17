@@ -70,6 +70,14 @@ def health():
                 raise
             time.sleep(1)
 
+def seal_database(path):
+    db = sqlite3.connect("file:" + str(path) + "?mode=rw", uri=True, timeout=5)
+    try:
+        require(db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0, "SQLite checkpoint is busy")
+        require(db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete", "SQLite journal is still active")
+    finally:
+        db.close()
+
 def prove_database(path):
     require(path.is_file() and not path.is_symlink() and path.resolve().parent == DATA, "Unexpected staged database")
     db = sqlite3.connect("file:" + str(path) + "?mode=ro", uri=True)
@@ -120,6 +128,7 @@ def execute(args):
     ids = run(["docker", "ps", "-q", "--filter", "label=com.docker.compose.project=metamap-server"]).strip()
     require(not ids, "Stop the dedicated backend before replacing its database")
     if destination.exists():
+        seal_database(destination)
         require(not (DATA / (args.basename + "-wal")).exists() and not (DATA / (args.basename + "-journal")).exists(), "Close SQLite cleanly before replacement")
         previous = destination.with_name(destination.name + ".before-" + str(int(time.time())))
         require(not previous.exists(), "Recovery copy already exists")
