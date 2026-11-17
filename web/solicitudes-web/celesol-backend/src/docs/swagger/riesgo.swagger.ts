@@ -79,7 +79,7 @@
  * /api/riesgo/calculadora:
  *   get:
  *     summary: Download the calculadora de riesgo spreadsheet
- *     description: Solo analistas de RIESGO y administradores. Devuelve el archivo .xlsx tal cual esta en disco.
+ *     description: Solo analistas de RIESGO y administradores. Devuelve la version vigente de la base o, si no hay ninguna, el archivo .xlsx del repo.
  *     tags:
  *       - Riesgo
  *     security:
@@ -168,3 +168,92 @@
  *         description: No se pudo conectar con el sistema legado.
  */
 export {};
+
+/**
+ * @openapi
+ * /api/riesgo/calculadora/versiones:
+ *   get:
+ *     summary: List calculadora versions (vigente + 3 anteriores)
+ *     description: Solo RIESGO y admin. De la mas nueva a la mas vieja, con quien la trajo y cuando.
+ *     tags:
+ *       - Riesgo
+ *     security:
+ *       - accessTokenCookie: []
+ *     responses:
+ *       200:
+ *         description: "{ versiones: [...] }"
+ *       403:
+ *         description: Current user is not RIESGO or admin.
+ *   post:
+ *     summary: Apply the latest SCORINGPF from Vimarx
+ *     description: Solo RIESGO y admin. Vuelve a bajar la planilla y la deja vigente si su huella es la de la vista previa. Devuelve version null si no cambio nada.
+ *     tags:
+ *       - Riesgo
+ *     security:
+ *       - accessTokenCookie: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [huellaVimarx]
+ *             properties:
+ *               huellaVimarx:
+ *                 type: string
+ *                 description: sha256 devuelto por la vista previa.
+ *     responses:
+ *       200:
+ *         description: "{ version }"
+ *       409:
+ *         description: La planilla cambio en Vimarx desde la vista previa.
+ *       422:
+ *         description: La planilla no se puede adaptar sola.
+ *       502:
+ *         description: Vimarx no responde.
+ */
+
+/**
+ * @openapi
+ * /api/riesgo/calculadora/versiones/vista-previa:
+ *   post:
+ *     summary: Preview the changes of the latest SCORINGPF from Vimarx
+ *     description: Solo RIESGO y admin. Baja y adapta la planilla y la compara con la vigente. No guarda nada.
+ *     tags:
+ *       - Riesgo
+ *     security:
+ *       - accessTokenCookie: []
+ *     responses:
+ *       200:
+ *         description: "{ sinCambios, huellaVimarx, cambios: { hojas, hojasNuevas, hojasQuitadas } }"
+ *       422:
+ *         description: La planilla no se puede adaptar sola.
+ *       502:
+ *         description: Vimarx no responde.
+ */
+
+/**
+ * @openapi
+ * /api/riesgo/calculadora/versiones/{versionId}/restaurar:
+ *   post:
+ *     summary: Go back to a previous calculadora version
+ *     description: Solo RIESGO y admin. Crea una copia vigente de esa version (origen RESTAURADA).
+ *     tags:
+ *       - Riesgo
+ *     security:
+ *       - accessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: "{ version }"
+ *       404:
+ *         description: La version ya no existe.
+ *       409:
+ *         description: La version ya es la vigente.
+ */
