@@ -4,6 +4,7 @@ import { cbuIdentityChanged } from "../utils/cbu-comparison";
 import { LoanReliquidationControl } from "../components/loan-reliquidation-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
+import { getAdjuntosDelVisor } from "../utils/adjuntos-del-visor";
 import {
   ajustarMontoTexto,
   ajustarCuotasTexto,
@@ -3700,6 +3701,8 @@ export function SolicitudesActualDetallePage() {
     selectedId: string | null;
   } | null>(null);
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
+  const adjuntosDelVisor = getAdjuntosDelVisor(adjuntos, solicitudId);
+  const visorSoloRecibos = adjuntosDelVisor.length === recibos.length;
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
   // La evaluacion se arma la primera vez que se abre y despues queda armada
@@ -5404,7 +5407,7 @@ export function SolicitudesActualDetallePage() {
               // Si se guardan cambios en la solicitud, se rearma con los datos nuevos.
               key={`${solicitudId}:${resolvedSolicitud.updatedAt}`}
               solicitudId={solicitudId}
-              recibos={recibos}
+              adjuntos={adjuntosDelVisor}
               open={visorRecibosOpen}
               selectedId={visorRecibosOpen ? reciboView.selectedId : null}
               onClose={() => setReciboView(null)}
@@ -5414,7 +5417,7 @@ export function SolicitudesActualDetallePage() {
               loading={isLoadingAdjuntos}
               error={
                 adjuntosError
-                  ? "No se pudo obtener el listado de recibos de sueldo."
+                  ? "No se pudo obtener el listado de adjuntos."
                   : null
               }
             >
@@ -5425,12 +5428,12 @@ export function SolicitudesActualDetallePage() {
               >
                 <CalculadoraMutualSheet
                   acciones={
-                    !visorRecibosOpen && recibos.length > 0 ? (
+                    !visorRecibosOpen && adjuntosDelVisor.length > 0 ? (
                       <Button
                         onClick={() =>
                           setReciboView({
                             solicitudId,
-                            selectedId: recibos[0]?.id ?? null,
+                            selectedId: adjuntosDelVisor[0]?.id ?? null,
                           })
                         }
                         size="sm"
@@ -5438,9 +5441,11 @@ export function SolicitudesActualDetallePage() {
                         variant="outline"
                       >
                         <FileText className="size-4" />
-                        {recibos.length > 1
-                          ? `Ver recibos (${recibos.length})`
-                          : "Ver recibo"}
+                        {!visorSoloRecibos
+                          ? `Ver documentos (${adjuntosDelVisor.length})`
+                          : recibos.length > 1
+                            ? `Ver recibos (${recibos.length})`
+                            : "Ver recibo"}
                       </Button>
                     ) : null
                   }
