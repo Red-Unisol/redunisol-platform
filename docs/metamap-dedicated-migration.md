@@ -89,10 +89,13 @@ El publisher usa `TRANSFERENCIAS_UPDATE_ROOT` para el directorio
 `/srv/redunisol/state/metamap-server/updates/transferencias` y conserva
 firma, promocion atomica y versiones inmutables.
 
-**Pendiente de autorizacion puntual:** la revision automatica rechazo agregar
-la clave CI canonica como acceso root restringido al dedicado y custodiar esa
-clave en los secretos de GitHub. Esa accion no se ejecuto. Mantener pausados
-ambos workflows hasta contar con ese acceso y con el codigo integrado en main.
+El usuario autorizo expresamente reutilizar la clave CI canonica como acceso
+root restringido al dedicado y custodiarla en GitHub. Se agrego conservando
+las claves anteriores, con `restrict` (sin PTY ni reenvios), y se verifico
+autenticacion solo con clave contra el host con huella fijada.
+Los cuatro secretos `METAMAP_SSH_*` y la variable de confianza quedaron
+configurados en `vps-infra`, sin alterar `VPS_SSH_*` ni la clave de firma.
+Mantener ambos workflows pausados hasta integrar su nuevo destino en main.
 
 ## Antecedente: preparacion y ensayo del 13/11/2026
 
@@ -547,7 +550,7 @@ prueba y egreso controlado; la preparacion actual no inicia ese clon.
 
 La preparacion, migracion de datos, copia cifrada, activacion y sus recibos son
 etapas diferentes. Quedan pendientes completar el inventario de escritores,
-los recibos de datos reales y el corte. El rediseÃ±o historico de MetaMap no se
+los recibos de datos reales y el corte. El rediseÃƒÂ±o historico de MetaMap no se
 toma como evidencia de una arquitectura ya desplegada.
 
 ## Checkpoint de preparacion: 13 de noviembre de 2026
