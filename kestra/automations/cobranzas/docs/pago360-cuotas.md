@@ -19,6 +19,33 @@ punitorios ni devoluciones/reversiones. Una diferencia de importe o deuda no se
 corrige: bloquea el caso para conciliación. Que el saldo sea cero o haya fecha de
 cobro no demuestra que el pago provenga de este cupón.
 
+## Decisiones del usuario — 17/11/2026
+
+El usuario confirmó que este circuito opera siempre en pesos argentinos. Se
+adopta **ARS como definición de negocio**, sin exigir una confirmación escrita
+adicional del proveedor. Esto no se presenta como un dato observado en su API.
+
+Si Pago360 omite moneda, el futuro adaptador de backend podrá normalizarla con
+`PAGOS360_MONEDA_CONTRATO=ARS`, configuración ya propuesta por el portal. La
+utilidad `resolve_currency` acepta esa configuración explícita; nunca reemplaza
+una moneda distinta informada por el proveedor. No cambiar reglas de referencia,
+importe realmente cobrado, fecha o estado. No tomar esta configuración del
+frontend ni del body no verificado del webhook. Conservar su origen en la
+evidencia del backend. En esta PR no se configuraron secretos ni variables reales.
+
+Disparador acordado: **el backend de Préstamos confirma y guarda el pago, y
+luego avisa a Kestra** mediante su webhook autenticado. Se conserva el receptor
+Pago360 como punto de entrada/verificación; no se crea un segundo receptor de
+Pago360 que también ordene imputar. El aviso no depende de una pantalla abierta.
+Si se pierde, el pendiente durable permite recuperarlo por el mismo ejecutor.
+
+Cada cuota seleccionada conserva internamente su verdadero CuotaPrestamo.ID,
+préstamo e importe al emitir el cupón. «Consolidado» en el portal corresponde a
+APPLIED únicamente después de verificar todas las cuotas. El callback lleva la
+misma operación y resultados por cuota. Repetir un aviso o callback no crea otro
+cobro. El componente visual y los clientes aún necesitan los archivos preparados
+en Lovable para revisar su compatibilidad.
+
 ## Accesos y evidencia revisada
 
 - Platform: rama de implementación `feat/pago360-imputacion-cuotas`, desde dev
@@ -189,8 +216,8 @@ Ejecutar desde la raíz de Platform:
 git diff --check
 ```
 
-Resultado local de este incremento: **62 pruebas de Cobranzas correctas**, de
-las cuales 30 son nuevas del motor Pago360; **13 pruebas existentes** de
+Resultado local de este incremento: **66 pruebas de Cobranzas correctas**, de
+las cuales 34 son nuevas del motor Pago360; **13 pruebas existentes** de
 `CobrarPrestamoGateway` y `CobrarRefinanciacionSolicitud` correctas. Estructura
 Kestra, dry-run y `git diff --check` correctos. Todas estas comprobaciones usan
 contratos/dobles locales; no hubo autenticación o escritura real en Pago360,

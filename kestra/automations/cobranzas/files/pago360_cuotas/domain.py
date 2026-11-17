@@ -29,6 +29,25 @@ def cents(value: str | int | Decimal) -> int:
         raise ContractError("Importe decimal inválido") from exc
 
 
+
+def resolve_currency(provider_currency: str | None, configured_currency: str | None = None) -> str:
+    """Moneda normalizada por BACKEND, nunca por el cuerpo del webhook/cliente.
+
+    El usuario definió este circuito en ARS (17/11/2026). Cuando el proveedor
+    omita moneda, el adaptador podrá usar la configuración explícita ARS del
+    backend. No sustituye una moneda contradictoria ni valida otros datos.
+    """
+    if configured_currency not in (None, "", "ARS"):
+        raise ContractError("Este circuito solo admite configuración ARS")
+    if provider_currency == "ARS":
+        return "ARS"
+    if provider_currency not in (None, ""):
+        raise ContractError("La moneda del proveedor no coincide con ARS")
+    if configured_currency == "ARS":
+        return "ARS"
+    raise ContractError("Falta moneda del proveedor o configuración explícita del backend")
+
+
 def identifier(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
         raise ContractError("Identificador inválido")
@@ -111,7 +130,7 @@ class Operation:
 
 @dataclass(frozen=True)
 class VerifiedPayment:
-    """Evidencia obtenida por backend desde API del proveedor, no del webhook."""
+    """Evidencia de backend: API del proveedor y moneda normalizada por resolve_currency."""
     provider_reference: str
     external_reference: str
     environment: str

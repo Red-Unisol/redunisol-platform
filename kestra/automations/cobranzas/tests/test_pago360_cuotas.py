@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "files"))
 from pago360_cuotas.domain import (Attempt, AttemptStatus, ContractError, Debt,
-    Installment, Operation, Receipt, Status, VerifiedPayment, cents)
+    Installment, Operation, Receipt, Status, VerifiedPayment, cents, resolve_currency)
 from pago360_cuotas.processor import (Claim, ClaimConflict, DefiniteRejection,
     OperationNotFound, Processor)
 
@@ -389,6 +389,22 @@ class Pago360Tests(unittest.TestCase):
         repo.simulate_executor_restart();repo.verify_commit_fail=False
         self.assertEqual(worker.run('operation-test','execution-2').status,'APPLIED')
         self.assertEqual(legacy.calls,['9001'])
+
+    def test_currency_ars_declared_by_provider_is_accepted(self):
+        self.assertEqual(resolve_currency('ARS'), 'ARS')
+
+    def test_missing_provider_currency_uses_explicit_backend_ars(self):
+        for missing in [None, '']:
+            self.assertEqual(resolve_currency(missing, 'ARS'), 'ARS')
+
+    def test_missing_currency_without_backend_configuration_is_blocked(self):
+        for configured in [None, '']:
+            with self.assertRaises(ContractError):
+                resolve_currency(None, configured)
+
+    def test_backend_ars_cannot_override_a_contradictory_provider_currency(self):
+        with self.assertRaises(ContractError): resolve_currency('USD', 'ARS')
+        with self.assertRaises(ContractError): resolve_currency('ARS', 'USD')
 
     def test_immutable_snapshot_and_exact_cents(self):
         self.assertEqual(cents('1234.56'),123456)
