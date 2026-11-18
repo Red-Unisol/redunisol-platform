@@ -285,9 +285,9 @@ test('a welcome is unique per exact chat session and a new session gets its own 
 
 test('an other choice transfers once and lost acknowledgement can only become observed', function (bool $ack) {
     $h = organicMenuHarness();
-    $h['attention']->shouldReceive('canTransfer')->once()->with(Mockery::type('array'), 5737, true)->andReturnTrue();
-    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, false, true)->andReturnTrue();
-    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, true, true)->andReturnTrue();
+    $h['attention']->shouldReceive('canTransfer')->once()->with(Mockery::type('array'), 5737, true, null)->andReturnTrue();
+    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, false, true, null)->andReturnTrue();
+    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, true, true, null)->andReturnTrue();
     $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 5737])->andReturn($ack);
     $h['crm']->shouldReceive('call')->once()->with('imopenlines.dialog.get', ['CHAT_ID' => 601])
         ->andReturn(['id' => 601, 'owner' => 5737, 'entity_data_1' => 'Y|LEAD|101|N|N|501|1794400000', 'text_field_enabled' => true]);
