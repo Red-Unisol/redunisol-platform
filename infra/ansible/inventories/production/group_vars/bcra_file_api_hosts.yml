@@ -1,6 +1,6 @@
 ---
-# The same reviewed image is moved; application behavior is unchanged.
-bcra_file_api_image: ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4
+# Runtime from PR #765. Migration and backup remain bound to their original image.
+bcra_file_api_image: ghcr.io/red-unisol/bcra-file-api@sha256:0047d453c8ac636ae9f68e1a3a99ea1df503e37b89c0486598c53ed8ea067613
 bcra_file_api_platform_dir: /srv/redunisol/platform/bcra-file-api
 bcra_file_api_data_dir: /srv/redunisol/state/bcra-file-api
 # Promoted after the 2026-11-12 cold copy, SQLite checks and encrypted backup.
