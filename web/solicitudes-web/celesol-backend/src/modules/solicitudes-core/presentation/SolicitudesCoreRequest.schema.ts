@@ -133,6 +133,7 @@ export const createSolicitudBodySchema = z.object({
   linkFirmaDigital: nullableNormalizedStringSchema.optional(),
   firmaDigitalmente: z.boolean().optional(),
   garantias: z.array(garantiaCreateSchema).optional(),
+  idempotencyKey: z.string().uuid().optional(),
   fechaPrimerVencimiento: z
     .string()
     .trim()

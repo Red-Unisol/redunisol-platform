@@ -9,6 +9,7 @@ import type {
 
 export type CreateSolicitudCoreRecord = {
   createdBy: string;
+  idempotencyKey?: string | null;
   conyuge: SolicitudCoreConyuge | null;
   cuotaResultante: string | null;
   cuotas: number | null;
@@ -335,6 +336,11 @@ export type SolicitudesCoreRepository = {
   create(input: CreateSolicitudCoreRecord): Promise<SolicitudCore>;
   findById(id: string): Promise<SolicitudCore | null>;
   findByLegacyOid?(legacyOid: string): Promise<SolicitudCore | null>;
+  /** La solicitud que creo este usuario con esta clave de alta, o null. */
+  findByIdempotencyKey?(
+    idempotencyKey: string,
+    createdBy: string,
+  ): Promise<SolicitudCore | null>;
   findWorkflowOwnerCodeById?(id: string): Promise<string | null>;
   /** Quien creo la solicitud, o null si no existe. */
   findCreadorById?(id: string): Promise<string | null>;

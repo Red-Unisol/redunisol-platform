@@ -344,6 +344,10 @@ describe("CreateSolicitudUseCase", () => {
 });
 
 class InMemorySolicitudesCoreRepository implements SolicitudesCoreRepository {
+  async findByIdempotencyKey(_idempotencyKey: string, _createdBy: string) {
+    return null;
+  }
+
   async create(input: Parameters<SolicitudesCoreRepository["create"]>[0]) {
     return {
       id: "sol-1",
@@ -529,4 +533,135 @@ it("adjusts both maxima before calculating and persisting a direct creation requ
 it("does not accept a manually supplied cuota resultante during creation", async () => {
   const useCase = new CreateSolicitudUseCase({ lineasPrestamoCatalog: catalogoDeLineas(), workflowStateCatalog: catalogoDeEstados(), repository: new InMemorySolicitudesCoreRepository(), consultarCredixsaAlCrearSolicitud: { execute: async () => undefined }, simularCuotaSolicitud: { execute: async () => null } });
   await assert.rejects(useCase.execute({ ...createInput(), cuotaResultante: "9000" }), { fieldKey: "solicitud.cuotaResultante" });
+});
+
+describe("CreateSolicitudUseCase - clave del alta", () => {
+  // Un alta que llega dos veces (doble clic, o reintento despues de un corte
+  // por timeout) no tiene que crear otra solicitud igual (500432/500433).
+  function repositorioConClaves() {
+    const guardadas = new Map<
+      string,
+      Awaited<ReturnType<SolicitudesCoreRepository["create"]>>
+    >();
+    const base = new InMemorySolicitudesCoreRepository();
+    const claves = new Set<string>();
+    let creaciones = 0;
+    const repository = Object.assign(base, {
+      async findByIdempotencyKey(clave: string, createdBy: string) {
+        const solicitud = guardadas.get(clave);
+        return solicitud && solicitud.createdBy === createdBy
+          ? solicitud
+          : null;
+      },
+      async create(input: Parameters<SolicitudesCoreRepository["create"]>[0]) {
+        // Como el indice unico de la base: la clave queda tomada en el acto.
+        if (input.idempotencyKey && claves.has(input.idempotencyKey)) {
+          throw new Error("unique constraint idempotency_key");
+        }
+        if (input.idempotencyKey) claves.add(input.idempotencyKey);
+        creaciones += 1;
+        const creada = {
+          ...(await InMemorySolicitudesCoreRepository.prototype.create.call(
+            base,
+            input,
+          )),
+          id: `sol-${creaciones}`,
+        };
+        if (input.idempotencyKey) guardadas.set(input.idempotencyKey, creada);
+        return creada;
+      },
+    });
+    return { repository, creaciones: () => creaciones };
+  }
+
+  function crearUseCase(
+    repository: ReturnType<typeof repositorioConClaves>["repository"],
+    consultas: string[] = [],
+  ) {
+    return new CreateSolicitudUseCase({
+      lineasPrestamoCatalog: catalogoDeLineas(),
+      consultarCredixsaAlCrearSolicitud: {
+        execute: async (solicitudId) => {
+          consultas.push(solicitudId);
+        },
+      },
+      repository,
+      simularCuotaSolicitud: { execute: async () => null },
+      workflowStateCatalog: catalogoDeEstados(),
+    });
+  }
+
+  const clave = "6f1c9a3e-2b7d-4c1a-9e8f-0a1b2c3d4e5f";
+
+  it("con la misma clave devuelve la solicitud ya creada y no consulta CredixSA de nuevo", async () => {
+    const { repository, creaciones } = repositorioConClaves();
+    const consultas: string[] = [];
+    const useCase = crearUseCase(repository, consultas);
+
+    const primera = await useCase.execute({
+      ...createInput(),
+      idempotencyKey: clave,
+    });
+    const segunda = await useCase.execute({
+      ...createInput(),
+      idempotencyKey: clave,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(segunda.id, primera.id);
+    assert.equal(creaciones(), 1);
+    assert.deepEqual(consultas, [primera.id]);
+  });
+
+  it("dos pedidos simultaneos con la misma clave terminan en una sola solicitud", async () => {
+    const { repository, creaciones } = repositorioConClaves();
+    const useCase = crearUseCase(repository);
+
+    const [a, b] = await Promise.all([
+      useCase.execute({ ...createInput(), idempotencyKey: clave }),
+      useCase.execute({ ...createInput(), idempotencyKey: clave }),
+    ]);
+
+    assert.equal(a.id, b.id);
+    assert.equal(creaciones(), 1);
+  });
+
+  it("con claves distintas crea dos solicitudes", async () => {
+    const { repository, creaciones } = repositorioConClaves();
+    const useCase = crearUseCase(repository);
+
+    await useCase.execute({ ...createInput(), idempotencyKey: clave });
+    await useCase.execute({
+      ...createInput(),
+      idempotencyKey: "0b8e7d6c-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+    });
+
+    assert.equal(creaciones(), 2);
+  });
+
+  it("la clave de otro usuario no devuelve su solicitud", async () => {
+    const { repository } = repositorioConClaves();
+    const useCase = crearUseCase(repository);
+
+    await useCase.execute({ ...createInput(), idempotencyKey: clave });
+
+    await assert.rejects(
+      useCase.execute({
+        ...createInput(),
+        createdBy: "user-2",
+        idempotencyKey: clave,
+      }),
+      /unique constraint/,
+    );
+  });
+
+  it("sin clave se comporta como antes", async () => {
+    const { repository, creaciones } = repositorioConClaves();
+    const useCase = crearUseCase(repository);
+
+    await useCase.execute(createInput());
+    await useCase.execute(createInput());
+
+    assert.equal(creaciones(), 2);
+  });
 });
