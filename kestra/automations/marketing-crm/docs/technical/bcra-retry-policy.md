@@ -6,6 +6,16 @@ Una indisponibilidad temporal del BCRA no es una decisión comercial. El caso de
 permanecer pendiente, sin rechazo ni distribución, hasta obtener un snapshot válido
 o agotar una ventana controlada de reintentos.
 
+## Fuente de la consulta
+
+El prefill y el clasificador consultan deuda vigente en la API de archivos del
+dedicado, por el relay de `kestra_net`. En los workers, `BCRA_FILE_BASE_URL`
+proviene de `envs.bcra_file_poc_url` y `BCRA_FILE_TOKEN` del secreto de Kestra.
+El snapshot conserva el proveedor y el período, la versión y la fecha de control
+de la publicación. El flujo reutiliza snapshots anteriores según su vigencia.
+Si falta una publicación vigente (503) o falla el acceso, aplica los reintentos
+de abajo. La consulta de históricos de CredixSA tiene un cliente independiente.
+
 ## Fuente de estado
 
 El estado vive en los mismos campos BCRA del lead de Bitrix. El campo raw conserva

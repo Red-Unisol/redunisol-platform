@@ -2,8 +2,8 @@
 
 Servicio interno FastAPI/Uvicorn que consulta los archivos de la Central de
 Deudores. Expone contratos compatibles de deudas vigentes e histórico de 24
-meses. No hay consumidores de negocio conectados, no escribe en Bitrix y no
-consulta la API individual del BCRA. Cheques rechazados queda fuera de alcance.
+meses. El enriquecimiento y la calificación de Bitrix consultan deuda vigente por
+el enlace privado. El servicio usa archivos oficiales y atiende consultas de lectura. Cheques rechazados queda fuera de alcance.
 
 ## Contrato compatible
 

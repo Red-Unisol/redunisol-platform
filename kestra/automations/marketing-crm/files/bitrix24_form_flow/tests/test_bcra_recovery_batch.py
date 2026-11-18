@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import Message
 from io import BytesIO, StringIO
 import json
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -31,29 +32,79 @@ QUALIFIER = "bitrix24_form_flow.form_processor.catamarca_deal_qualification"
 NOW = datetime.fromisoformat("2026-10-15T11:30:00-03:00")
 
 
-def response():
+ACCESS = {"BCRA_FILE_BASE_URL": "http://bcra-file-api-poc:8080", "BCRA_FILE_TOKEN": "test-only"}
+PUBLICATION = {
+    "X-BCRA-Source": "monthly-files", "X-BCRA-Period": "202609",
+    "X-BCRA-Version": "test-version", "X-BCRA-Checked-At": "2026-11-18T00:00:00+00:00",
+}
+
+
+def response(identification="27555555556"):
     result = MagicMock()
+    result.__enter__.return_value.headers = PUBLICATION
     result.__enter__.return_value.read.return_value = json.dumps({
-        "status": 200, "results": {"periodos": []},
+        "status": 200, "results": {"identificacion": int(identification), "periodos": []},
     }).encode()
     return result
 
 
 def http_error(code, retry_after=None):
     headers = Message()
+    if code == 404:
+        for key, value in PUBLICATION.items():
+            headers[key] = value
     if retry_after is not None:
         headers["Retry-After"] = retry_after
-    return HTTPError("https://example.test", code, "error", headers, BytesIO(b"{}"))
+    return HTTPError("https://example.test", code, "error", headers, BytesIO(json.dumps({"status": code}).encode()))
 
 
 class BcraHttpRecoveryTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ, ACCESS)
+        environment.start()
+        self.addCleanup(environment.stop)
         sleeper = patch(CLIENT + ".sleep")
         self.sleep = sleeper.start()
         self.addCleanup(sleeper.stop)
 
+    def test_internal_get_and_publication_receipt(self):
+        with patch(CLIENT + "._private_http.open", return_value=response()) as opened:
+            result = BcraClient().consult_snapshot("27555555556")
+        request = opened.call_args.args[0]
+        self.assertEqual(request.full_url, "http://bcra-file-api-poc:8080/centraldedeudores/v1.0/Deudas/27555555556")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-only")
+        receipt = json.loads(result.raw_field_value)
+        self.assertEqual(receipt["provider"], "bcra_monthly_files")
+        self.assertEqual(receipt["publication"]["period"], "202609")
+        self.assertEqual(receipt["publication"]["version"], "test-version")
+        self.assertNotIn("test-only", result.raw_field_value)
+
+    def test_missing_access_never_calls_another_provider(self):
+        with patch.dict(os.environ, {"BCRA_FILE_TOKEN": ""}), patch(CLIENT + "._private_http.open") as opened:
+            result = BcraClient().consult_snapshot("27555555556")
+        opened.assert_not_called()
+        self.assertEqual(result.outcome, "temporary_error")
+        self.assertFalse(result.should_reject)
+
+    def test_foreign_identity_and_unverified_404_are_retryable(self):
+        errors = [http_error(404) for _ in range(3)]
+        for error in errors:
+            del error.headers["X-BCRA-Source"]
+        for replies in [errors, [response("20111111112") for _ in range(3)]]:
+            with self.subTest(reply=type(replies[0])), patch(CLIENT + "._private_http.open", side_effect=replies):
+                result = BcraClient().consult_snapshot("27555555556")
+                self.assertEqual(result.outcome, "temporary_error")
+                self.assertFalse(result.is_persistable)
+                self.assertFalse(result.should_reject)
+
+    def test_stale_publication_503_remains_pending(self):
+        with patch(CLIENT + "._private_http.open", side_effect=[http_error(503) for _ in range(3)]):
+            result = BcraClient().consult_snapshot("27555555556")
+        self.assertEqual(result.outcome, "temporary_error")
+        self.assertFalse(result.should_reject)
+
     def test_connection_reset_and_500_recover_in_same_consultation(self):
-        with patch(CLIENT + ".urlopen", side_effect=[
+        with patch(CLIENT + "._private_http.open", side_effect=[
             ConnectionResetError("reset"), http_error(500), response(),
         ]) as request:
             result = BcraClient().consult_snapshot("27555555556")
@@ -62,7 +113,7 @@ class BcraHttpRecoveryTests(unittest.TestCase):
         self.assertEqual(self.sleep.call_args_list, [call(1), call(3)])
 
     def test_stops_after_three_failed_attempts(self):
-        with patch(CLIENT + ".urlopen", side_effect=ConnectionResetError("reset")) as request:
+        with patch(CLIENT + "._private_http.open", side_effect=ConnectionResetError("reset")) as request:
             result = BcraClient().consult_snapshot("27555555556")
         self.assertEqual(result.outcome, "temporary_error")
         self.assertEqual(request.call_count, 3)
@@ -70,7 +121,7 @@ class BcraHttpRecoveryTests(unittest.TestCase):
     def test_truncated_500_body_still_recovers(self):
         error = http_error(500)
         with patch.object(error, "read", side_effect=ConnectionResetError("body reset")), patch(
-            CLIENT + ".urlopen", side_effect=[error, response()],
+            CLIENT + "._private_http.open", side_effect=[error, response()],
         ) as request:
             result = BcraClient().consult_snapshot("27555555556")
         self.assertEqual(result.outcome, "ok")
@@ -78,7 +129,7 @@ class BcraHttpRecoveryTests(unittest.TestCase):
 
     def test_does_not_retry_definitive_errors_or_rate_limits(self):
         for code, expected in [(400, "invalid_identification"), (404, "not_found"), (429, "rate_limited")]:
-            with self.subTest(code=code), patch(CLIENT + ".urlopen", side_effect=http_error(code)) as request:
+            with self.subTest(code=code), patch(CLIENT + "._private_http.open", side_effect=http_error(code)) as request:
                 result = BcraClient().consult_snapshot("27555555556")
                 self.assertEqual(result.outcome, expected)
                 request.assert_called_once()
@@ -86,7 +137,7 @@ class BcraHttpRecoveryTests(unittest.TestCase):
 
     def test_shared_timeout_budget_prevents_three_full_timeouts(self):
         with patch(CLIENT + ".monotonic", side_effect=[0, 20]), patch(
-            CLIENT + ".urlopen", side_effect=TimeoutError("timeout"),
+            CLIENT + "._private_http.open", side_effect=TimeoutError("timeout"),
         ) as request:
             result = BcraClient().consult_snapshot("27555555556")
         self.assertEqual(result.outcome, "temporary_error")
@@ -95,7 +146,7 @@ class BcraHttpRecoveryTests(unittest.TestCase):
 
     def test_retry_after_seconds_and_http_date_survive_serialization(self):
         for header in ["1200", "Thu, 15 Oct 2037 18:00:00 GMT"]:
-            with self.subTest(header=header), patch(CLIENT + ".urlopen", side_effect=http_error(503, header)) as request:
+            with self.subTest(header=header), patch(CLIENT + "._private_http.open", side_effect=http_error(503, header)) as request:
                 before = datetime.now(timezone.utc)
                 result = BcraClient().consult_snapshot("27555555556")
                 request.assert_called_once()
@@ -231,11 +282,12 @@ class DealBatchRecoveryTests(unittest.TestCase):
         self.assertFalse(state.is_due(NOW + timedelta(minutes=15)))
         self.assertFalse(self.client.chat_transfers)
 
+    @patch.dict(os.environ, ACCESS)
     def test_three_http_failures_count_as_one_persisted_cycle(self):
         self.add_deal(930)
         lead = self.client.leads[930]
         lead["UF_CRM_BCRA_DATA_RAW"] = ""
-        with patch(CLIENT + ".urlopen", side_effect=ConnectionResetError("reset")) as request, patch(CLIENT + ".sleep"):
+        with patch(CLIENT + "._private_http.open", side_effect=ConnectionResetError("reset")) as request, patch(CLIENT + ".sleep"):
             result = sync_lead_bcra(
                 self.client, load_config(self.env), 930, "27555555556", self.logger,
                 lead=lead, now=NOW,

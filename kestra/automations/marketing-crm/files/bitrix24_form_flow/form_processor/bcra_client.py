@@ -5,22 +5,20 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from http.client import HTTPException
 import json
+import os
+import re
 from time import monotonic, sleep
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .logger import Logger
 
 
-BCRA_BASE_URL = "https://api.bcra.gob.ar"
+BCRA_PROVIDER = "bcra_monthly_files"
 BCRA_CURRENT_SNAPSHOT_PATH = "/centraldedeudores/v1.0/Deudas/{identificacion}"
 BCRA_TIMEOUT_SECONDS = 20
 BCRA_HTTP_RETRY_DELAYS = (1, 3)
-BCRA_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-)
 BCRA_STATUS_OK = "OK"
 BCRA_STATUS_NEGATIVE = "NEGATIVO"
 BCRA_STATUS_NOT_FOUND = "SIN_DATOS"
@@ -94,11 +92,41 @@ def deserialize_bcra_result(payload: dict[str, Any]) -> BcraConsultationResult:
     )
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+# El relay privado se alcanza directamente en kestra_net.
+_private_http = build_opener(ProxyHandler({}), _NoRedirect())
+
+
+def _publication(headers) -> dict[str, str]:
+    if headers and headers.get("X-BCRA-Source") == "monthly-files":
+        fields = {key: headers.get("X-BCRA-" + key) for key in ("Period", "Version", "Checked-At")}
+        if all(fields.values()):
+            return {"period": fields["Period"], "version": fields["Version"], "checked_at": fields["Checked-At"]}
+    return {}
+
+
 class BcraClient:
     def __init__(self, logger: Logger | None = None):
         self.logger = logger
+        self.base_url = os.environ.get("BCRA_FILE_BASE_URL", "").strip().rstrip("/")
+        self.token = os.environ.get("BCRA_FILE_TOKEN", "").strip()
 
     def consult_snapshot(self, identification: str) -> BcraConsultationResult:
+        identification = str(identification).strip()
+        if not re.fullmatch(r"[0-9]{11}", identification):
+            return _result_from_http_error(
+                identification=identification, checked_at=_argentina_timestamp(),
+                http_status=400, payload=None, publication={},
+            )
+        if not self.base_url or not self.token:
+            return _temporary_error_result(
+                identification=identification, checked_at=_argentina_timestamp(),
+                message="Falta configurar el acceso al servicio interno BCRA.",
+            )
         # All attempts share the original timeout budget; a slow provider must
         # not turn one consultation into three full timeouts.
         deadline = monotonic() + BCRA_TIMEOUT_SECONDS
@@ -123,21 +151,21 @@ class BcraClient:
         self, identification: str, timeout_seconds: float
     ) -> BcraConsultationResult:
         checked_at = _argentina_timestamp()
-        identification = str(identification).strip()
-        url = BCRA_BASE_URL + BCRA_CURRENT_SNAPSHOT_PATH.format(identificacion=identification)
+        url = self.base_url + BCRA_CURRENT_SNAPSHOT_PATH.format(identificacion=identification)
 
         self._log_info(f"Consultando BCRA Deudas para {identification}.")
         request = Request(
             url,
             headers={
                 "Accept": "application/json",
-                "User-Agent": BCRA_USER_AGENT,
+                "Authorization": "Bearer " + self.token,
             },
             method="GET",
         )
 
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
+            with _private_http.open(request, timeout=timeout_seconds) as response:
+                publication = _publication(response.headers)
                 payload = _decode_json(response.read())
         except HTTPError as exc:
             try:
@@ -148,10 +176,19 @@ class BcraClient:
                 payload = None
             finally:
                 exc.close()
+            publication = _publication(exc.headers)
+            if exc.code == 404 and not (
+                publication and isinstance(payload, dict) and payload.get("status") == 404
+            ):
+                return _temporary_error_result(
+                    identification=identification, checked_at=checked_at,
+                    message="El 404 del servicio interno BCRA no identifica una publicación válida.",
+                )
             result = _result_from_http_error(
                 identification=identification,
                 checked_at=checked_at,
                 http_status=exc.code,
+                publication=publication,
                 payload=payload,
             )
             if exc.code == 429 or 500 <= exc.code < 600:
@@ -181,6 +218,7 @@ class BcraClient:
             )
 
         result = _success_result(
+            publication=publication,
             identification=identification,
             checked_at=checked_at,
             payload=payload,
@@ -218,6 +256,7 @@ def _success_result(
     identification: str,
     checked_at: str,
     payload: Any,
+    publication: dict[str, str],
 ) -> BcraConsultationResult:
     if not isinstance(payload, dict):
         return _temporary_error_result(
@@ -227,11 +266,17 @@ def _success_result(
         )
 
     results = payload.get("results")
-    if not isinstance(results, dict):
+    if (
+        not publication
+        or payload.get("status") != 200
+        or not isinstance(results, dict)
+        or str(results.get("identificacion")) != identification
+        or not isinstance(results.get("periodos"), list)
+    ):
         return _temporary_error_result(
             identification=identification,
             checked_at=checked_at,
-            message="La respuesta 200 del BCRA no contiene results validos.",
+            message="Respuesta interna BCRA sin publicación, identidad o períodos válidos.",
         )
 
     entities = _extract_entities(results.get("periodos"))
@@ -242,6 +287,8 @@ def _success_result(
 
     raw_snapshot = {
         "source": "bcra_central_deudores_v1",
+        "provider": BCRA_PROVIDER,
+        "publication": publication,
         "queried_at": checked_at,
         "http_status": 200,
         "outcome": "ok",
@@ -285,11 +332,14 @@ def _result_from_http_error(
     checked_at: str,
     http_status: int,
     payload: Any,
+    publication: dict[str, str],
 ) -> BcraConsultationResult:
     error_messages = _extract_error_messages(payload)
 
     raw_snapshot = {
         "source": "bcra_central_deudores_v1",
+        "provider": BCRA_PROVIDER,
+        "publication": publication,
         "queried_at": checked_at,
         "http_status": http_status,
         "identification": identification,
