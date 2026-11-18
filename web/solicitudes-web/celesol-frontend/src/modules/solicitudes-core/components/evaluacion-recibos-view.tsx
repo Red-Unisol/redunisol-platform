@@ -11,8 +11,9 @@ import {
 import { Button } from "@/shared/components/ui/button";
 import type { SolicitudCoreAdjuntoResponse } from "@/modules/solicitudes/types/solicitudes-core";
 import { downloadSolicitudCoreAdjunto } from "../services/solicitudes-core-api";
+import { TIPO_DOCUMENTACION_ADICIONAL } from "../utils/adjuntos-del-visor";
 
-// Altura comun de la franja de la calculadora y la del recibo: una sola linea
+// Altura comun de la franja de la calculadora y la del visor: una sola linea
 // de acciones arriba de cada mitad.
 export const FRANJA_EVALUACION =
   "flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-3";
@@ -47,7 +48,7 @@ function useReciboArchivo(
           error: null,
           file: new File(
             [response.blob],
-            response.fileName ?? nombre ?? "Recibo de sueldo",
+            response.fileName ?? nombre ?? "Documento",
             { type: response.contentType ?? response.blob.type },
           ),
         });
@@ -59,7 +60,7 @@ function useReciboArchivo(
           error:
             reason instanceof Error
               ? reason.message
-              : "No se pudo obtener el recibo.",
+              : "No se pudo obtener el documento.",
           file: null,
         });
       });
@@ -90,7 +91,7 @@ function useReciboArchivo(
 export function EvaluacionRecibosView({
   children,
   solicitudId,
-  recibos,
+  adjuntos,
   open,
   selectedId,
   onSelect,
@@ -100,7 +101,8 @@ export function EvaluacionRecibosView({
 }: {
   children: ReactNode;
   solicitudId: string;
-  recibos: SolicitudCoreAdjuntoResponse[];
+  // Recibos de sueldo primero y despues documentacion adicional.
+  adjuntos: SolicitudCoreAdjuntoResponse[];
   open: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -114,10 +116,14 @@ export function EvaluacionRecibosView({
   const [zoom, setZoom] = useState(100);
   const index = Math.max(
     0,
-    recibos.findIndex((item) => item.id === selectedId),
+    adjuntos.findIndex((item) => item.id === selectedId),
   );
-  const selected = open ? recibos[index] : undefined;
+  const selected = open ? adjuntos[index] : undefined;
   const recibo = useReciboArchivo(solicitudId, selected);
+  const etiquetaTipo =
+    selected?.tipoAdjunto === TIPO_DOCUMENTACION_ADICIONAL
+      ? "Doc. adicional"
+      : "Recibo";
   const esImagen = recibo.file?.type.startsWith("image/") ?? false;
   const esPdf = recibo.file?.type === "application/pdf";
   const changeWidth = (value: number) => {
@@ -145,7 +151,7 @@ export function EvaluacionRecibosView({
           <>
             <div
               role="separator"
-              aria-label="Ajustar ancho de Evaluación y recibo"
+              aria-label="Ajustar ancho de Evaluación y documento"
               aria-orientation="vertical"
               aria-controls="evaluacion-panel"
               aria-valuemin={35}
@@ -184,17 +190,17 @@ export function EvaluacionRecibosView({
               title="Arrastrá para cambiar el ancho (doble clic: mitad y mitad)"
             />
             <aside
-              aria-label="Recibos de sueldo"
+              aria-label="Recibos y documentación"
               className="flex min-h-0 min-w-0 flex-1 flex-col"
             >
-              {/* Una sola franja: que recibo es y todo lo que se le puede hacer. */}
+              {/* Una sola franja: que documento es y todo lo que se le puede hacer. */}
               <header className={FRANJA_EVALUACION}>
-                {recibos.length > 1 ? (
+                {adjuntos.length > 1 ? (
                   <div className="flex shrink-0 items-center">
                     <Button
-                      aria-label="Recibo anterior"
+                      aria-label="Documento anterior"
                       disabled={index === 0}
-                      onClick={() => cambiarRecibo(recibos[index - 1].id)}
+                      onClick={() => cambiarRecibo(adjuntos[index - 1].id)}
                       size="icon-sm"
                       variant="ghost"
                     >
@@ -204,12 +210,12 @@ export function EvaluacionRecibosView({
                       aria-live="polite"
                       className="text-xs text-foreground-secondary tabular-nums"
                     >
-                      {index + 1}/{recibos.length}
+                      {index + 1}/{adjuntos.length}
                     </span>
                     <Button
-                      aria-label="Recibo siguiente"
-                      disabled={index === recibos.length - 1}
-                      onClick={() => cambiarRecibo(recibos[index + 1].id)}
+                      aria-label="Documento siguiente"
+                      disabled={index === adjuntos.length - 1}
+                      onClick={() => cambiarRecibo(adjuntos[index + 1].id)}
                       size="icon-sm"
                       variant="ghost"
                     >
@@ -217,16 +223,21 @@ export function EvaluacionRecibosView({
                     </Button>
                   </div>
                 ) : null}
+                {selected ? (
+                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 text-xs text-foreground-secondary">
+                    {etiquetaTipo}
+                  </span>
+                ) : null}
                 <p
                   className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
                   title={selected?.archivoNombre ?? undefined}
                 >
-                  {selected?.archivoNombre ?? "Recibo de sueldo"}
+                  {selected?.archivoNombre ?? "Documento"}
                 </p>
                 {esImagen || esPdf ? (
                   <div className="flex shrink-0 items-center">
                     <Button
-                      aria-label="Achicar el recibo"
+                      aria-label="Achicar el documento"
                       disabled={zoom <= ZOOM_MIN}
                       onClick={() =>
                         setZoom((value) =>
@@ -247,7 +258,7 @@ export function EvaluacionRecibosView({
                       {zoom}%
                     </button>
                     <Button
-                      aria-label="Agrandar el recibo"
+                      aria-label="Agrandar el documento"
                       disabled={zoom >= ZOOM_MAX}
                       onClick={() =>
                         setZoom((value) =>
@@ -262,7 +273,7 @@ export function EvaluacionRecibosView({
                   </div>
                 ) : null}
                 <Button
-                  aria-label="Abrir el recibo en otra pestaña"
+                  aria-label="Abrir el documento en otra pestaña"
                   asChild
                   disabled={!recibo.url}
                   size="icon-sm"
@@ -278,7 +289,7 @@ export function EvaluacionRecibosView({
                   </a>
                 </Button>
                 <Button
-                  aria-label="Descargar el recibo"
+                  aria-label="Descargar el documento"
                   asChild
                   disabled={!recibo.url}
                   size="icon-sm"
@@ -293,23 +304,23 @@ export function EvaluacionRecibosView({
                   </a>
                 </Button>
                 <Button
-                  aria-label="Cerrar el recibo"
+                  aria-label="Cerrar el documento"
                   onClick={onClose}
                   size="icon-sm"
-                  title="Cerrar el recibo"
+                  title="Cerrar el documento"
                   variant="ghost"
                 >
                   <X className="size-4" />
                 </Button>
               </header>
               <div
-                aria-label="Contenido del recibo"
+                aria-label="Contenido del documento"
                 className="min-h-0 flex-1 overflow-auto bg-background/50"
                 tabIndex={0}
               >
                 {loading ? (
                   <p role="status" className="p-3 text-sm">
-                    Cargando listado de recibos...
+                    Cargando listado de documentos...
                   </p>
                 ) : error ? (
                   <p role="alert" className="p-3 text-sm">
@@ -317,7 +328,7 @@ export function EvaluacionRecibosView({
                   </p>
                 ) : !selected ? (
                   <p className="p-3 text-sm">
-                    No hay recibos de sueldo disponibles.
+                    No hay recibos ni documentación adicional disponibles.
                   </p>
                 ) : recibo.error ? (
                   <div role="alert" className="p-3 text-sm">
@@ -332,17 +343,17 @@ export function EvaluacionRecibosView({
                   </div>
                 ) : !recibo.url ? (
                   <p role="status" className="p-3 text-sm">
-                    Cargando recibo de sueldo...
+                    Cargando documento...
                   </p>
                 ) : esImagen ? (
                   <img
-                    alt={recibo.file?.name ?? "Recibo de sueldo"}
+                    alt={recibo.file?.name ?? "Documento"}
                     className="max-w-none"
                     src={recibo.url}
                     style={{ width: `${zoom}%` }}
                   />
                 ) : esPdf ? (
-                  // Sin la barra del visor del navegador: el recibo solo se
+                  // Sin la barra del visor del navegador: el documento solo se
                   // mira. El zoom lo maneja la franja de arriba.
                   <iframe
                     className="h-full min-h-64 w-full border-none"
@@ -350,7 +361,7 @@ export function EvaluacionRecibosView({
                     src={`${recibo.url}#toolbar=0&navpanes=0&statusbar=0&${
                       zoom === 100 ? "view=FitH" : `zoom=${zoom}`
                     }`}
-                    title={recibo.file?.name ?? "Recibo de sueldo"}
+                    title={recibo.file?.name ?? "Documento"}
                   />
                 ) : (
                   <p className="p-4 text-sm">
