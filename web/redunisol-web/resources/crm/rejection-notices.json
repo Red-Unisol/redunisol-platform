@@ -1,0 +1,145 @@
+{
+    "schema_version": 1,
+    "normalization": "crlf-to-lf-ascii-edge-space-v1",
+    "generated_by": "web/redunisol-web/tools/build-rejection-notices.php",
+    "canonical_builder": "kestra/tools/build_bitrix_rejection_notifications.php",
+    "source_sha256_lf": {
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/document-fields.json": "4ec7bd9a4ddf8b07e06dd051722fb35c44d9e95da8bb97eb6593ceb130ab2941",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/manifest.json": "4c3daf86b90adfa9aed44888291602d4f95a786ff2649faf3f4d7026d9e2d501",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/111.json": "93b2334110ab2c49337758b981c6226485d234d2db3e7373623427fc478c6ca0",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/383.json": "cb1aaefd0619fe42a098f82a3c1c628b4cf05e472d0b72a8a9f551759c1ac0cb",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/385.json": "9b4e335cb4dc266217bdb6e7b357a5e80795e23dbbcceb1d247174ac1ddd2cf7",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/387.json": "a46f255363a96f95e76e2fae9a48e161769fe1e1aa84d669160954834cd35c1f",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/389.json": "d63fa34b89466c3ef616cb8a697d9f428dfe11de0fe1e568374d4ac2c335deaa",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/391.json": "f39526429bb91310cf5b139b9a807bd3174b381f7e028dce650cc4a024ccb50a",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/393.json": "5f07df89f9ac281b2af38e90b648c213a38d509e5f747f71dba1025cf3ff8118",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/395.json": "d862845c0deb160d62aa9ee0d588466884c94c8c3f1953f13c49d39db60f9c28",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/397.json": "5aae9b2d8234b0fa46265959e9143cdb599f8369e28ac39ae7e3e4f2f7ff96c1",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/399.json": "8fd11c6b5b363b545d7baf2bcb3996215c40c31f216434a100ffbb0262c1b932",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/407.json": "dc0312aff2825cbf8ceec3849ca4ec1c9077244ee9c3978062fc92bc8bf5d666",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/689.json": "774456954d0cb033fa1952e81341dfde73b831ad07818651195b41f80adc6f63",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/691.json": "f3ee72ecf8e7ca5ab665f43c0ae7f50be7bd21798a903d95ad52ff876eef3864",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/693.json": "7ce49ebd1a11321bf70669bf3c5dc4e05ac7525f28302a6fe4f753f67acc3d78",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/695.json": "2bea8fb2f2a0654f1c0fcce98e489d8d7213a45d817eb5bbd1070e4379176ca9",
+        "kestra/automations/marketing-crm/bitrix/rejection-notifications/sources/707.json": "9261a1c1b4d5734af473f5f247c3e1698c7719d1be22d81b44732afaa0ec417a",
+        "kestra/tools/build_bitrix_rejection_notifications.php": "96807d892fd49ac5bdf0e7c38b0cbb150c2ad1174000936729d7ca3119fd9e86"
+    },
+    "without_public_chat": [
+        "OTRA PROVINCIA",
+        "NUMERO INCORRECTO"
+    ],
+    "notices": [
+        {
+            "source_template_id": 707,
+            "reason_xml_id": "84562bb62db80276f6e9492f3782ddb9",
+            "reason_label": "SIT NEG BCRA",
+            "text": "En este momento *no podemos avanzar con tu solicitud*, ya que tu situación en *BCRA supera los parámetros* con los que trabajamos actualmente.\n\nSi bien contamos con condiciones más accesibles, es necesario *cumplir ciertos criterios mínimos* para poder avanzar.\n\nLamentamos no poder asistirte en esta oportunidad. Podés volver a contactarnos más adelante y con gusto evaluaremos nuevamente tu caso.",
+            "template_sha256": "61aaa6468050cc715a48a3a5bc3336a24e2536680d26d55f103cea4f540547e9",
+            "normalized_sha256": "61aaa6468050cc715a48a3a5bc3336a24e2536680d26d55f103cea4f540547e9"
+        },
+        {
+            "source_template_id": 383,
+            "reason_xml_id": "7ded9cbe66473414cd183e419a855522",
+            "reason_label": "OTRO BANCO",
+            "text": "Por el momento no tenemos convenio con tu banco de cobro. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "1fd9971ceb93400076352612f492714ceedd412eba70a6421ce38ecce5cae999",
+            "normalized_sha256": "1fd9971ceb93400076352612f492714ceedd412eba70a6421ce38ecce5cae999"
+        },
+        {
+            "source_template_id": 385,
+            "reason_xml_id": "b76c1a715aacc6360cf10f8462429c41",
+            "reason_label": "NO TIENE ANTIGUEDAD",
+            "text": "Te comentamos que como requisito al menos debes tener 12 meses de antigüedad en tu empleo actual. \nAgradecemos tu contacto y te invitamos a que vuelvas a consultar despues de ese tiempo; este es nuestro número de contacto. ¡Que tengas un buen día! 😊",
+            "template_sha256": "dd45e1c6baa98bcff003ee655728ea73099b5c9c8bad27fe7e232e452df7f371",
+            "normalized_sha256": "dd45e1c6baa98bcff003ee655728ea73099b5c9c8bad27fe7e232e452df7f371"
+        },
+        {
+            "source_template_id": 387,
+            "reason_xml_id": "7f4c305bf2677cfa7a06057c43997283",
+            "reason_label": "AUTONOMO",
+            "text": "Por el momento no otorgamos prestamos bajo la modalidad de monotributo/ autónomo. Agradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en nuestras políticas de préstamo. ¡Que tengas un buen día!😊",
+            "template_sha256": "b675021343ada8ee562c854b4b3e2201016e441713b1875c34c8cc0a15c135c2",
+            "normalized_sha256": "b675021343ada8ee562c854b4b3e2201016e441713b1875c34c8cc0a15c135c2"
+        },
+        {
+            "source_template_id": 389,
+            "reason_xml_id": "16d764f8513a78bf88524f9020e14767",
+            "reason_label": "AUH (asignaciones)",
+            "text": "Por el momento no tomamos asignaciones familiares. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "50852cb40f150eaaa6cfdf1d460b6d1e05e951c25f60393b1c67655601d03966",
+            "normalized_sha256": "50852cb40f150eaaa6cfdf1d460b6d1e05e951c25f60393b1c67655601d03966"
+        },
+        {
+            "source_template_id": 695,
+            "reason_xml_id": "36ca930e5fc03f8f0673c29af2d50e42",
+            "reason_label": "JUBILADO PROVINCIAL",
+            "text": "Por el momento no tomamos Jubilados en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "29931fc0cf664b4ae523a9b8d89cc17eceea3cad2cd84bef317a3f16a51cbbc9",
+            "normalized_sha256": "29931fc0cf664b4ae523a9b8d89cc17eceea3cad2cd84bef317a3f16a51cbbc9"
+        },
+        {
+            "source_template_id": 689,
+            "reason_xml_id": "f5b0a7f36f17bcab5b93b82acd56d87b",
+            "reason_label": "PENSIONADO",
+            "text": "Por el momento no tomamos Pensionados en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "43a70219ae099985c1b6055c750d8bc96a86e2d32273dddd5679af281566435b",
+            "normalized_sha256": "43a70219ae099985c1b6055c750d8bc96a86e2d32273dddd5679af281566435b"
+        },
+        {
+            "source_template_id": 691,
+            "reason_xml_id": "6589157043d74de1839cfeed4f4f1dfc",
+            "reason_label": "JUBILADO NACIONAL",
+            "text": "Por el momento no tomamos Jubilados en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "29931fc0cf664b4ae523a9b8d89cc17eceea3cad2cd84bef317a3f16a51cbbc9",
+            "normalized_sha256": "29931fc0cf664b4ae523a9b8d89cc17eceea3cad2cd84bef317a3f16a51cbbc9"
+        },
+        {
+            "source_template_id": 693,
+            "reason_xml_id": "84aa965f8971a83f6b8cef85a929b3c0",
+            "reason_label": "PUBLICO NACIONAL",
+            "text": "Por el momento no tomamos Empleados Públicos Nacionales en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "1b227e640886a044a471b62069feb4827bf4ca4c52425f03cedd00f3d7e4a486",
+            "normalized_sha256": "1b227e640886a044a471b62069feb4827bf4ca4c52425f03cedd00f3d7e4a486"
+        },
+        {
+            "source_template_id": 391,
+            "reason_xml_id": "c1684829e2b7df5049b9fa47366b6dca",
+            "reason_label": "NO TIENE RECIBO (en negro)",
+            "text": "Por el momento un requisito para el préstamo es  poseer recibo de sueldo comprobable y ser bancarizado. \nAgradecemos tu contacto de todos modos y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "0da6bb420e11eb764af8595dc26fd4aeb69decb2bb177685bd1db67d1f49285f",
+            "normalized_sha256": "0da6bb420e11eb764af8595dc26fd4aeb69decb2bb177685bd1db67d1f49285f"
+        },
+        {
+            "source_template_id": 393,
+            "reason_xml_id": "fce12843ae619af1627cbff68918cb90",
+            "reason_label": "CONTRATADO",
+            "text": "Por el momento no tomamos tu modalidad de contrato. \nAgradecemos tu contacto de todos modos y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "2d86cc1e472a4af7303c46eec6dce85f12fe5ff67d314c3dcbf6b15620f88bcd",
+            "normalized_sha256": "2d86cc1e472a4af7303c46eec6dce85f12fe5ff67d314c3dcbf6b15620f88bcd"
+        },
+        {
+            "source_template_id": 397,
+            "reason_xml_id": "5fcb89221d0fce47636f4e68ef47b6d7",
+            "reason_label": "PRIVADOS",
+            "text": "¡Hola! Gracias por comunicarte con el sector comercial de *Red Unisol* Por el momento en tu provincia *no tomamos empleados del sector privado.*\nAgradecemos tu contacto de todos modos y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊 ",
+            "template_sha256": "fa312c295fc16f857537eaf1422d4b4b9cd9298dc7d9a0e2fbec4306a89e57ec",
+            "normalized_sha256": "00c8a58cf26d3bd7bdab515596acb4bc312c0c085af8c7ed9f88aac7cd7cf3bb"
+        },
+        {
+            "source_template_id": 399,
+            "reason_xml_id": "49c554534575fc4d777162363f0ff1f3",
+            "reason_label": "MUNICIPAL",
+            "text": "Por el momento en tu provincia no tomamos empleados del sector municipal. \nAgradecemos tu contacto de todos modos y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+            "template_sha256": "f67ec9b31349e2c9715b65aa3ed9cf868962f8d79c05c2aa18b2a6eb99b94b55",
+            "normalized_sha256": "f67ec9b31349e2c9715b65aa3ed9cf868962f8d79c05c2aa18b2a6eb99b94b55"
+        },
+        {
+            "source_template_id": 407,
+            "reason_xml_id": "f3eecc979177ec6b1c6e2d47457ab547",
+            "reason_label": "NO CUMPLE REQUISITOS PARA CONVENIO",
+            "text": "Hola 👋\n\n Gracias por contactarte con Red Unisol.\n\n Por el momento, en tu provincia no contamos con propuestas vigentes para tu actividad laboral, por lo que no podemos avanzar con una solicitud de préstamo en esta ocasión.\n\n Te invitamos a seguirnos en Facebook e Instagram para enterarte de futuras novedades y nuevas oportunidades.\n\n También podés conocer más sobre nosotros visitando nuestro sitio web.\n\n Quedamos a disposición.\n\n Saludos,\n\n Red Unisol",
+            "template_sha256": "102a4ae66bae8e917cbcf94f20bf2f64d74f00796cba72abb9087a06d425f49a",
+            "normalized_sha256": "102a4ae66bae8e917cbcf94f20bf2f64d74f00796cba72abb9087a06d425f49a"
+        }
+    ]
+}

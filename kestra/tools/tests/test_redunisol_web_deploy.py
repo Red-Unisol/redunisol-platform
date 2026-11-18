@@ -41,8 +41,11 @@ class RedunisolWebDeployTests(unittest.TestCase):
         command = compose['services']['edna-web-worker']['command']
         # One argv value: an unquoted comma in YAML flow syntax splits this argument.
         queues = [arg for arg in command if arg.startswith('--queue=')]
-        self.assertEqual(queues, ['--queue=edna-web-new,edna-web-reconcile'])
+        self.assertEqual(queues, ['--queue=edna-web-new,edna-web-reconcile,edna-rejection-close'])
         self.assertNotIn('edna-web-reconcile', command)
+        self.assertNotIn('edna-rejection-close', command)
+        for service in ['php-fpm', 'edna-worker', 'edna-web-worker', 'scheduler']:
+            self.assertEqual(compose['services'][service]['environment']['EDNA_REJECTION_CLOSE_ENABLED'], '${EDNA_REJECTION_CLOSE_ENABLED:-true}')
 
     def test_kestra_runtime_propagates_the_intake_gates(self):
         compose = yaml.safe_load((ROOT / 'kestra/platform/infra/docker-compose.yml').read_text())
