@@ -300,7 +300,7 @@ debe ocurrir en la transacción; una configuración incompatible falla sin envia
 Ventas tiene un consumidor por cola: `edna-inbox-worker` recibe entradas de
 `edna-inbox`, `edna-worker` procesa menú/v3/préstamos en `edna`, y
 `edna-web-worker` consume primero `edna-web-new` y después
-`edna-web-reconcile`. Así los reintentos del menú no
+`edna-web-reconcile` y finalmente `edna-rejection-close`. Así los reintentos del menú no
 impiden ejecutar el puente web ni capturar callbacks. Cada cola tiene un solo
 worker; no se escala el envío sin límite. Los tres comparten las reservas
 durables y los locks por chat existentes, y cada acción vuelve a verificar
@@ -505,6 +505,71 @@ basta con la fase guardada o con que el vendedor ya sea dueño. Si aparece otra 
 humana posterior, se conserva; los resultados inciertos que no se resuelven
 terminan en revisión.
 
+### Cierre automático después de un rechazo avisado
+
+`edna:rejected-chats poll` descubre sólo relaciones locales comprobadas de las
+últimas 24 horas (binding/intake, consulta reutilizada o recibo web), con prospecto,
+mensaje y sesión nativa exactos. No enumera el CRM por teléfono ni cierra el
+histórico general. La ventana incluye los rechazos recientes todavía abiertos;
+no vuelve a clasificarlos ni reenvía sus avisos. La selección está acotada a 500
+candidatos locales por poll y 25 jobs, con prioridad para los más recientes.
+
+El prospecto debe conservar `RESULTADO PERDIDO`, motivo conocido y
+`UF_CRM_REJ_NOTICE=PROCESSED`. Además, se exige **el mensaje saliente real en la
+misma sesión**, posterior al rechazo y a su ingreso, con `connectorMid` y texto
+exacto de la plantilla correspondiente. PROCESSED por sí solo no autoriza cerrar:
+hay motivos que sólo envían correo o no tienen aviso. El catálogo reproducible
+`resources/crm/rejection-notices.json` conserva los 14 mensajes públicos activos
+del generador canónico del BP889; se regenera desde la raíz con:
+
+```text
+php web/redunisol-web/tools/build-rejection-notices.php
+```
+
+Ese mensaje nativo prueba que el aviso quedó registrado como salida, no su
+entrega o lectura en el dispositivo. El remitente puede ser Nico porque el BP
+usa el responsable del prospecto. Sólo se exceptúa ese ID exacto, con hash,
+fecha, autor, clase de salida y connectorMid coincidentes; cualquier otro
+mensaje de operador, aceptación, transferencia explícita o respuesta posterior
+del cliente conserva la conversación. Los eventos nativos con autor reservado 0
+no requieren un flag `system` que esta API omite; contradicciones de conector o
+una salida con ese autor detienen el proceso. El estado humano se relee completo
+dos veces y el prospecto se relee después de la última inspección.
+
+El job usa el lock compartido por chat. Antes del único
+`imopenlines.operator.another.finish(CHAT_ID)` guarda una intención durable en
+`edna_rejected_chat_closures`; luego conserva el acuse y verifica el cierre de
+la sesión original con fecha de cierre. Un timeout o acuse incierto habilita sólo
+lecturas posteriores, nunca repetir el POST. Un cierre observado sin acuse se
+separa del cierre confirmado propio. La recuperación usa backoff exponencial
+con jitter hasta 30 minutos y termina en revisión a las ocho horas.
+
+Bitrix no admite SESSION_ID ni comparación atómica de responsable/sesión en el
+POST de cierre. La relectura final reduce la carrera con una atención/reapertura,
+pero no elimina la ventana entre lectura y escritura. Una sesión nueva, un
+prospecto reabierto, atención humana o un vínculo cambiado no se cierran en los
+chequeos previos. Nunca se toma ni transfiere un chat para poder cerrarlo.
+
+La cola `edna-rejection-close` es la tercera prioridad de `edna-web-worker`, detrás
+de `edna-web-new` y `edna-web-reconcile`; no compite con callbacks ni menú/v3.
+Publicar código, migración y Compose juntos. `EDNA_REJECTION_CLOSE_ENABLED=false`
+pausa descubrimiento y ejecución; las otras compuertas existentes también siguen
+vigentes. Rollback: pausar primero la función, conservar el ledger y su intención,
+y mantener un consumidor compatible mientras existan jobs de esta clase.
+
+```text
+php artisan edna:rejected-chats status --limit=25
+php artisan edna:rejected-chats poll --limit=25
+```
+
+`status` sólo muestra IDs técnicos/estados locales. `poll` puede encolar cierres
+reales y lo ejecuta el scheduler cada minuto cuando las compuertas están activas.
+El recibo SQL es primario; `whatsapp.rejection_close` del journal agrega trazabilidad
+sin textos ni identidades personales. No se cuenta como transferencia automática.
+Los rechazos de negociación comercial/BCRA sin un aviso real verificable quedan
+fuera de este cierre; una revisión manual o proveedor temporalmente pendiente
+tampoco equivale a rechazo.
+
 ### Reintentos acotados y prioridad de mensajes nuevos
 
 El puente aplica backoff exponencial con **equal jitter**: para los intentos
@@ -541,7 +606,7 @@ reinicia en cada llamada a `resolve`/`resolveCurrent` y no se comparte con otra 
 No se cachean las verificaciones finales de sesión, vendedor ni atención humana.
 
 Publicar el código y el Compose compatible juntos: el worker debe consumir
-`--queue=edna-web-new,edna-web-reconcile`. Para rollback, mantener un consumidor
+`--queue=edna-web-new,edna-web-reconcile,edna-rejection-close`. Para rollback, mantener un consumidor
 compatible hasta vaciar `edna-web-new` antes de retirarlo. No borrar ni trasladar
 jobs manualmente como parte del despliegue. El cambio no crea prospectos,
 negociaciones ni recupera asignaciones históricas.

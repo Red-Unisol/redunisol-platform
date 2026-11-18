@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'rejection_close_enabled' => (bool) env('EDNA_REJECTION_CLOSE_ENABLED', true),
     'organic_menu_enabled' => (bool) env('EDNA_ORGANIC_MENU_ENABLED', false),
     'organic_menu_start_at' => env('EDNA_ORGANIC_MENU_START_AT', ''),
     'organic_other_operator_id' => (int) env('EDNA_ORGANIC_OTHER_OPERATOR_ID', 5737),
