@@ -248,6 +248,7 @@ jobs:
           # and application health have been verified. Never requeues old work.
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:intake-cutover activate < /dev/null
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:deal-message-binding activate < /dev/null
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:web-chat-continuity activate < /dev/null
           EOF
 
       - name: Finalize deploy on VPS

@@ -36,6 +36,12 @@ class WebFormChatLinker
 
     private ?Lock $chatLock = null;
 
+    private bool $contextual = false;
+
+    private bool $convertedNative = false;
+
+    private ?int $contextId = null;
+
     public function __construct(?EdnaBitrix $crm = null, ?EdnaMessageBinding $binding = null, ?WebFormChatGuard $guard = null)
     {
         $this->crm = $crm ?? new EdnaBitrix;
@@ -50,6 +56,9 @@ class WebFormChatLinker
         $this->proof = [];
         $this->chatLock = null;
         $this->expiresAt = null;
+        $this->contextual = false;
+        $this->convertedNative = false;
+        $this->contextId = null;
         $route = $this->claim();
         if (! $route) {
             return ['state' => 'not_claimed'];
@@ -71,18 +80,34 @@ class WebFormChatLinker
                 $this->decide('review', 'authenticated_entry_mismatch');
             }
             $this->phoneHash = $phoneHash;
+            $continuation = DB::table('web_form_continuations')->where('entry_event_id', $entryEventId)->first();
+            if (($continuation->context_id ?? null) !== null) {
+                if (! $this->id($continuation->context_id) || $continuation->proof_source !== 'web_context'
+                    || ! app(WebChatContinuity::class)->eligibleEntry($entry)) {
+                    $this->decide('review', 'web_context_entry_not_verified');
+                }
+                $this->contextual = true;
+                $this->contextId = (int) $continuation->context_id;
+            }
             $this->proof = $route->proof ? json_decode($route->proof, true, 16, JSON_THROW_ON_ERROR) : [];
             if (! $this->proof) {
-                $known = [];
-                foreach ((new WebFormChatRouting)->history($phoneHash)->select('proof->chat_id as chat_id')->distinct()->limit(2)->get() as $previous) {
-                    if ($this->id($previous->chat_id)) {
-                        $known[(string) $previous->chat_id] = true;
+                if ($this->contextual) {
+                    $this->proof = $this->receiptProof($entry, $payload, $route) ?? [];
+                    if (! $this->proof) {
+                        $this->proof = $this->binding->resolveCurrent($entry, $payload) ?? [];
                     }
-                }
-                $this->proof = count($known) === 1
-                    ? ($this->binding->resolve($entry, $payload, (int) array_key_first($known)) ?? []) : [];
-                if (! $this->proof) {
-                    $this->proof = $this->binding->resolve($entry, $payload) ?? [];
+                } else {
+                    $known = [];
+                    foreach ((new WebFormChatRouting)->history($phoneHash)->select('proof->chat_id as chat_id')->distinct()->limit(2)->get() as $previous) {
+                        if ($this->id($previous->chat_id)) {
+                            $known[(string) $previous->chat_id] = true;
+                        }
+                    }
+                    $this->proof = count($known) === 1
+                        ? ($this->binding->resolve($entry, $payload, (int) array_key_first($known)) ?? []) : [];
+                    if (! $this->proof) {
+                        $this->proof = $this->binding->resolve($entry, $payload) ?? [];
+                    }
                 }
             }
             if (! $this->proof) {
@@ -99,11 +124,13 @@ class WebFormChatLinker
                 $this->decide('waiting', 'chat_routing_in_progress');
             }
             $this->chatLock = $lock;
+            if ($this->contextual) {
+                $this->assertContext();
+            }
             if (in_array($route->transfer_state, ['sending', 'unknown'], true)) {
                 return $this->reconcileTransfer($route);
             }
 
-            $continuation = DB::table('web_form_continuations')->where('entry_event_id', $entryEventId)->first();
             $submission = $route->submission_id;
             $reentry = ($continuation->proof_source ?? null) === 'reentry';
             $previousProtection = null;
@@ -136,7 +163,7 @@ class WebFormChatLinker
                 $submission = $resolvedSubmission;
                 $this->write(['submission_id' => $submission]);
             } elseif (! $continuation || $continuation->state !== 'ready'
-                || ! in_array($continuation->proof_source, ['reference', 'crm_binding'], true)
+                || ! in_array($continuation->proof_source, $this->contextual ? ['web_context'] : ['reference', 'crm_binding'], true)
                 || $continuation->submission_id !== $submission) {
                 $this->decide('review', 'web_continuation_not_verified');
             }
@@ -156,7 +183,7 @@ class WebFormChatLinker
                 ->where('expires_at', '>=', CarbonImmutable::parse($payload['receivedAt']))->exists()) {
                 $this->decide('review', 'reentry_new_request_requires_reference');
             }
-            if (! $reentry) {
+            if (! $reentry && ! $this->contextual) {
                 $received = CarbonImmutable::parse($payload['receivedAt']);
                 if ($received->lt(CarbonImmutable::parse($receipt->received_at)->subSeconds(5))
                     || $received->gt(CarbonImmutable::parse($receipt->expires_at))) {
@@ -189,6 +216,9 @@ class WebFormChatLinker
                 || (string) ($activity['ASSOCIATED_ENTITY_ID'] ?? '') !== (string) $this->proof['session_id']) {
                 $this->decide('review', 'native_activity_mismatch');
             }
+            if ($this->contextual) {
+                $this->validateActivityCase($activity, $target);
+            }
             if ((int) ($activity['OWNER_TYPE_ID'] ?? 0) === 1 && $this->id($activity['OWNER_ID'] ?? null)) {
                 // A later chat tracker can point to the deal while its original
                 // session activity still belongs to a manually assigned Guest.
@@ -207,6 +237,15 @@ class WebFormChatLinker
             if (in_array($attention['status'], ['waiting', 'replaced'], true)) {
                 $this->decide($attention['status'] === 'waiting' ? 'waiting' : 'preserved', $attention['reason']);
             }
+            if ($this->contextual && $attention['status'] === 'preserved') {
+                return $this->preserveAttention($attention, $target['seller_id']);
+            }
+            if ($this->contextual && $attention['status'] === 'already_assigned') {
+                return $this->finish('routed', 'already_with_assigned_seller', ['transfer_state' => 'not_needed']);
+            }
+            if ($this->contextual && $attention['status'] === 'closed') {
+                return $this->finish('preserved', 'native_session_closed', ['transfer_state' => 'not_needed']);
+            }
             // Keep the native association. Additional bindings provide CRM timeline visibility.
             // They do not rewrite the chat's native CRM identity or any record's responsible person.
             $this->link((int) $target['deal']['ID'], (int) $target['contact_id']);
@@ -224,6 +263,9 @@ class WebFormChatLinker
             if ($fresh['seller_id'] !== $target['seller_id'] || (string) $fresh['deal']['ID'] !== (string) $target['deal']['ID']) {
                 $this->decide('preserved', 'commercial_assignment_changed');
             }
+            if ($this->contextual && (string) ($fresh['lead']['ASSIGNED_BY_ID'] ?? '') !== (string) ($target['lead']['ASSIGNED_BY_ID'] ?? '')) {
+                $this->decide('preserved', 'web_responsible_changed');
+            }
             $this->nativeIdentity($receipt, $fresh, $native);
             $attention = $this->guard->inspect($this->proof, $fresh['seller_id']);
             $this->validateDialogCase($attention['dialog'] ?? null, $fresh);
@@ -238,11 +280,16 @@ class WebFormChatLinker
                 return $this->finish($attention['status'] === 'waiting' ? 'waiting' : 'preserved', $attention['reason'], ['transfer_state' => 'preserved']);
             }
             $this->finalCheck($receipt, $fresh, $attention, $native);
+            $this->assertContext();
             $this->proof['transfer_intent'] = ['seller_id' => $fresh['seller_id'], 'session_id' => (string) $this->proof['session_id'],
                 'owner_before' => (string) $attention['owner_id'], 'web_lead_id' => (string) $fresh['lead']['ID'],
                 'contact_id' => $fresh['contact_id'], 'contact_owner_before' => (string) ($fresh['contact']['ASSIGNED_BY_ID'] ?? ''),
                 'native_lead_id' => $native['ID'] ?? null, 'native_owner_before' => $native['ASSIGNED_BY_ID'] ?? null,
                 'created_at' => now()->toIso8601String()];
+            if ($this->contextual) {
+                $this->proof['transfer_intent']['web_owner_before'] = (string) ($fresh['lead']['ASSIGNED_BY_ID'] ?? '');
+                $this->proof['transfer_intent']['web_lead_converted'] = $this->converted($fresh['lead']);
+            }
             $this->write(['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'sending']);
             $this->assertLease();
             try {
@@ -273,6 +320,51 @@ class WebFormChatLinker
                 // Locks expire; a failed release cannot replay external effects.
             }
         }
+    }
+
+    private function assertContext(): void
+    {
+        if (! $this->contextual) {
+            return;
+        }
+        $result = app(WebChatContinuity::class)->bind($this->entryId, $this->proof);
+        if (($result['status'] ?? null) !== 'bound' || (string) ($result['context_id'] ?? '') !== (string) $this->contextId) {
+            $status = $result['status'] ?? 'review';
+            $this->decide(in_array($status, ['released', 'preserved'], true) ? 'preserved' : 'review',
+                $result['reason'] ?? 'web_context_binding_unverified');
+        }
+        $context = DB::table('web_chat_contexts')->where('id', $this->contextId)->first(['expires_at']);
+        if (! $context || ! is_string($context->expires_at)) {
+            $this->decide('review', 'web_context_deadline_unavailable');
+        }
+        $deadline = CarbonImmutable::parse($context->expires_at);
+        $this->expiresAt = $this->expiresAt?->min($deadline) ?? $deadline;
+        $this->assertLease();
+    }
+
+    private function receiptProof(object $entry, array $payload, object $route): ?array
+    {
+        if (! Str::isUuid($route->submission_id ?? '')) {
+            return null;
+        }
+        $receipt = DB::table('web_form_receipts')->where('id', $route->submission_id)->first();
+        if (! $receipt || $receipt->state !== 'synced') {
+            return null;
+        }
+        if ($receipt->phone_hash !== $this->phoneHash || ! $receipt->identity_hash || ! $this->id($receipt->lead_id)) {
+            $this->decide('review', 'web_identity_mismatch');
+        }
+        // The exact server receipt and its current CUIL-bearing lead narrow
+        // candidates. A phone search never selects which web case to apply.
+        $lead = $this->call('crm.lead.get', ['id' => $receipt->lead_id]);
+        $this->validateLead($lead, $receipt, true);
+
+        return $this->binding->resolveReceipt($entry, $payload, (int) $receipt->lead_id);
+    }
+
+    private function converted(array $lead): bool
+    {
+        return ($lead['STATUS_ID'] ?? '') === 'CONVERTED' && ($lead['STATUS_SEMANTIC_ID'] ?? '') === 'S';
     }
 
     private function target(object $receipt): array
@@ -313,8 +405,12 @@ class WebFormChatLinker
             || in_array($deal['STAGE_ID'] ?? '', ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE'], true)) {
             $this->decide('waiting', 'commercial_seller_not_ready');
         }
-        if ((string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $seller) {
+        if ((string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $seller && ! ($this->contextual && $this->converted($lead))) {
             $this->decide('preserved', 'crm_responsibles_disagree');
+        }
+        if ($this->contextual && $this->converted($lead) && ! $this->id($lead['ASSIGNED_BY_ID'] ?? null)
+            && (string) ($lead['ASSIGNED_BY_ID'] ?? '') !== '0') {
+            $this->decide('review', 'web_responsible_unavailable');
         }
         $contactRecord = $this->call('crm.contact.get', ['id' => $contact]);
         if (! is_array($contactRecord) || (string) ($contactRecord['ID'] ?? '') !== $contact
@@ -334,7 +430,7 @@ class WebFormChatLinker
         return ['lead' => $lead, 'deal' => $deal, 'seller_id' => $seller, 'contact_id' => $contact, 'contact' => $contactRecord];
     }
 
-    private function validateLead(mixed $lead, object $receipt): void
+    private function validateLead(mixed $lead, object $receipt, bool $identityOnly = false): void
     {
         if (! is_array($lead) || (string) ($lead['ID'] ?? '') !== (string) $receipt->lead_id
             || (new WebFormReceipt)->identityHash((string) ($lead['UF_CRM_1693840106704'] ?? '')) !== $receipt->identity_hash
@@ -342,8 +438,13 @@ class WebFormChatLinker
             || ($receipt->contact_id && (string) $lead['CONTACT_ID'] !== (string) $receipt->contact_id)) {
             $this->decide('review', 'web_crm_identity_changed');
         }
-        if (($lead['STATUS_SEMANTIC_ID'] ?? '') === 'F') {
+        if (! $identityOnly && ($lead['STATUS_SEMANTIC_ID'] ?? '') === 'F') {
             $this->decide('review', 'web_case_rejected');
+        }
+        if ($this->contextual && (! is_array($lead['PHONE'] ?? null)
+            || ! collect($lead['PHONE'])->contains(fn ($phone) => is_array($phone)
+                && (new AttributionJourney)->phoneHash((string) ($phone['VALUE'] ?? '')) === $this->phoneHash))) {
+            $this->decide('review', 'web_crm_phone_changed');
         }
     }
 
@@ -368,7 +469,16 @@ class WebFormChatLinker
         // only the expected native receiver/creator pair as corroboration; this
         // does not prove the initial owner or replace the live attention checks.
         $nativeReceiver = in_array($creator, ['57', '74827'], true) && $owner === $creator;
-        if ((! in_array($owner, ['0', '', $target['seller_id']], true) && ! $nativeReceiver)
+        $historicalConverted = false;
+        if ($this->contextual && (string) $id === (string) $target['lead']['ID'] && $this->converted($lead)) {
+            $dialog = $this->call('imopenlines.dialog.get', ['CHAT_ID' => (int) $this->proof['chat_id']]);
+            $this->validateDialogCase($dialog, $target);
+            $parts = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
+            $historicalConverted = ($parts[1] ?? '') === 'DEAL' && ($parts[2] ?? '') === (string) $target['deal']['ID']
+                && ($parts[5] ?? '') === (string) $this->proof['session_id'];
+            $this->convertedNative = $historicalConverted;
+        }
+        if ((! in_array($owner, ['0', '', $target['seller_id']], true) && ! $nativeReceiver && ! $historicalConverted)
             || ($before && $owner !== (string) ($before['ASSIGNED_BY_ID'] ?? ''))) {
             $this->decide('preserved', 'native_crm_assignment_preserved');
         }
@@ -384,6 +494,32 @@ class WebFormChatLinker
         }
 
         return $bindings;
+    }
+
+    private function validateActivityCase(array $activity, array $target, ?array $deal = null): void
+    {
+        if ((string) ($activity['ID'] ?? '') !== (string) $this->proof['activity_id']
+            || ($activity['PROVIDER_ID'] ?? '') !== 'IMOPENLINES_SESSION'
+            || (string) ($activity['ASSOCIATED_ENTITY_ID'] ?? '') !== (string) $this->proof['session_id']) {
+            $this->decide('preserved', 'native_activity_changed');
+        }
+        $type = (string) ($activity['OWNER_TYPE_ID'] ?? '');
+        $owner = (string) ($activity['OWNER_ID'] ?? '');
+        if ($type === '1' && in_array($owner, [(string) ($this->proof['native_lead_id'] ?? ''), (string) $target['lead']['ID']], true)) {
+            return;
+        }
+        if ($type === '3' && $owner === $target['contact_id']) {
+            return;
+        }
+        if ($type !== '2' || $owner !== (string) $target['deal']['ID']) {
+            $this->decide('preserved', 'native_activity_case_preserved');
+        }
+        $deal ??= $this->call('crm.deal.get', ['id' => $owner]);
+        foreach (['ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID', 'ASSIGNED_BY_ID', 'STAGE_SEMANTIC_ID'] as $field) {
+            if ((string) ($deal[$field] ?? '') !== (string) ($target['deal'][$field] ?? '')) {
+                $this->decide('preserved', 'native_activity_deal_changed');
+            }
+        }
     }
 
     private function hasBinding(array $bindings, int $type, int $id): bool
@@ -404,6 +540,7 @@ class WebFormChatLinker
             if ($this->hasBinding($bindings, $type, $id)) {
                 continue;
             }
+            $this->assertContext();
             $this->write(['link_state' => 'linking']);
             $this->assertLease();
             try {
@@ -433,22 +570,40 @@ class WebFormChatLinker
             $commands['native'] = 'crm.lead.get?id='.$native['ID'];
         }
         $commands['dialog'] = 'imopenlines.dialog.get?CHAT_ID='.$this->proof['chat_id'];
+        if ($this->contextual) {
+            $commands['activity'] = 'crm.activity.get?id='.$this->proof['activity_id'];
+        }
         $data = $this->call('batch', ['cmd' => $commands, 'halt' => 0]);
         if (! is_array($data) || ! empty($data['result_error']) || ! isset($data['result']['lead'], $data['result']['deal'], $data['result']['contact'], $data['result']['dialog'])) {
             $this->decide('waiting', 'final_assignment_check_unavailable');
         }
         $result = $data['result'];
+        if ($this->contextual) {
+            if (! is_array($result['activity'] ?? null)) {
+                $this->decide('waiting', 'final_activity_check_unavailable');
+            }
+            $this->validateActivityCase($result['activity'], $target, $result['deal']);
+        }
         $this->validateLead($result['lead'], $receipt);
         $this->validateDialogCase($result['dialog'], $target);
+        if ($this->convertedNative) {
+            $primary = explode('|', (string) ($result['dialog']['entity_data_1'] ?? ''));
+            if (($primary[1] ?? '') !== 'DEAL' || ($primary[2] ?? '') !== (string) $target['deal']['ID']) {
+                $this->decide('preserved', 'converted_native_case_changed');
+            }
+        }
         if ((string) ($result['dialog']['entity_data_2'] ?? '') !== (string) ($attention['dialog']['entity_data_2'] ?? '')) {
             $this->decide('preserved', 'native_crm_binding_changed');
         }
-        foreach (['ID', 'ASSIGNED_BY_ID', 'LEAD_ID', 'CONTACT_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID'] as $field) {
+        foreach (['ID', 'ASSIGNED_BY_ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID'] as $field) {
             if ((string) ($result['deal'][$field] ?? '') !== (string) ($target['deal'][$field] ?? '')) {
                 $this->decide('preserved', 'commercial_assignment_changed');
             }
         }
-        if ((string) ($result['lead']['ASSIGNED_BY_ID'] ?? '') !== $target['seller_id']
+        $webOwner = $this->contextual && $this->converted($target['lead'])
+            ? (string) ($target['lead']['ASSIGNED_BY_ID'] ?? '') : $target['seller_id'];
+        if ((string) ($result['lead']['ASSIGNED_BY_ID'] ?? '') !== $webOwner
+            || ($this->contextual && $this->converted($target['lead']) && ! $this->converted($result['lead']))
             || (string) ($result['contact']['ID'] ?? '') !== $target['contact_id']
             || (string) ($result['contact']['ASSIGNED_BY_ID'] ?? '') !== (string) ($target['contact']['ASSIGNED_BY_ID'] ?? '')
             || (new WebFormReceipt)->identityHash((string) ($result['contact']['UF_CRM_65B7E48033FCD'] ?? '')) !== $receipt->identity_hash
@@ -488,8 +643,10 @@ class WebFormChatLinker
             $deal = $this->call('crm.deal.get', ['id' => $route->deal_id]);
             $lead = $this->call('crm.lead.get', ['id' => $intent['web_lead_id']]);
             $contact = $this->call('crm.contact.get', ['id' => $intent['contact_id']]);
+            $webOwner = $this->contextual && ($intent['web_lead_converted'] ?? null) === true && $this->converted($lead)
+                ? (string) ($intent['web_owner_before'] ?? '') : $owner;
             if ((string) ($deal['ASSIGNED_BY_ID'] ?? '') !== $owner
-                || (string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $owner
+                || (string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $webOwner
                 || (string) ($contact['ASSIGNED_BY_ID'] ?? '') !== (string) $intent['contact_owner_before']) {
                 return $this->finish('review', 'crm_responsible_changed_after_transfer', ['transfer_state' => 'confirmed']);
             }
@@ -640,8 +797,10 @@ class WebFormChatLinker
     {
         $route = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();
         $policy = new WebFormChatRetryPolicy;
+        $deadline = $this->expiresAt ?? ($route ? $policy->expiresAt($route) : null);
         $next = null;
-        if ($route && in_array($state, ['waiting', 'unknown', 'expired'], true) && $policy->expired($route)) {
+        if ($route && in_array($state, ['waiting', 'unknown', 'expired'], true)
+            && ($policy->expired($route) || $deadline?->lessThanOrEqualTo(now()))) {
             $expiration = $policy->expiration($route);
             $state = $expiration['state'];
             $reason = $expiration['reason'];
@@ -649,7 +808,7 @@ class WebFormChatLinker
         } elseif ($route && in_array($state, ['waiting', 'unknown'], true)) {
             $seconds = $policy->delaySeconds((int) $route->attempts);
             $next = CarbonImmutable::now()->addSeconds($state === 'unknown' ? max(300, $seconds) : $seconds)
-                ->min($policy->expiresAt($route));
+                ->min($deadline);
         }
         if ($state === 'preserved' && ! isset($fields['transfer_state'])) {
             $fields['transfer_state'] = 'preserved';
@@ -660,6 +819,21 @@ class WebFormChatLinker
         ]);
         if ($updated !== 1) {
             return ['state' => 'superseded', 'reason' => 'routing_lease_superseded'];
+        }
+        if ($this->contextual) {
+            try {
+                $row = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();
+                $receipt = DB::table('web_form_receipts')->where('id', $row->submission_id)->first(['lead_id', 'contact_id']);
+                app(WebChatContinuity::class)->sync($this->entryId, $state, $reason, [
+                    'proof' => $this->proof, 'link_state' => $row->link_state, 'transfer_state' => $row->transfer_state,
+                    'deal_id' => $row->deal_id, 'seller_id' => $row->seller_id,
+                    'lead_id' => $receipt->lead_id ?? null, 'contact_id' => $receipt->contact_id ?? null,
+                    'transfer_intent' => $this->proof['transfer_intent'] ?? null,
+                    'transfer_acknowledged' => ($this->proof['transfer_acknowledged'] ?? false) === true,
+                ]);
+            } catch (Throwable) {
+                // A continuity projection cannot replay a durable route or POST.
+            }
         }
         try {
             $row = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();

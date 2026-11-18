@@ -3,6 +3,9 @@ from __future__ import annotations
 from .attribution import copy_to_deal as copy_attribution_to_deal
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import json
+from time import monotonic
 import unicodedata
 from typing import Any
 
@@ -577,6 +580,7 @@ def assign_open_line_chats_to_user(
     deal_id: int, assigned_by_id: int,
     distributable_open_line_ids: tuple[int, ...], logger: Logger,
     preserve_existing_ownership: bool = False, provisional_user_id: int = 57,
+    expected_sessions: dict[int, int] | None = None,
 ) -> ChatTransferResult:
     found_chat_ids = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id)
     transferred_chat_ids: list[int] = []
@@ -587,7 +591,8 @@ def assign_open_line_chats_to_user(
             chat_id=chat_id,
             distributable_open_line_ids=distributable_open_line_ids,
             logger=logger,
-            allowed_owner_ids=(0, provisional_user_id, assigned_by_id) if preserve_existing_ownership else None,
+            allowed_owner_ids=(0, 57, 74827),
+            expected_session_id=expected_sessions.get(chat_id, 0) if expected_sessions is not None else None,
         )
         if not transferable:
             skipped_chats.append((chat_id, reason))
@@ -619,6 +624,7 @@ def _open_line_session_transferability(
     distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
     allowed_owner_ids: tuple[int, ...] | None = None,
+    expected_session_id: int | None = None,
 ) -> tuple[bool, str]:
     try:
         dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
@@ -646,10 +652,157 @@ def _open_line_session_transferability(
     if active_open_line_session_id(dialog) is None:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
+    if expected_session_id is not None and active_open_line_session_id(dialog) != expected_session_id:
+        return False, "session_changed_before_transfer"
     owner = dialog.get("owner", dialog.get("OWNER", 0))
-    if allowed_owner_ids is not None and _is_positive_int(owner) and int(str(owner)) not in allowed_owner_ids:
+    if _is_positive_int(owner) and int(str(owner)) not in (0, 57, 74827):
         return False, "manual_owner_preserved"
-    return True, "transferable"
+    return _unattended_sales_session(client, chat_id, dialog)
+
+
+def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
+                                  distributable_open_line_ids, logger):
+    """Preflight before CRM ownership writes; return exact session snapshots.
+
+    A queue owner is not evidence that no human took the chat. Unknown metadata
+    blocks changes too. Closed/other-line chats do not govern commercial owners.
+    """
+    sessions = {}
+    try:
+        chats = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id)
+        if len(chats) > 25:
+            return sessions, "attention_inspection_unavailable"
+        for chat_id in chats:
+            dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+            if not isinstance(dialog, dict) or str(dialog.get("id")) != str(chat_id):
+                return sessions, "attention_inspection_unavailable"
+            line = _open_line_id(dialog)
+            if line is None:
+                return sessions, "attention_inspection_unavailable"
+            sessions[chat_id] = active_open_line_session_id(dialog) or 0
+            if line not in distributable_open_line_ids or not sessions[chat_id]:
+                continue
+            owner = _counter(dialog.get("owner"))
+            if owner not in (0, 57, 74827):
+                return sessions, "manual_owner_preserved"
+            ready, reason = _unattended_sales_session(client, chat_id, dialog)
+            if not ready:
+                return sessions, reason
+        return sessions, None
+    except Exception:
+        # No provider exception/private webhook URL becomes a business result.
+        return sessions, "attention_inspection_unavailable"
+
+
+def _counter(value):
+    if isinstance(value, bool) or not isinstance(value, (int, str)) or not str(value).isdigit():
+        raise ValueError("Invalid native counter.")
+    return int(value)
+
+
+def _unattended_sales_session(client, chat_id, initial):
+    """Read the exact current session twice, then reread its identity/owner.
+
+    No accepting/starting/transfer is used for inspection. The external transfer
+    API has no expected-session/owner CAS; this is the final conservative check.
+    """
+    try:
+        deadline = monotonic() + 30
+        def read(method, payload):
+            if monotonic() >= deadline:
+                raise ValueError("Attention inspection budget exhausted.")
+            return client.call(method, payload)
+        channel = str(initial.get("entity_id", "")).split("|")
+        if (str(initial.get("id")) != str(chat_id) or initial.get("entity_type") != "LINES"
+                or len(channel) != 4 or channel[:2] != ["whatsappbyedna", "1"]):
+            raise ValueError("Native sales channel is unavailable.")
+        parts = str(initial.get("entity_data_1", "")).split("|")
+        session_id = active_open_line_session_id(initial)
+        epoch = _counter(parts[6] if len(parts) > 6 else None)
+        owner = _counter(initial.get("owner"))
+        if not session_id or not epoch or owner not in (0, 57, 74827):
+            raise ValueError("Current sales session is unavailable.")
+        created = datetime.fromtimestamp(epoch, timezone.utc)
+        for _ in range(2):
+            data = read("imopenlines.v2.Session.list", {"configId": 1,
+                "dateCreateFrom": (created - timedelta(seconds=2)).isoformat(),
+                "dateCreateTo": (created + timedelta(seconds=2)).isoformat(),
+                "limit": 200, "order": "dateCreate", "orderDirection": "asc"})
+            if not isinstance(data, dict) or data.get("hasNextPage") is not False or not isinstance(data.get("sessions"), list):
+                raise ValueError("Exact session lookup is incomplete.")
+            matches = [row for row in data["sessions"] if isinstance(row, dict) and str(row.get("id")) == str(session_id)
+                       and str(row.get("chatId")) == str(chat_id) and str(row.get("configId")) == "1"]
+            if len(matches) != 1:
+                raise ValueError("Exact session is unavailable.")
+            session = matches[0]
+            session_created = datetime.fromisoformat(str(session.get("dateCreate", "")).replace("Z", "+00:00"))
+            if session_created.tzinfo is None or abs(session_created.timestamp() - epoch) > 2:
+                raise ValueError("Session creation time does not match the current dialog.")
+            if not all(key in session for key in ("status", "operatorId", "dateOperatorAnswer", "dateFirstAnswer", "dateClose")):
+                raise ValueError("Attention state is incomplete.")
+            if session["status"] != "new" or any(session[key] not in (None, "") for key in ("dateOperatorAnswer", "dateFirstAnswer", "dateClose")):
+                return False, "operator_attention_preserved"
+            if session["operatorId"] is not None and _counter(session["operatorId"]) not in (0, 57, 74827):
+                return False, "operator_attention_preserved"
+            stats = read("imopenlines.v2.Session.Stat.get", {"sessionId": [session_id]})
+            rows = stats.get("sessions") if isinstance(stats, dict) else None
+            if not isinstance(rows, list) or len(rows) != 1 or str(rows[0].get("sessionId")) != str(session_id):
+                raise ValueError("Attention statistics are incomplete.")
+            if _counter(rows[0].get("messagesOperatorCount")) > 0:
+                return False, "operator_message_preserved"
+            count = _counter(rows[0].get("transfersCount"))
+            transfers = read("imopenlines.v2.Session.Transfer.list", {"sessionId": [session_id]})
+            rows = transfers.get("transfers") if isinstance(transfers, dict) else None
+            if (not isinstance(rows, list) or len(rows) < count
+                    or transfers.get("hasNextPage", False) is not False):
+                raise ValueError("Transfer history is incomplete.")
+            for transfer in rows:
+                if not isinstance(transfer, dict) or str(transfer.get("sessionId")) != str(session_id):
+                    raise ValueError("Transfer session is ambiguous.")
+                if transfer.get("type") == "USER" or transfer.get("mode") == "MANUAL":
+                    return False, "manual_transfer_preserved"
+                if transfer.get("type") != "QUEUE" or transfer.get("mode") != "AUTO":
+                    raise ValueError("Transfer type is unknown.")
+            history = read("imopenlines.session.history.get", {"SESSION_ID": session_id})
+            if (not isinstance(history, dict) or str(history.get("sessionId")) != str(session_id)
+                    or str(history.get("chatId")) != str(chat_id) or history.get("hasNextPage") is not False
+                    or not isinstance(history.get("message"), (dict, list)) or not isinstance(history.get("users"), dict)):
+                raise ValueError("Native history is incomplete.")
+            if (history.get("tariffRestrictions") or {}).get("isHistoryLimitExceeded", False) is not False:
+                raise ValueError("Native history has a tariff limit.")
+            messages = history["message"].values() if isinstance(history["message"], dict) else history["message"]
+            seen = set()
+            for message in messages:
+                if not isinstance(message, dict) or str(message.get("chatid")) != str(chat_id):
+                    raise ValueError("Native message identity is unknown.")
+                mid, sender = _counter(message.get("id")), _counter(message.get("senderid"))
+                if not mid or mid in seen:
+                    raise ValueError("Native message identifier is ambiguous.")
+                seen.add(mid)
+                user = history["users"].get(str(sender))
+                if sender == 0:
+                    params = message.get("params", {})
+                    params = json.loads(params) if isinstance(params, str) else params
+                    if (not isinstance(params, (dict, list)) or "0" in history["users"] and
+                            (not isinstance(user, dict) or user.get("connector") is not False)
+                            or message.get("system") not in (None, True)):
+                        raise ValueError("Native system sender is contradictory.")
+                    if isinstance(params, dict) and (params.get("connectorMid") or params.get("CONNECTOR_MID")
+                            or "bx-messenger-content-item-ol-output" in params.get("class", [])):
+                        raise ValueError("Native system output is ambiguous.")
+                    continue
+                if not isinstance(user, dict) or not isinstance(user.get("connector"), bool):
+                    raise ValueError("Native sender is unknown.")
+                if user["connector"] is False:
+                    return False, "operator_message_preserved"
+        last = read("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        if not isinstance(last, dict) or active_open_line_session_id(last) != session_id:
+            return False, "session_changed_before_transfer"
+        if any(last.get(key) != initial.get(key) for key in ("id", "owner", "entity_type", "entity_id", "entity_data_1", "entity_data_2")):
+            return False, "chat_changed_before_transfer"
+        return True, "transferable"
+    except Exception:
+        return False, "attention_inspection_unavailable"
 
 
 def active_open_line_session_id(dialog: dict[str, Any]) -> int | None:

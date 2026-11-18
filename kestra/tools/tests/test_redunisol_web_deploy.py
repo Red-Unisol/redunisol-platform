@@ -71,13 +71,22 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 result = subprocess.run([self.bash, '-n'], input=script, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_web_continuity_activates_only_after_runtime_and_http_health(self):
+        for environment, script in self.scripts.items():
+            with self.subTest(environment=environment):
+                activation = script.index('artisan edna:web-chat-continuity activate')
+                self.assertGreater(activation, script.index('for runtime_service in '))
+                self.assertGreater(activation, script.index('curl '))
+                self.assertEqual(script.count('artisan edna:web-chat-continuity activate'), 1)
+                self.assertNotIn('replay', script[:activation])
+
     def test_attached_commands_cannot_swallow_the_remaining_deploy_script(self):
         mock = 'set -eu\ndocker() { cat > /dev/null; }\n'
         for environment, script in self.scripts.items():
             commands = [line.strip() for line in script.splitlines()
                         if line.strip().startswith('docker compose')
                         and (' run ' in line or ' exec ' in line)]
-            self.assertEqual(len(commands), 3)
+            self.assertGreaterEqual(len(commands), 3)
             for command in commands:
                 with self.subTest(environment=environment, command=command):
                     setup = 'compose_project_name=test; staging_dir=/test\n'

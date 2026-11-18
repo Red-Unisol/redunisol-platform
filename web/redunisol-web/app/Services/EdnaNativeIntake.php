@@ -52,6 +52,10 @@ class EdnaNativeIntake
                 'provenance' => ['source_kind' => 'edna_intake_request', 'source_id' => (string) $request->id,
                     'schema' => 'whatsapp-intake-v3', 'v3_equivalent' => true,
                     'confirmed_at' => CarbonImmutable::parse($request->received_at)->toIso8601String()]];
+            $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
+            if ($entry && app(WebChatContinuity::class)->eligibleEntry($entry)) {
+                $body['routing_policy'] = WebChatContinuity::NAME;
+            }
             // This contract revalidates native message, CUIL and existing management in Kestra.
             // The actual Flow transport remains in edna_flow_sends and is never invented/replayed.
             $claimed = (bool) DB::table('edna_intake_requests')->where('id', $request->id)->where('state', 'pending')

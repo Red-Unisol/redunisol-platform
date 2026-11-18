@@ -70,6 +70,9 @@ class EdnaOrganicLoan
 
                 return;
             }
+            if ($this->preserveWebContext($menu, $proof)) {
+                return;
+            }
             $snapshot = $this->attention->snapshot($proof);
             $proof['contact_id'] = ($snapshot['dialog_tuple']['bindings']['contact'] ?? null) ?: null;
             $profile = $this->profiles->resolve($menu, $proof);
@@ -189,14 +192,30 @@ class EdnaOrganicLoan
                 'entry_context' => ['version' => 1, 'source' => 'edna_authenticated', 'event_id' => (int) $entry->id,
                     'message_id' => $entry->message_id, 'subject_id' => $menu->subject_id,
                     'received_at' => CarbonImmutable::parse($payload['receivedAt'])->toIso8601String(), 'origin' => $frozen['origin']]];
+            if (app(WebChatContinuity::class)->eligibleEntry($entry)) {
+                $body['routing_policy'] = WebChatContinuity::NAME;
+            }
             if (microtime(true) - $startedAt > 45) {
                 $this->finish($menu, 'submission_pending', 'organic_preflight_budget_elapsed');
 
                 return;
             }
-            // Record this intent before the one application POST. Polling never
-            // resubmits a case whose business acknowledgement may have been lost.
-            $this->update($menu, ['state' => 'submitting', 'reason' => 'organic_reuse_request_started']);
+            // Serialize the local check and claim with reference capture, then
+            // release the recipient lock before the one application POST.
+            $claim = function () use ($menu, $proof): bool {
+                if ($this->preserveWebContext($menu, $proof)) {
+                    return false;
+                }
+                $this->update($menu, ['state' => 'submitting', 'reason' => 'organic_reuse_request_started']);
+
+                return true;
+            };
+            $claimed = app(WebChatContinuity::class)->eligibleEntry($entry)
+                ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
+            if (! $claimed) {
+                return;
+            }
+            // Polling never resubmits an uncertain business acknowledgement.
             $started = true;
             $response = Http::asJson()->acceptJson()->connectTimeout(3)->timeout(60)->withoutRedirecting()->post($url, $body);
             $result = $response->json();
@@ -236,11 +255,26 @@ class EdnaOrganicLoan
     private function fallback(object $menu, string $reason): void
     {
         DB::transaction(function () use ($menu, $reason): void {
+            $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveWebContext($menu, $proof)) {
+                return;
+            }
             $this->update($menu, ['state' => 'selected', 'reason' => $reason]);
             $sendId = app(EdnaFlowRouter::class)->startOrganicChoice((int) $menu->id);
             $this->finish($menu, $sendId ? 'flow_scheduled' : 'preserved', $sendId ? 'new_profile_requested' : 'existing_flow_or_context_preserved',
                 $sendId ? ['flow_send_id' => $sendId] : []);
         });
+    }
+
+    private function preserveWebContext(object $menu, array $proof): bool
+    {
+        $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+        if (! $entry || ! app(WebChatContinuity::class)->blocksOutbound($entry, $proof)) {
+            return false;
+        }
+        $this->finish($menu, 'preserved', 'web_continuity_priority');
+
+        return true;
     }
 
     public function poll(int $limit = 25): int

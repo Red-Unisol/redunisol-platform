@@ -21,10 +21,22 @@ class WebFormContinuation
 
     private function decide(object $event, array $payload, string $hash, ?int $sendId): ?array
     {
+        // A proved new session releases only this callback to normal intake.
+        // Its explicit reference must not recreate the route just released.
+        if (DB::table('web_form_continuations')->where('entry_event_id', $event->id)
+            ->where('state', 'released')->where('reason', 'web_context_session_changed')->exists()) {
+            return null;
+        }
         $text = (string) ($payload['messageContent']['text'] ?? '');
         preg_match_all('/\(solicitud:\s*([A-Za-z0-9]{32})\)/i', $text, $matches);
         $receipt = null;
         $reason = null;
+        // Only a reference verified after this deployment may establish an active
+        // transport continuation. Native identity is still proved by the linker.
+        if (! preg_match('/\(solicitud\s*:/i', $text)
+            && ($inherited = app(WebChatContinuity::class)->receive($event, $payload))) {
+            return $inherited;
+        }
         // A receipt sharing a phone is not a verified continuation. New entries
         // without an explicit reference retain the paid/menu path, whose native
         // message and declared identity are checked before any CRM mutation.
@@ -46,6 +58,18 @@ class WebFormContinuation
             $reason = 'web_form_claim_unverified';
         } else {
             return null;
+        }
+        if ($receipt && app(WebChatContinuity::class)->captureReference($event, $receipt)) {
+            $current = DB::table('web_form_continuations')->where('entry_event_id', $event->id)->first();
+            if (! $current) {
+                throw new \RuntimeException('Web continuity receipt unavailable.');
+            }
+            (new EdnaFlowRouter)->record($event->id, $current->state === 'review' ? 'web_form_review' : 'web_form_continuation', $sendId);
+            if ($current->state === 'ready') {
+                app(WebFormChatRouting::class)->schedule((int) $event->id, $receipt->id);
+            }
+
+            return (array) $current;
         }
         $state = 'review';
         if ($receipt) {
@@ -140,6 +164,21 @@ class WebFormContinuation
             if (! $current || $current->state !== 'pending'
                 || app(EdnaFlowTransport::class)->id($current) !== app(EdnaFlowTransport::class)->id($send)) {
                 return false;
+            }
+            // This reservation shares the same recipient lock as reference capture.
+            // A newly verified web request may supersede a still-pending Flow.
+            $continuity = app(WebChatContinuity::class);
+            if ($continuity->eligibleEntry($event)) {
+                $binding = DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)
+                    ->where('state', 'verified')->first(['proof']);
+                $proof = $binding?->proof ? json_decode($binding->proof, true, 32, JSON_THROW_ON_ERROR) : null;
+                if ($continuity->blocksOutbound($event, $proof)) {
+                    app(EdnaFlowTransport::class)->update($send, ['pending'], [
+                        'state' => 'cancelled', 'reason' => 'web_continuity_priority', 'updated_at' => now(),
+                    ]);
+
+                    return false;
+                }
             }
             $decision = $this->decide($event, $payload, $hash, $send->id);
             if ($decision) {

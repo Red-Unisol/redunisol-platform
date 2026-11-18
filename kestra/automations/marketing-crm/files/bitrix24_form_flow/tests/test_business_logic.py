@@ -193,7 +193,7 @@ class FakeBitrixClient:
             return [{"CHAT_ID": str(chat_id)} for chat_id in self.open_line_chats.get(key, [])]
         if method == "imopenlines.dialog.get":
             chat_id = int(payload["CHAT_ID"])
-            return dict(
+            dialog = dict(
                 self.open_line_dialogs.get(
                     chat_id,
                     {
@@ -206,6 +206,39 @@ class FakeBitrixClient:
                     },
                 )
             )
+            dialog.setdefault("entity_type", "LINES")
+            dialog.setdefault("owner", 0)
+            parts = str(dialog.get("entity_data_1", "")).split("|")
+            if len(parts) > 6 and parts[5] not in ("", "0") and parts[6] == "0":
+                parts[6] = "1794333600"
+                dialog["entity_data_1"] = "|".join(parts)
+            return dialog
+        if method == "imopenlines.v2.Session.list":
+            ids = set(self.open_line_dialogs)
+            ids.update(chat_id for values in self.open_line_chats.values() for chat_id in values)
+            sessions = []
+            for chat_id in ids:
+                dialog = self.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+                parts = str(dialog.get("entity_data_1", "")).split("|")
+                if len(parts) > 5 and parts[5].isdigit() and parts[5] != "0":
+                    sessions.append({"id": int(parts[5]), "chatId": chat_id, "configId": int(str(dialog.get("entity_id", "x|1")).split("|")[1]),
+                        "status": "new", "operatorId": None, "dateCreate": "2026-11-10T18:00:00Z",
+                        "dateOperatorAnswer": None, "dateFirstAnswer": None, "dateClose": None})
+            return {"sessions": sessions, "hasNextPage": False}
+        if method == "imopenlines.v2.Session.Stat.get":
+            return {"sessions": [{"sessionId": payload["sessionId"][0], "messagesOperatorCount": 0, "transfersCount": 0}]}
+        if method == "imopenlines.v2.Session.Transfer.list":
+            return {"transfers": []}
+        if method == "imopenlines.session.history.get":
+            session_id = int(payload["SESSION_ID"])
+            ids = set(self.open_line_dialogs)
+            ids.update(chat_id for values in self.open_line_chats.values() for chat_id in values)
+            for chat_id in ids:
+                dialog = self.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+                parts = str(dialog.get("entity_data_1", "")).split("|")
+                if len(parts) > 5 and parts[5] == str(session_id):
+                    return {"sessionId": session_id, "chatId": chat_id, "hasNextPage": False, "message": [], "users": {}}
+            raise AssertionError("Unexpected synthetic native session")
         if method == "imopenlines.operator.transfer":
             self.chat_transfers.append(dict(payload))
             return True
@@ -5360,13 +5393,10 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.chat_transfers, [])
         self.assertEqual(result["transferred_chat_count"], 0)
-        self.assertEqual(result["skipped_non_distributable_chat_count"], 1)
-        self.assertEqual(result["chat_transfer_status"], "non_distributable_open_line")
-        self.assertEqual(result["skipped_chat_ids"], "779")
-        self.assertEqual(
-            result["skipped_chat_reasons"],
-            "779:non_distributable_open_line",
-        )
+        self.assertEqual(result["action"], "routing_review")
+        self.assertEqual(result["reason"], "attention_inspection_unavailable")
+        self.assertEqual(client.deals[930]["assignedById"], 57)
+        self.assertEqual(client.deals[930]["stageId"], "C1:KESTRA_ROUTE_REVIEW")
 
     def test_catamarca_hard_bcra_rejection_is_not_distributed(self) -> None:
         client = FakeBitrixClient()

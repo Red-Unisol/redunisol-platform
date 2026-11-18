@@ -28,6 +28,7 @@ CONTRACT = "organic-profile-reuse-v1"
 SCHEMA = "whatsapp-intake-v3"
 SUBFLOW = "organic_profile_reuse"
 SOURCE_KINDS = {"edna_intake_request", "web_form", "crm_verified_profile"}
+CONTINUITY_POLICY = "web-chat-continuity-v1"
 
 
 def now_utc():
@@ -126,7 +127,7 @@ def _links(dialog):
     return result
 
 
-def _native(api, payload, binding, phone):
+def _native(api, payload, binding, phone, management=None):
     dialog = api.call("imopenlines.dialog.get", {"CHAT_ID": int(binding["chat_id"])})
     if not isinstance(dialog, dict) or str(dialog.get("id")) != binding["chat_id"] or dialog.get("entity_type") != "LINES":
         raise Review("native_dialog_unverified")
@@ -141,18 +142,35 @@ def _native(api, payload, binding, phone):
     if (len(session) < 6 or session[5] != binding["session_id"]
             or dialog.get("text_field_enabled") not in (True, "Y", 1, "1")):
         raise Review("native_session_changed")
-    for key, expected in (("LEAD", binding["native_lead_id"]), ("CONTACT", binding["contact_id"])):
-        if expected and links.get(key) != expected or not expected and links.get(key) not in (None, "", "0"):
-            raise Review("native_identity_changed")
     activity = api.call("crm.activity.get", {"id": binding["activity_id"]})
     params = activity.get("PROVIDER_PARAMS") if isinstance(activity, dict) else None
     params = json.loads(params) if isinstance(params, str) else params
+    converted = (payload.get("routing_policy") == CONTINUITY_POLICY and isinstance(activity, dict)
+                 and str(activity.get("OWNER_TYPE_ID")) == "2" and isinstance(management, dict)
+                 and binding["native_lead_id"] and binding["contact_id"]
+                 and str(activity.get("OWNER_ID")) == str(management.get("ID"))
+                 and str(management.get("LEAD_ID")) == binding["native_lead_id"]
+                 and str(management.get("CONTACT_ID")) == binding["contact_id"]
+                 and str(management.get("CATEGORY_ID")) == "1" and management.get("STAGE_SEMANTIC_ID") == "P"
+                 and links.get("DEAL") == str(management.get("ID")))
+    for key, expected in (("LEAD", binding["native_lead_id"]), ("CONTACT", binding["contact_id"])):
+        # Bitrix can clear the converted lead from the dialog tracker. Only its
+        # exact original lead/contact and the unique verified deal corroborate
+        # this state; a different positive lead is always a conflict.
+        cleared_converted_lead = converted and key == "LEAD" and links.get(key) in (None, "", "0")
+        if (expected and links.get(key) != expected and not cleared_converted_lead
+                or not expected and links.get(key) not in (None, "", "0")):
+            raise Review("native_identity_changed")
+    if (payload.get("routing_policy") == CONTINUITY_POLICY and management
+            and links.get("DEAL") not in (None, "", "0", str(management["ID"]))):
+        raise Review("native_identity_changed")
     if (not isinstance(activity, dict) or str(activity.get("ID")) != str(binding["activity_id"])
             or activity.get("PROVIDER_ID") != "IMOPENLINES_SESSION"
             or str(activity.get("ASSOCIATED_ENTITY_ID")) != binding["session_id"]
             or not isinstance(params, dict) or params.get("USER_CODE") != code
             or not ((str(activity.get("OWNER_TYPE_ID")) == "1" and str(activity.get("OWNER_ID")) == binding["native_lead_id"])
-                    or (str(activity.get("OWNER_TYPE_ID")) == "3" and str(activity.get("OWNER_ID")) == binding["contact_id"]))):
+                    or (str(activity.get("OWNER_TYPE_ID")) == "3" and str(activity.get("OWNER_ID")) == binding["contact_id"])
+                    or converted)):
         raise Review("native_activity_unverified")
     history = api.call("imopenlines.session.history.get", {"SESSION_ID": int(binding["session_id"])})
     if (not isinstance(history, dict) or str(history.get("sessionId")) != binding["session_id"]
@@ -360,14 +378,32 @@ def process(payload, *, env=None, client=None):
     config = load_config(source)
     api = IntakeCrmClient(client or BitrixClient(config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0))
     try:
-        _native(api, payload, binding, phone)
-        native, contact, leads = _identity(api, config, binding, phone, answer)
+        continuity = payload.get("routing_policy") == CONTINUITY_POLICY
+        if continuity:
+            # A converted session activity is accepted only after the original
+            # person's current CUIL/phone/contact and unique management resolve.
+            native, contact, leads = _identity(api, config, binding, phone, answer)
+            deal = _management(api, config, contact, leads)
+            _native(api, payload, binding, phone, deal)
+        else:
+            _native(api, payload, binding, phone)
+            native, contact, leads = _identity(api, config, binding, phone, answer)
+            deal = None
         existing = _existing(api, config, payload, phone, answer, contact)
         if existing:
             return {**result, "action": "already_processed", "reason": "case_exists", "lead_id": str(existing["ID"]), "contact_id": str(existing.get("CONTACT_ID") or "")}
         _source_profile(api, config, payload, answer)
-        deal = _management(api, config, contact, leads)
+        deal = deal or _management(api, config, contact, leads)
         if deal:
+            if continuity:
+                fresh_native, fresh_contact, fresh_leads = _identity(api, config, binding, phone, answer)
+                fresh_deal = _management(api, config, fresh_contact, fresh_leads)
+                if fresh_contact != contact or native and _revision(native, config) != _revision(fresh_native, config):
+                    raise Review("native_inquiry_changed")
+                if fresh_deal != deal:
+                    raise Review("existing_management_changed")
+                _source_profile(api, config, payload, answer)
+                _native(api, payload, binding, phone, fresh_deal)
             return {**result, "action": "assigned_case", "reason": "existing_assigned_case", "deal_id": str(deal["ID"]),
                     "seller_id": str(deal["ASSIGNED_BY_ID"]), "lead_id": str(deal.get("LEAD_ID") or ""),
                     "contact_id": str((contact or {}).get("ID") or deal.get("CONTACT_ID") or "")}

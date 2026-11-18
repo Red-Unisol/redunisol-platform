@@ -4,6 +4,7 @@ use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaMessageBinding;
 use App\Services\JourneyLedger;
+use App\Services\WebChatContinuity;
 use App\Services\WebFormChatGuard;
 use App\Services\WebFormChatLinker;
 use App\Services\WebFormReceipt;
@@ -129,6 +130,27 @@ class WebChatLinkerBindingFake extends EdnaMessageBinding
 
     public int $calls = 0;
 
+    public int $receiptCalls = 0;
+
+    public bool $receiptMiss = false;
+
+    public array $receiptLeadIds = [];
+
+    public function resolveReceipt(object $event, array $payload, int $receiptLeadId): ?array
+    {
+        $this->receiptCalls++;
+        $this->receiptLeadIds[] = $receiptLeadId;
+
+        return $this->receiptMiss ? null : $this->proof;
+    }
+
+    public function resolveCurrent(object $event, array $payload, ?int $knownChatId = null): ?array
+    {
+        $this->calls++;
+
+        return $this->proof;
+    }
+
     public function resolve(object $event, array $payload, ?int $knownChatId = null): ?array
     {
         $this->calls++;
@@ -212,6 +234,297 @@ function webChatLinkerRow(object $fixture): object
 {
     return DB::table('web_form_chat_routes')->where('entry_event_id', $fixture->event->id)->first();
 }
+
+class WebChatLinkerContinuityFake extends WebChatContinuity
+{
+    public bool $eligible = true;
+
+    public int $eligibilityCalls = 0;
+
+    public array $binds = [];
+
+    public array $observations = [];
+
+    public ?Closure $beforeBind = null;
+
+    public array $decision = ['status' => 'bound', 'reason' => 'web_context_session_verified', 'context_id' => 101];
+
+    public function eligibleEntry(object $event): bool
+    {
+        $this->eligibilityCalls++;
+
+        return $this->eligible;
+    }
+
+    public function bind(int $entryId, array $proof): array
+    {
+        $this->binds[] = [$entryId, $proof];
+        if ($this->beforeBind) {
+            ($this->beforeBind)(count($this->binds));
+        }
+
+        return $this->decision;
+    }
+
+    public function sync(int $entryId, string $state, string $reason, array $fields = []): void
+    {
+        $this->observations[] = compact('entryId', 'state', 'reason', 'fields');
+    }
+}
+
+function webChatContextLinkerFixture(): object
+{
+    $f = webChatLinkerFixture();
+    $f->context = new WebChatLinkerContinuityFake;
+    app()->instance(WebChatContinuity::class, $f->context);
+    DB::table('web_chat_contexts')->insert(['id' => 101, 'subject_id' => '2423',
+        'phone_hash' => (new AttributionJourney)->phoneHash('5493510000000'), 'anchor_entry_event_id' => $f->event->id,
+        'submission_id' => $f->submission, 'state' => 'bound', 'expires_at' => now()->addHours(8),
+        'last_entry_event_id' => $f->event->id, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('web_form_continuations')->where('entry_event_id', $f->event->id)->update([
+        'context_id' => 101, 'proof_source' => 'web_context',
+    ]);
+    $f->crm->web['PHONE'] = [['VALUE' => '5493510000000']];
+    $f->crm->web['ASSIGNED_BY_ID'] = '29'; // Historical converted lead; the current deal has its own seller.
+    $f->crm->activityOwnerType = 2;
+    $f->crm->activityOwnerId = '900';
+    $f->crm->dialog['entity_data_1'] = 'Y|DEAL|900|N|N|501|1794333600|0|0|0';
+    $f->crm->dialog['entity_data_2'] = 'LEAD|0|CONTACT|710|COMPANY|0|DEAL|900';
+    $f->binding->proof['native_lead_id'] = null;
+    $f->crm->bindings = [['entityTypeId' => 2, 'entityId' => 900]];
+
+    return $f;
+}
+
+test('a new web context survives qualifier conversion and routes to its exact current deal seller', function () {
+    $f = webChatContextLinkerFixture();
+    $before = [$f->crm->web, $f->crm->contact, $f->crm->deal];
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'routed', 'reason' => 'assigned_seller_confirmed'])
+        ->and($f->crm->transferCalls)->toBe(1)->and($f->binding->receiptLeadIds)->toBe([700])
+        ->and([$f->crm->web, $f->crm->contact, $f->crm->deal])->toBe($before)
+        ->and($f->context->binds)->toHaveCount(3)
+        ->and($f->context->observations[0]['fields'])->toMatchArray(['transfer_state' => 'confirmed', 'transfer_acknowledged' => true]);
+    expect(json_decode(webChatLinkerRow($f)->proof, true)['transfer_intent'])->toMatchArray([
+        'web_owner_before' => '29', 'web_lead_converted' => true, 'seller_id' => '90231',
+    ]);
+});
+
+test('the 121095 ordering waits for qualification then observes its assigned deal without a second handoff', function () {
+    $f = webChatContextLinkerFixture();
+    $f->crm->web['STATUS_ID'] = 'NEW';
+    $f->crm->web['STATUS_SEMANTIC_ID'] = 'P';
+    $f->crm->dealPending = true;
+    $f->binding->proof['native_lead_id'] = '700';
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'commercial_case_not_ready']);
+    $this->travelTo(CarbonImmutable::parse(webChatLinkerRow($f)->available_at)->addSecond());
+    $f->crm->web['STATUS_ID'] = 'CONVERTED';
+    $f->crm->web['STATUS_SEMANTIC_ID'] = 'S';
+    $f->crm->dealPending = false;
+    $f->crm->dialog['owner'] = 90231;
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'routed', 'reason' => 'already_with_assigned_seller'])
+        ->and($f->crm->transferCalls)->toBe(0)->and($f->binding->receiptCalls)->toBe(1)
+        ->and($f->context->binds)->toHaveCount(2)
+        ->and(array_column($f->context->observations, 'state'))->toBe(['waiting', 'routed'])
+        ->and($f->context->observations[1]['fields']['transfer_state'])->toBe('not_needed')
+        ->and($f->context->observations[1]['fields']['transfer_acknowledged'])->toBeFalse();
+});
+
+test('an already assigned converted web chat is observed without inventing another transfer or CRM write', function () {
+    $f = webChatContextLinkerFixture();
+    $f->crm->dialog['owner'] = 90231;
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'routed', 'reason' => 'already_with_assigned_seller'])
+        ->and($f->crm->transferCalls)->toBe(0)->and(webChatLinkerRow($f)->transfer_state)->toBe('not_needed')
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([])
+        ->and($f->context->observations[0]['fields']['transfer_acknowledged'])->toBeFalse();
+    expect(json_decode(webChatLinkerRow($f)->proof, true))->not->toHaveKey('transfer_intent');
+});
+
+test('a cached proof from before qualifier conversion remains valid only for the exact current deal primary', function () {
+    $f = webChatContextLinkerFixture();
+    $f->binding->proof['native_lead_id'] = '700';
+    DB::table('web_form_chat_routes')->where('entry_event_id', $f->event->id)->update([
+        'proof' => json_encode($f->binding->proof, JSON_THROW_ON_ERROR),
+    ]);
+    expect($f->linker->process($f->event->id)['state'])->toBe('routed')
+        ->and($f->crm->transferCalls)->toBe(1)->and($f->binding->receiptCalls)->toBe(0)
+        ->and($f->crm->web['ASSIGNED_BY_ID'])->toBe('29');
+});
+
+test('a converted historical proof does not relax another native Guest or a lead primary', function (string $kind) {
+    $f = webChatContextLinkerFixture();
+    if ($kind === 'other Guest') {
+        $f->binding->proof['native_lead_id'] = '101';
+        $f->crm->native['ASSIGNED_BY_ID'] = '29';
+    } else {
+        $f->binding->proof['native_lead_id'] = '700';
+        $f->crm->dialog['entity_data_1'] = 'Y|LEAD|700|N|N|501|1794333600|0|0|0';
+    }
+    expect($f->linker->process($f->event->id)['reason'])->toBe('native_crm_assignment_preserved')
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+})->with(['other Guest', 'lead primary']);
+
+test('a late primary change cancels a transfer relying on a historical converted lead', function () {
+    $f = webChatContextLinkerFixture();
+    $f->binding->proof['native_lead_id'] = '700';
+    $f->crm->beforeCall = function ($method) use ($f) {
+        if ($method === 'batch') {
+            $f->crm->dialog['entity_data_1'] = 'Y|LEAD|700|N|N|501|1794333600|0|0|0';
+        }
+    };
+    expect($f->linker->process($f->event->id)['reason'])->toBe('converted_native_case_changed')
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('a taken context chat is preserved before even adding activity bindings', function () {
+    $f = webChatContextLinkerFixture();
+    $f->guard->status = 'preserved';
+    expect($f->linker->process($f->event->id)['state'])->toBe('preserved')
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+});
+
+test('unverified released or ambiguous context binding cannot cause CRM writes', function (string $status) {
+    $f = webChatContextLinkerFixture();
+    $f->context->decision['status'] = $status;
+    expect($f->linker->process($f->event->id)['state'])->toBe($status === 'review' ? 'review' : 'preserved')
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => in_array($call[0], ['crm.activity.binding.add', 'imopenlines.operator.transfer'], true)))->toBe([]);
+})->with(['review', 'released', 'preserved']);
+
+test('a context cannot activate linking on a pre-cutover or unauthenticated entry', function () {
+    $f = webChatContextLinkerFixture();
+    $f->context->eligible = false;
+    expect($f->linker->process($f->event->id)['reason'])->toBe('web_context_entry_not_verified')
+        ->and($f->context->binds)->toBe([])->and($f->context->observations)->toBe([])
+        ->and($f->crm->calls)->toBe([]);
+});
+
+test('context expiry during native attention reads stops all CRM mutations even on a newer route', function () {
+    $f = webChatContextLinkerFixture();
+    DB::table('web_chat_contexts')->where('id', 101)->update(['expires_at' => now()->addSeconds(5)]);
+    $f->guard->beforeInspect = function ($count) {
+        if ($count === 1) {
+            $this->travel(10)->seconds();
+        }
+    };
+    expect($f->linker->process($f->event->id)['state'])->toBe('expired')
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+});
+
+test('a positive transfer acknowledgement after context expiry remains durable and is never replayed', function () {
+    $f = webChatContextLinkerFixture();
+    DB::table('web_chat_contexts')->where('id', 101)->update(['expires_at' => now()->addSeconds(5)]);
+    $f->crm->beforeCall = function ($method) {
+        if ($method === 'imopenlines.operator.transfer') {
+            $this->travel(10)->seconds();
+        }
+    };
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'review', 'reason' => 'transfer_unresolved_after_retry_window'])
+        ->and(json_decode(webChatLinkerRow($f)->proof, true)['transfer_acknowledged'])->toBeTrue()
+        ->and($f->crm->transferCalls)->toBe(1)
+        ->and(array_slice(array_column($f->crm->calls, 0), -1))->toBe(['imopenlines.operator.transfer']);
+    expect($f->linker->process($f->event->id)['state'])->toBe('not_claimed')->and($f->crm->transferCalls)->toBe(1);
+});
+
+test('another web submission discovered during binding reads stops before the first CRM mutation', function () {
+    $f = webChatContextLinkerFixture();
+    $f->crm->beforeCall = function ($method) use ($f) {
+        if ($method === 'crm.activity.binding.list') {
+            $f->context->decision['status'] = 'review';
+            $f->context->decision['reason'] = 'web_context_multiple_submissions';
+        }
+    };
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'review', 'reason' => 'web_context_multiple_submissions'])
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+});
+
+test('context ambiguity found by the final bind stops the POST before persisting a transfer intent', function () {
+    $f = webChatContextLinkerFixture();
+    $f->context->beforeBind = function ($count) use ($f) {
+        if ($count === 3) {
+            $f->context->decision['status'] = 'review';
+            $f->context->decision['reason'] = 'web_context_multiple_submissions';
+        }
+    };
+    expect($f->linker->process($f->event->id)['state'])->toBe('review')->and($f->crm->transferCalls)->toBe(0)
+        ->and(json_decode(webChatLinkerRow($f)->proof, true))->not->toHaveKey('transfer_intent');
+});
+
+test('a malformed converted activity relation cannot apply another deal or person', function (string $change) {
+    $f = webChatContextLinkerFixture();
+    match ($change) {
+        'activity deal' => $f->crm->activityOwnerId = '901',
+        'activity contact' => [$f->crm->activityOwnerType, $f->crm->activityOwnerId] = [3, '711'],
+        'deal category' => $f->crm->deal['CATEGORY_ID'] = '5',
+        'deal lead' => $f->crm->deal['LEAD_ID'] = '701',
+        'deal contact' => $f->crm->deal['CONTACT_ID'] = '711',
+    };
+    expect($f->linker->process($f->event->id)['state'])->toBeIn(['review', 'preserved'])
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+})->with(['activity deal', 'activity contact', 'deal category', 'deal lead', 'deal contact']);
+
+test('a final converted activity change cancels the handoff', function () {
+    $f = webChatContextLinkerFixture();
+    $f->crm->beforeCall = function ($method) use ($f) {
+        if ($method === 'batch') {
+            $f->crm->activityOwnerId = '901';
+        }
+    };
+    expect($f->linker->process($f->event->id)['reason'])->toBe('native_activity_case_preserved')
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('a receipt hint is not used after its current CUIL or phone identity changes', function (string $field) {
+    $f = webChatContextLinkerFixture();
+    $f->crm->web[$field] = $field === 'PHONE' ? [['VALUE' => '5493519999999']] : '20234567860';
+    expect($f->linker->process($f->event->id)['state'])->toBe('review')
+        ->and($f->binding->receiptCalls)->toBe(0)->and($f->crm->transferCalls)->toBe(0);
+})->with(['PHONE', 'UF_CRM_1693840106704']);
+
+test('a rejected web context retains native evidence for the separate verified notice closer', function () {
+    $f = webChatContextLinkerFixture();
+    $f->crm->web['STATUS_ID'] = 'UC_1P8I07';
+    $f->crm->web['STATUS_SEMANTIC_ID'] = 'F';
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'review', 'reason' => 'web_case_rejected'])
+        ->and(webChatLinkerRow($f)->proof)->not->toBeNull()->and($f->context->binds)->toHaveCount(1)
+        ->and($f->crm->transferCalls)->toBe(0)
+        ->and(array_filter($f->crm->calls, fn ($call) => $call[0] === 'crm.activity.binding.add'))->toBe([]);
+});
+
+test('a late deal category change also prevents transfer when its native activity still belongs to a Guest', function () {
+    $f = webChatContextLinkerFixture();
+    $f->binding->proof['native_lead_id'] = '101';
+    $f->crm->activityOwnerType = 1;
+    $f->crm->activityOwnerId = '101';
+    $f->crm->beforeCall = function ($method) use ($f) {
+        if ($method === 'batch') {
+            $f->crm->deal['CATEGORY_ID'] = '5';
+        }
+    };
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_assignment_changed')
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('a missing current native message waits without anchoring or borrowing another context', function () {
+    $f = webChatContextLinkerFixture();
+    $f->binding->receiptMiss = true;
+    $f->binding->proof = null;
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'native_message_pending'])
+        ->and($f->context->binds)->toBe([])->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('legacy routes never join or synchronize a new web context', function () {
+    $f = webChatLinkerFixture();
+    $context = new WebChatLinkerContinuityFake;
+    app()->instance(WebChatContinuity::class, $context);
+    expect($f->linker->process($f->event->id)['state'])->toBe('routed')
+        ->and($context->eligibilityCalls)->toBe(0)->and($context->binds)->toBe([])->and($context->observations)->toBe([])
+        ->and(DB::table('web_form_continuations')->value('context_id'))->toBeNull();
+});
 
 test('the existing web case receives the native activity and a single transfer without creating or reassigning CRM records', function () {
     $f = webChatLinkerFixture();
