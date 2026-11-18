@@ -80,6 +80,16 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 self.assertEqual(script.count('artisan edna:web-chat-continuity activate'), 1)
                 self.assertNotIn('replay', script[:activation])
 
+    def test_benefits_cutover_activates_after_runtime_health_and_poll_is_scheduled(self):
+        for environment, script in self.scripts.items():
+            with self.subTest(environment=environment):
+                activation = script.index('artisan edna:benefits-chats activate')
+                self.assertGreater(activation, script.index('for runtime_service in '))
+                self.assertGreater(activation, script.index('curl '))
+                self.assertEqual(script.count('artisan edna:benefits-chats activate'), 1)
+        schedule = (ROOT / 'web/redunisol-web/routes/console.php').read_text()
+        self.assertIn("Schedule::command('edna:benefits-chats poll')->everyMinute()", schedule)
+
     def test_attached_commands_cannot_swallow_the_remaining_deploy_script(self):
         mock = 'set -eu\ndocker() { cat > /dev/null; }\n'
         for environment, script in self.scripts.items():

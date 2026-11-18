@@ -36,13 +36,13 @@ class EdnaOrganicLoan
     {
         return DB::transaction(function () use ($menuId): bool {
             $menu = DB::table('edna_organic_menus')->where('id', $menuId)->lockForUpdate()->first();
-            if (! $menu || ! in_array($menu->state, ['loan_pending', 'submission_pending'], true)
+            if (! $menu || ! in_array($menu->state, ['loan_pending', 'submission_pending', 'fallback_pending'], true)
                 || ($menu->lease_until && CarbonImmutable::parse($menu->lease_until)->isFuture())
                 || ($menu->available_at && CarbonImmutable::parse($menu->available_at)->isFuture())
                 || ($menu->enqueued_at && CarbonImmutable::parse($menu->enqueued_at)->gt(now()->subMinute()))) {
                 return false;
             }
-            $pushed = app(EdnaWorkQueue::class)->push($menu->state === 'loan_pending' ? new PrepareEdnaOrganicLoan($menuId) : new SubmitEdnaOrganicLoan($menuId));
+            $pushed = app(EdnaWorkQueue::class)->push($menu->state === 'submission_pending' ? new SubmitEdnaOrganicLoan($menuId) : new PrepareEdnaOrganicLoan($menuId));
             if ($pushed) {
                 DB::table('edna_organic_menus')->where('id', $menuId)->update(['enqueued_at' => now(), 'updated_at' => now()]);
             }
@@ -53,7 +53,7 @@ class EdnaOrganicLoan
 
     public function prepare(int $menuId): void
     {
-        $menu = $this->claim($menuId, 'loan_pending');
+        $menu = $this->claim($menuId, 'loan_pending') ?? $this->claim($menuId, 'fallback_pending');
         if (! $menu) {
             return;
         }
@@ -63,7 +63,15 @@ class EdnaOrganicLoan
 
                 return;
             }
+            if ($menu->state === 'fallback_pending') {
+                $this->fallback($menu, 'profile_requires_fresh_confirmation');
+
+                return;
+            }
             $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
             $attention = $this->attention->inspectWelcome($proof);
             if (($attention['status'] ?? '') !== 'ready') {
                 $this->finish($menu, $attention['status'] === 'waiting' ? 'loan_pending' : 'preserved', $attention['reason']);
@@ -104,7 +112,7 @@ class EdnaOrganicLoan
             ]);
             $this->enqueue($menuId);
         } catch (Throwable) {
-            $this->finish($menu, $menu->attempts >= 12 ? 'review' : 'loan_pending', 'organic_profile_preparation_pending');
+            $this->finish($menu, $menu->attempts >= 12 ? 'review' : ($menu->state === 'fallback_pending' ? 'fallback_pending' : 'loan_pending'), 'organic_profile_preparation_pending');
         }
     }
 
@@ -131,6 +139,9 @@ class EdnaOrganicLoan
                 return;
             }
             $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
             $store = Cache::getStore();
             if (! $store instanceof LockProvider || (! app()->runningUnitTests() && ! $store instanceof DatabaseStore && ! $store instanceof RedisStore)) {
                 $this->finish($menu, 'submission_pending', 'shared_chat_lock_unavailable');
@@ -200,6 +211,18 @@ class EdnaOrganicLoan
 
                 return;
             }
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
+            $finalAttention = $this->attention->inspectWelcome($proof);
+            if (($finalAttention['status'] ?? '') !== 'ready'
+                || (string) ($finalAttention['owner_id'] ?? '') !== (string) ($attention['owner_id'] ?? '')
+                || (string) ($finalAttention['session_id'] ?? '') !== (string) ($attention['session_id'] ?? '')) {
+                $this->finish($menu, ($finalAttention['status'] ?? '') === 'waiting' ? 'submission_pending' : 'preserved',
+                    $finalAttention['reason'] ?? 'attention_changed_before_business_request');
+
+                return;
+            }
             // Serialize the local check and claim with reference capture, then
             // release the recipient lock before the one application POST.
             $claim = function () use ($menu, $proof): bool {
@@ -226,6 +249,12 @@ class EdnaOrganicLoan
             }
             $action = $result['action'] ?? '';
             if ($action === 'reused_not_valid' && $result['write_attempted'] === false) {
+                // Persist the acknowledged no-write outcome. A delayed purpose
+                // check resumes only this fallback, never the business POST.
+                $menu->state = 'fallback_pending';
+                $this->update($menu, ['state' => 'fallback_pending', 'reason' => 'profile_requires_fresh_confirmation',
+                    'profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result,
+                        array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
                 $this->fallback($menu, 'profile_requires_fresh_confirmation');
             } elseif ($action === 'assigned_case' && $result['write_attempted'] === false
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['deal_id'] ?? ''))
@@ -254,6 +283,10 @@ class EdnaOrganicLoan
 
     private function fallback(object $menu, string $reason): void
     {
+        $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+        if ($this->preserveBenefits($menu, $proof)) {
+            return;
+        }
         DB::transaction(function () use ($menu, $reason): void {
             $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
             if ($this->preserveWebContext($menu, $proof)) {
@@ -264,6 +297,27 @@ class EdnaOrganicLoan
             $this->finish($menu, $sendId ? 'flow_scheduled' : 'preserved', $sendId ? 'new_profile_requested' : 'existing_flow_or_context_preserved',
                 $sendId ? ['flow_send_id' => $sendId] : []);
         });
+    }
+
+    private function preserveBenefits(object $menu, array $proof): bool
+    {
+        $entryId = $menu->entry_event_id;
+        if ($menu->choice_event_id && is_array($proof['choice_proof'] ?? null)) {
+            $entryId = $menu->choice_event_id;
+            $proof = $proof['choice_proof'];
+        }
+        $event = DB::table('edna_incoming_events')->find($entryId);
+        if (! $event || ! ($decision = app(EdnaBenefitsRouting::class)->check($event, $proof))) {
+            return false;
+        }
+        $state = match ($decision['state'] ?? '') {
+            'waiting' => $menu->state,
+            'review' => 'review',
+            default => 'preserved',
+        };
+        $this->finish($menu, $state, $decision['reason'] ?? 'benefits_routing');
+
+        return true;
     }
 
     private function preserveWebContext(object $menu, array $proof): bool
@@ -284,7 +338,7 @@ class EdnaOrganicLoan
                 'lease_until' => null, 'updated_at' => now()]);
         $queue = app(EdnaWorkQueue::class);
         $ids = DB::table('edna_organic_menus')->where(fn ($query) => $query
-            ->where(fn ($prepare) => $queue->withoutPending($prepare->where('state', 'loan_pending'), PrepareEdnaOrganicLoan::class, 'edna_organic_menus.id'))
+            ->where(fn ($prepare) => $queue->withoutPending($prepare->whereIn('state', ['loan_pending', 'fallback_pending']), PrepareEdnaOrganicLoan::class, 'edna_organic_menus.id'))
             ->orWhere(fn ($submit) => $queue->withoutPending($submit->where('state', 'submission_pending'), SubmitEdnaOrganicLoan::class, 'edna_organic_menus.id')))
             ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
             ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))

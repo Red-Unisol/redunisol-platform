@@ -811,3 +811,67 @@ activar el corte para recuperar casos. Si es necesario revertir Web, mantener el
 consumidor Kestra compatible con los trabajos ya iniciados y verificar que ningún
 intento incierto vuelva a enviarse. Toda recuperación histórica requiere un
 pedido aparte.
+
+
+## Respuestas de BENEFICIOS: continuar con su responsable
+
+Un botón de activación de una gestión vigente no debe abrir la captación de
+préstamos. `EdnaBenefitsCase` reconoce exclusivamente una negociación nativa
+activa de BENEFICIOS (categoría 15) en el chat y sesión probados. Revalida
+actividad, vínculos y negocio; no busca un cliente por teléfono ni elige
+negociaciones históricas del contacto. El responsable vigente del negocio es el
+destino: actualmente Victoria Cornier (117941). No existe un override que sustituya
+una asignación CRM manual por ese ID.
+
+Antes de enviar el menú, un v3 orgánico o de publicidad, reutilizar un perfil o
+procesar una respuesta nueva, se conserva el recorrido de BENEFICIOS. El puente
+web aplica la misma prioridad antes de vincular actividad o derivar por VENTAS.
+Se mantiene la comprobación final previa a los POST. Las reservas aceptadas o
+inciertas se concilian; nunca se convierten en un nuevo envío. Si una respuesta de
+negocio ya confirmó que no escribió y necesita otro formulario, `fallback_pending`
+reanuda sólo esa decisión, sin repetir el POST de negocio durante una espera.
+
+El nuevo job `RouteEdnaBenefitsChat` transfiere el chat al responsable comprobado
+mediante `imopenlines.operator.transfer`. No envía mensajes al cliente ni escribe
+responsables o etapas CRM. Usa el lock de chat compartido y revalida atención
+humana justo antes de la intención y el POST: una toma, respuesta o transferencia
+manual de Nico, Maru u otra persona conserva su atención, aunque hayan devuelto el
+chat al receptor provisional. Si ya está con el responsable, registra observación
+sin efectuar una transferencia. Un caso cerrado, un propósito diferente o vínculos
+incompatibles nunca autorizan una derivación de BENEFICIOS.
+
+El responsable del contacto puede ser de otro circuito y no define el destino.
+VENTAS tiene `CRM_TRANSFER_CHANGE=Y`; Bitrix documenta esa opción como cambio del
+responsable CRM al transferir el diálogo
+([referencia oficial](https://apidocs.bitrix24.com/api-reference/imopenlines/openlines/imopenlines-config-list-get.html)).
+La guarda bloquea responsables manuales incompatibles del prospecto nativo y sólo
+admite la alineación de un prospecto provisional comprobado. Toda otra variación
+CRM durante la conciliación queda señalada para revisión, sin repetir el POST.
+No se modifica la configuración global del canal.
+
+### Corte, ejecución y evidencia
+
+El workflow aplica la migración aditiva y activa `edna:benefits-chats activate`
+después de verificar imágenes, workers y HTTP. El corte `benefits-chat-routing-v1`
+es inmutable por ID del inbox y fecha original del callback. La negociación puede
+ser anterior: lo nuevo es la respuesta que acaba de llegar. No se escanean ni
+reprocesan mensajes, menús, envíos o sesiones anteriores al corte, y un callback
+antiguo que llega tarde queda fuera. `status` sólo lee; `poll` despierta únicamente
+los recibos nuevos ya reservados. El scheduler lo ejecuta cada minuto en la cola
+durable existente `edna`, sin agregar servidores ni workers.
+
+`edna_benefit_chat_routes` conserva una ruta canónica por chat/sesión, su primer
+evento, prueba exacta, negocio, destino, intención, acuse y evento nativo. Otro
+callback de la misma sesión no crea otro POST ni renueva su plazo de ocho horas.
+Los reintentos usan backoff exponencial con jitter y no repiten una transferencia
+incierta. El journal `whatsapp.benefits_chat_route` permite auditar la misma ruta.
+Para atribuir una transferencia automática se exige intención, acuse verdadero y
+evento nativo coincidente por chat, sesión, destino, fecha y actor. En la evidencia
+v2 de Bitrix, `fromOperatorId`/`initiatorId` del POST son la cuenta API; no se
+confunden con el `owner_before` comprobado antes de transferir. `observed` y
+`not_needed` no cuentan como una transferencia automática nueva.
+
+Rollback: conservar la tabla, el corte, las intenciones y los acuses. Mantener un
+consumidor compatible con los jobs reservados; no borrar recibos ni resetear el
+corte para rescatar históricos. Una recuperación de casos anteriores requiere un
+pedido específico.

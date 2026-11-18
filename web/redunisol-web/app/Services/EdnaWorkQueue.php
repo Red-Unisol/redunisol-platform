@@ -6,6 +6,7 @@ use App\Jobs\CloseEdnaRejectedChat;
 use App\Jobs\LinkWebFormChat;
 use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\ProcessEdnaOrganicMenu;
+use App\Jobs\RouteEdnaBenefitsChat;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Queue\DatabaseQueue;
@@ -19,6 +20,7 @@ use Throwable;
 class EdnaWorkQueue
 {
     private const JOBS = [
+        RouteEdnaBenefitsChat::class => ['entryEventId', 'edna_benefit_chat_routes.entry_event_id'],
         CloseEdnaRejectedChat::class => ['closureId', 'edna_rejected_chat_closures.id'],
         LinkWebFormChat::class => ['entryEventId', 'web_form_chat_routes.entry_event_id'],
         ProcessEdnaOrganicMenu::class => ['menuId', 'edna_organic_menus.id'],

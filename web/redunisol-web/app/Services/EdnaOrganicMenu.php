@@ -244,6 +244,9 @@ class EdnaOrganicMenu
             if (CarbonImmutable::parse($menu->expires_at)->isPast()) {
                 return $this->finish('expired', 'conversation_window_elapsed');
             }
+            if (! $menu->choice_event_id && ($benefits = $this->benefitsDecision($menu, $proof))) {
+                return $benefits;
+            }
             if ($menu->send_state === 'pending') {
                 return $this->send($menu, $proof);
             }
@@ -251,6 +254,10 @@ class EdnaOrganicMenu
                 return $this->finish('review', 'menu_outgoing_not_confirmed');
             }
             if ($menu->state === 'route_pending') {
+                if ($benefits = $this->benefitsDecision($menu, $proof)) {
+                    return $benefits;
+                }
+
                 return $this->transfer($menu, $proof, (int) $menu->seller_id);
             }
             if (! $menu->choice_event_id) {
@@ -276,6 +283,9 @@ class EdnaOrganicMenu
             }
             $proof['choice_proof'] = $choiceProof;
             $this->write(['proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+            if ($benefits = $this->benefitsDecision($menu, $proof)) {
+                return $benefits;
+            }
             if ($menu->choice === 'other') {
                 return $this->transfer($menu, $proof, (int) config('edna.organic_other_operator_id', 5737));
             }
@@ -324,6 +334,9 @@ class EdnaOrganicMenu
         }
         $this->assertBudget(13);
         $this->transport->assertChannel($menu);
+        if ($benefits = $this->benefitsDecision($menu, $proof)) {
+            return $benefits;
+        }
         $this->assertBudget(35);
         $fresh = $this->attention->inspectWelcome($proof);
         if (($fresh['status'] ?? '') !== 'ready'
@@ -360,6 +373,28 @@ class EdnaOrganicMenu
         }
 
         return $this->finish($result['send_state'] === 'unknown' ? 'unknown' : 'waiting', 'menu_history_pending');
+    }
+
+    private function benefitsDecision(object $menu, array $proof): ?array
+    {
+        // A new choice can continue an old conversation without replaying its
+        // original entry. Each action is proved by its own native message.
+        $entryId = $menu->entry_event_id;
+        if ($menu->choice_event_id && is_array($proof['choice_proof'] ?? null)) {
+            $entryId = $menu->choice_event_id;
+            $proof = $proof['choice_proof'];
+        }
+        $event = DB::table('edna_incoming_events')->find($entryId);
+        if (! $event || ! ($decision = app(EdnaBenefitsRouting::class)->check($event, $proof))) {
+            return null;
+        }
+        $reason = $decision['reason'] ?? 'benefits_routing';
+        if (($decision['state'] ?? '') === 'waiting') {
+            return $this->wait($reason);
+        }
+
+        return $this->finish(($decision['state'] ?? '') === 'review' ? 'review' : 'preserved', $reason,
+            ['transfer_state' => 'preserved']);
     }
 
     private function transfer(object $menu, array $proof, int $target): array
