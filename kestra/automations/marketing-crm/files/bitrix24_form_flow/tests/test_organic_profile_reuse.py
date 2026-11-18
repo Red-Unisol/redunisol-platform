@@ -397,6 +397,44 @@ class OrganicProfileReuseTests(unittest.TestCase):
                 self.assertFalse(api.writes)
                 self.assertEqual((api.leads, api.contacts, api.deals), before)
 
+    def test_verified_contact_only_activity_routes_to_one_exact_open_sales_deal(self):
+        for original_lead in ("10", None):
+            with self.subTest(original_lead=original_lead):
+                api, request = self.converted_case(cleared_lead=True)
+                api.deals[0]["LEAD_ID"] = original_lead
+                request["crm_binding"]["native_lead_id"] = None
+                request["contact_deal_activity"] = True
+                result = process(request, env=ENV, client=api)
+                self.assertEqual((result["action"], result["deal_id"], result["seller_id"], result["contact_deal_stage"]),
+                                 ("assigned_case", "900", "44", "C1:NEW"))
+                self.assertFalse(api.writes)
+
+    def test_contact_activity_rejects_ambiguous_mismatched_and_changed_proofs(self):
+        for condition in ("multiple", "wrong_activity", "wrong_contact", "wrong_session", "changed_activity", "old_policy"):
+            with self.subTest(condition=condition):
+                api, request = self.converted_case(cleared_lead=True)
+                request["crm_binding"]["native_lead_id"] = None
+                request["contact_deal_activity"] = True
+                if condition == "multiple":
+                    api.deals.append({**api.deals[0], "ID": "901"})
+                elif condition == "wrong_activity":
+                    api.activity["OWNER_ID"] = "901"
+                elif condition == "wrong_contact":
+                    api.deals[0]["CONTACT_ID"] = "99"
+                elif condition == "wrong_session":
+                    api.activity["ASSOCIATED_ENTITY_ID"] = "301"
+                elif condition == "old_policy":
+                    request.pop("routing_policy")
+                else:
+                    original = api.call
+                    def changed(method, body):
+                        if method == "crm.activity.get" and any(m == method for m, _ in api.calls):
+                            api.activity.update(OWNER_TYPE_ID="3", OWNER_ID="1")
+                        return original(method, body)
+                    api.call = changed
+                self.assertEqual(process(request, env=ENV, client=api)["action"], "manual_review")
+                self.assertFalse(api.writes)
+
     def test_queued_payload_without_exact_new_policy_keeps_the_original_deal_activity_rejection(self):
         for marker in (None, "web-chat-continuity-v0"):
             with self.subTest(marker=marker):

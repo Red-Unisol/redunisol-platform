@@ -30,6 +30,10 @@ class OrganicAttentionReadFake extends EdnaBitrix
 
     public int $operatorMessages = 0;
 
+    public array $deals = [];
+
+    public array $activity = [];
+
     public ?Closure $beforeCall = null;
 
     public function call(string $method, array $payload = []): mixed
@@ -44,6 +48,8 @@ class OrganicAttentionReadFake extends EdnaBitrix
 
         return match ($method) {
             'imopenlines.dialog.get' => $this->dialog,
+            'crm.deal.list' => $this->deals,
+            'crm.activity.get' => $this->activity,
             'imopenlines.config.get' => ['ID' => '1', 'QUEUE' => ['74827']],
             'imopenlines.v2.Session.list' => ['sessions' => [$this->session], 'hasNextPage' => false],
             'imopenlines.v2.Session.Stat.get' => ['sessions' => [['sessionId' => 501, 'messagesOperatorCount' => $this->operatorMessages, 'transfersCount' => 0]]],
@@ -324,4 +330,31 @@ test('tampered or incomplete stored snapshots are rejected without reads', funct
     $snapshot['records'][0]['owner'] = '5737';
     expect($service->canTransfer($snapshot, 5737))->toBeFalse()->and($service->compatible($snapshot, $snapshot, 5737))->toBeFalse()
         ->and($service->canTransfer([], 5737))->toBeFalse()->and($fake->calls)->toBeEmpty();
+});
+
+test('contact-owned intake checks the sole activity deal and human attention immediately before transfer', function () {
+    $crm = new OrganicAttentionReadFake;
+    $crm->dialog['entity_data_1'] = 'Y|DEAL|900|N|N|501|1794333600|0|0|0';
+    $crm->dialog['entity_data_2'] = 'LEAD|0|CONTACT|701|DEAL|900';
+    $crm->records['deal:900'] = ['ID' => '900', 'CONTACT_ID' => '701', 'CATEGORY_ID' => '1', 'STAGE_ID' => 'C1:NEW',
+        'STAGE_SEMANTIC_ID' => 'P', 'ASSIGNED_BY_ID' => '44'];
+    $crm->records['contact:701'] = ['ID' => '701', 'ASSIGNED_BY_ID' => '777'];
+    $crm->deals = [$crm->records['deal:900']];
+    $crm->activity = ['ID' => '801', 'OWNER_TYPE_ID' => '2', 'OWNER_ID' => '900', 'ASSOCIATED_ENTITY_ID' => '501',
+        'PROVIDER_ID' => 'IMOPENLINES_SESSION', 'PROVIDER_PARAMS' => ['USER_CODE' => $crm->dialog['entity_id']]];
+    $proof = array_replace(organicAttentionProof(), ['activity_id' => '801', 'native_lead_id' => null]);
+    $attention = new EdnaOrganicAttention($crm);
+    $snapshot = $attention->snapshot($proof);
+    $check = fn () => $attention->confirmContactDeal($proof, $snapshot, '701', '900', 44, 'C1:NEW');
+    expect($attention->canTransfer($snapshot, 44))->toBeFalse()
+        ->and($attention->canTransfer($snapshot, 44, false, '701'))->toBeTrue()
+        ->and($check())->toBeTrue();
+    $crm->deals[] = array_replace($crm->deals[0], ['ID' => '901']);
+    expect($check())->toBeFalse();
+    array_pop($crm->deals);
+    $crm->activity['OWNER_ID'] = '901';
+    expect($check())->toBeFalse();
+    $crm->activity['OWNER_ID'] = '900';
+    $crm->operatorMessages = 1;
+    expect($check())->toBeFalse();
 });

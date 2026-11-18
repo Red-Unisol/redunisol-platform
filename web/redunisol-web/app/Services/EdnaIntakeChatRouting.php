@@ -45,6 +45,7 @@ class EdnaIntakeChatRouting
             }
             $case = json_decode($row->assigned_case, true, 16, JSON_THROW_ON_ERROR);
             $target = (int) $case['seller_id'];
+            $verifiedContact = isset($case['contact_deal_stage']) ? (string) $case['contact_id'] : null;
             $attention = app(EdnaOrganicAttention::class);
             $crm = app(EdnaBitrix::class);
             $store = Cache::getStore();
@@ -60,7 +61,7 @@ class EdnaIntakeChatRouting
                 $snapshot = $attention->snapshot($proof);
                 $owner = $snapshot['dialog_tuple']['owner'];
                 if ($owner === (string) $target && isset($intent['snapshot'])
-                    && $attention->compatible($intent['snapshot'], $snapshot, $target, true)
+                    && $attention->compatible($intent['snapshot'], $snapshot, $target, true, false, $verifiedContact)
                     && $this->caseSnapshot($case, $crm) === ($intent['commercial_case'] ?? null)) {
                     $this->finish($requestId, $row->transfer_acknowledged ? 'confirmed' : 'observed',
                         $row->transfer_acknowledged ? 'target_confirmed' : 'target_observed');
@@ -89,7 +90,7 @@ class EdnaIntakeChatRouting
 
                 return;
             }
-            if (($before['status'] ?? '') !== 'ready' || ! $attention->canTransfer($before['native_snapshot'] ?? [], $target)) {
+            if (($before['status'] ?? '') !== 'ready' || ! $attention->canTransfer($before['native_snapshot'] ?? [], $target, false, $verifiedContact)) {
                 if (($before['status'] ?? '') === 'waiting') {
                     throw new RuntimeException('Native attention reads pending.');
                 }
@@ -105,7 +106,7 @@ class EdnaIntakeChatRouting
             }
             $fresh = $attention->inspect($proof, $target);
             if (($fresh['status'] ?? '') !== 'ready'
-                || ! $attention->compatible($before['native_snapshot'], $fresh['native_snapshot'] ?? [], $target)) {
+                || ! $attention->compatible($before['native_snapshot'], $fresh['native_snapshot'] ?? [], $target, false, false, $verifiedContact)) {
                 if (($fresh['status'] ?? '') === 'waiting') {
                     throw new RuntimeException('Final attention reads pending.');
                 }
@@ -113,12 +114,21 @@ class EdnaIntakeChatRouting
 
                 return;
             }
+            if ($verifiedContact !== null && ! $attention->confirmContactDeal($proof, $fresh['native_snapshot'],
+                $verifiedContact, (string) $case['deal_id'], $target, $case['contact_deal_stage'])) {
+                $this->finish($requestId, 'preserved', 'contact_deal_or_attention_changed');
+
+                return;
+            }
             $intent = ['target_id' => (string) $target, 'session_id' => $proof['session_id'],
                 'owner_before' => (string) $fresh['owner_id'], 'created_at' => now()->toIso8601String(),
                 'snapshot' => $fresh['native_snapshot'], 'commercial_case' => $beforeCase];
-            DB::table('edna_intake_chat_routes')->where('request_id', $requestId)->update([
+            if (! $lock->isOwnedByCurrentProcess() || DB::table('edna_intake_chat_routes')->where('request_id', $requestId)
+                ->where('state', 'pending')->where('lease_until', '>', now()->addSeconds(6))->update([
                 'state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR), 'updated_at' => now(),
-            ]);
+            ]) !== 1) {
+                throw new RuntimeException('Fresh chat transfer lease expired.');
+            }
             try {
                 $ack = $crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $proof['chat_id'], 'USER_ID' => $target]);
                 DB::table('edna_intake_chat_routes')->where('request_id', $requestId)->update([

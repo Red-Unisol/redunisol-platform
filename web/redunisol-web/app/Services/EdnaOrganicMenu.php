@@ -418,7 +418,8 @@ class EdnaOrganicMenu
         $before = $attention['native_snapshot'] ?? null;
         $otherInquiry = $menu->choice === 'other' && $case === null
             && $target === (int) config('edna.organic_other_operator_id', 5737);
-        if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry)) {
+        $verifiedContact = isset($case['contact_deal_stage']) ? $case['CONTACT_ID'] : null;
+        if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry, $verifiedContact)) {
             return $this->finish('preserved', 'native_crm_assignment_preserved');
         }
         $this->assertBudget(65);
@@ -428,10 +429,14 @@ class EdnaOrganicMenu
         }
         $this->assertBudget(12);
         if (! is_array($fresh['native_snapshot'] ?? null)
-            || ! $this->attention->compatible($before, $fresh['native_snapshot'], $target, false, $otherInquiry)
+            || ! $this->attention->compatible($before, $fresh['native_snapshot'], $target, false, $otherInquiry, $verifiedContact)
             || ! $this->attention->targetActive($target)
             || ($case !== null && $this->commercialCase($menu, $target) !== $case)) {
             return $this->finish('preserved', 'routing_context_changed');
+        }
+        if ($verifiedContact !== null && ! $this->attention->confirmContactDeal($proof, $fresh['native_snapshot'],
+            $verifiedContact, $case['ID'], $target, $case['contact_deal_stage'])) {
+            return $this->finish('preserved', 'contact_deal_or_attention_changed');
         }
         $intent = ['target_id' => (string) $target, 'session_id' => (string) $proof['session_id'],
             'owner_before' => (string) $fresh['owner_id'], 'snapshot' => $fresh['native_snapshot'],
@@ -475,7 +480,8 @@ class EdnaOrganicMenu
             $after = $this->attention->snapshot($proof);
             $otherInquiry = ($intent['routing_policy'] ?? '') === 'other_inquiry' && $menu->choice === 'other'
                 && $intent['commercial_case'] === null && $target === (int) config('edna.organic_other_operator_id', 5737);
-            if (! $this->attention->compatible($intent['snapshot'], $after, $target, true, $otherInquiry)
+            $verifiedContact = isset($intent['commercial_case']['contact_deal_stage']) ? $intent['commercial_case']['CONTACT_ID'] : null;
+            if (! $this->attention->compatible($intent['snapshot'], $after, $target, true, $otherInquiry, $verifiedContact)
                 || ($intent['commercial_case'] !== null && $this->commercialCase($menu, $target, true) !== $intent['commercial_case'])) {
                 return $this->finish('review', 'crm_changed_after_transfer', ['transfer_state' => 'observed']);
             }
@@ -553,6 +559,9 @@ class EdnaOrganicMenu
         }
         $snapshot['LEAD_ID'] = $leadId;
         $snapshot['profile_identity_hash'] = $identity;
+        if (isset($assigned['contact_deal_stage'])) {
+            $snapshot['contact_deal_stage'] = $assigned['contact_deal_stage'];
+        }
 
         return $snapshot;
     }

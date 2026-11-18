@@ -69,6 +69,10 @@ class EdnaNativeIntake
             $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
             if ($entry && app(WebChatContinuity::class)->eligibleEntry($entry)) {
                 $body['routing_policy'] = WebChatContinuity::NAME;
+                if (empty($body['crm_binding']['native_lead_id']) && ! empty($body['crm_binding']['contact_id'])
+                    && app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::CONTACT_DEAL)) {
+                    $body['contact_deal_activity'] = true;
+                }
             }
             // This contract revalidates native message, CUIL and existing management in Kestra.
             // The actual Flow transport remains in edna_flow_sends and is never invented/replayed.
@@ -115,6 +119,12 @@ class EdnaNativeIntake
                 ]);
                 if ($assigned) {
                     $case = array_intersect_key($result, array_flip(['lead_id', 'contact_id', 'deal_id', 'seller_id']));
+                    if (($result['reason'] ?? '') === 'existing_contact_deal') {
+                        if (! is_string($result['contact_deal_stage'] ?? null) || $result['contact_deal_stage'] === '') {
+                            throw new RuntimeException('Contact deal stage missing from acknowledgement.');
+                        }
+                        $case['contact_deal_stage'] = $result['contact_deal_stage'];
+                    }
                     $case['identity_hash'] = (new WebFormReceipt)->identityHash($answer['cuil'] ?? '');
                     if (! $case['identity_hash']) {
                         throw new RuntimeException('Assigned case identity unavailable.');

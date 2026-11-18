@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 /** Immutable deployment boundary: old inbox entries and late old callbacks stay on their original path. */
 class EdnaFreshIntake
 {
+    public const CONTACT_DEAL = 'contact-deal-activity-v1';
+
     public function applies(object $send): bool
     {
         $event = DB::table('edna_incoming_events')->find($send->entry_event_id);
@@ -16,9 +18,9 @@ class EdnaFreshIntake
         return $event !== null && $this->entry($event);
     }
 
-    public function entry(object $event): bool
+    public function entry(object $event, string $cutover = 'native-v3-v1'): bool
     {
-        $cut = DB::table('edna_intake_cutovers')->where('name', 'native-v3-v1')->first();
+        $cut = DB::table('edna_intake_cutovers')->where('name', $cutover)->first();
         if (! $cut || (int) $event->id <= (int) $cut->entry_id_after) {
             return false;
         }

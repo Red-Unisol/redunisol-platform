@@ -64,6 +64,9 @@ outputs:
   - id: seller_id
     type: STRING
     value: "{{ outputs.procesar.vars.seller_id ?? '' }}"
+  - id: contact_deal_stage
+    type: STRING
+    value: "{{ outputs.procesar.vars.contact_deal_stage ?? '' }}"
   - id: write_attempted
     type: BOOL
     value: "{{ outputs.procesar.vars.write_attempted ?? false }}"
