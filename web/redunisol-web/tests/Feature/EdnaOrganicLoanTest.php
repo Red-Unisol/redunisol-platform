@@ -113,7 +113,7 @@ class OrganicLoanAttentionFake extends EdnaOrganicAttention
         return $this->native + ['fingerprint' => hash('sha256', json_encode($this->native, JSON_THROW_ON_ERROR))];
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null): bool
     {
         $this->transferComparisons++;
         throw new RuntimeException('A credit inquiry must not apply Tincho transfer eligibility.');

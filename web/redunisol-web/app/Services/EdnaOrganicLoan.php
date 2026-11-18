@@ -205,6 +205,10 @@ class EdnaOrganicLoan
                     'received_at' => CarbonImmutable::parse($payload['receivedAt'])->toIso8601String(), 'origin' => $frozen['origin']]];
             if (app(WebChatContinuity::class)->eligibleEntry($entry)) {
                 $body['routing_policy'] = WebChatContinuity::NAME;
+                if (empty($body['crm_binding']['native_lead_id']) && ! empty($body['crm_binding']['contact_id'])
+                    && app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::CONTACT_DEAL)) {
+                    $body['contact_deal_activity'] = true;
+                }
             }
             if (microtime(true) - $startedAt > 45) {
                 $this->finish($menu, 'submission_pending', 'organic_preflight_budget_elapsed');
@@ -260,6 +264,12 @@ class EdnaOrganicLoan
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['deal_id'] ?? ''))
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['seller_id'] ?? ''))) {
                 $assigned = array_intersect_key($result, array_flip(['deal_id', 'seller_id', 'lead_id', 'contact_id']));
+                if (($result['reason'] ?? '') === 'existing_contact_deal') {
+                    if (! is_string($result['contact_deal_stage'] ?? null) || $result['contact_deal_stage'] === '') {
+                        throw new RuntimeException('Contact deal stage missing from acknowledgement.');
+                    }
+                    $assigned['contact_deal_stage'] = $result['contact_deal_stage'];
+                }
                 $assigned['profile_identity_hash'] = (new WebFormReceipt)->identityHash($answer['cuil']);
                 $this->finish($menu, 'route_pending', 'existing_commercial_case', ['deal_id' => (string) $result['deal_id'],
                     'seller_id' => (string) $result['seller_id'], 'available_at' => now(), 'enqueued_at' => null,

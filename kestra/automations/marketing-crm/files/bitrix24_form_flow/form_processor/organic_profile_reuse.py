@@ -145,14 +145,17 @@ def _native(api, payload, binding, phone, management=None):
     activity = api.call("crm.activity.get", {"id": binding["activity_id"]})
     params = activity.get("PROVIDER_PARAMS") if isinstance(activity, dict) else None
     params = json.loads(params) if isinstance(params, str) else params
-    converted = (payload.get("routing_policy") == CONTINUITY_POLICY and isinstance(activity, dict)
+    deal_activity = (payload.get("routing_policy") == CONTINUITY_POLICY and isinstance(activity, dict)
                  and str(activity.get("OWNER_TYPE_ID")) == "2" and isinstance(management, dict)
-                 and binding["native_lead_id"] and binding["contact_id"]
+                 and binding["contact_id"]
                  and str(activity.get("OWNER_ID")) == str(management.get("ID"))
-                 and str(management.get("LEAD_ID")) == binding["native_lead_id"]
                  and str(management.get("CONTACT_ID")) == binding["contact_id"]
                  and str(management.get("CATEGORY_ID")) == "1" and management.get("STAGE_SEMANTIC_ID") == "P"
                  and links.get("DEAL") == str(management.get("ID")))
+    converted = (deal_activity and binding["native_lead_id"]
+                 and str(management.get("LEAD_ID")) == binding["native_lead_id"])
+    contact_deal = bool(deal_activity and not binding["native_lead_id"]
+                        and payload.get("contact_deal_activity") is True)
     for key, expected in (("LEAD", binding["native_lead_id"]), ("CONTACT", binding["contact_id"])):
         # Bitrix can clear the converted lead from the dialog tracker. Only its
         # exact original lead/contact and the unique verified deal corroborate
@@ -170,7 +173,7 @@ def _native(api, payload, binding, phone, management=None):
             or not isinstance(params, dict) or params.get("USER_CODE") != code
             or not ((str(activity.get("OWNER_TYPE_ID")) == "1" and str(activity.get("OWNER_ID")) == binding["native_lead_id"])
                     or (str(activity.get("OWNER_TYPE_ID")) == "3" and str(activity.get("OWNER_ID")) == binding["contact_id"])
-                    or converted)):
+                    or converted or contact_deal)):
         raise Review("native_activity_unverified")
     history = api.call("imopenlines.session.history.get", {"SESSION_ID": int(binding["session_id"])})
     if (not isinstance(history, dict) or str(history.get("sessionId")) != binding["session_id"]
@@ -195,7 +198,7 @@ def _native(api, payload, binding, phone, management=None):
         matches.append(message)
     if len(matches) != 1:
         raise Review("native_message_unverified")
-    return dialog
+    return contact_deal
 
 
 def _record(api, entity, record_id):
@@ -379,12 +382,13 @@ def process(payload, *, env=None, client=None):
     api = IntakeCrmClient(client or BitrixClient(config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0))
     try:
         continuity = payload.get("routing_policy") == CONTINUITY_POLICY
+        contact_deal = False
         if continuity:
             # A converted session activity is accepted only after the original
             # person's current CUIL/phone/contact and unique management resolve.
             native, contact, leads = _identity(api, config, binding, phone, answer)
             deal = _management(api, config, contact, leads)
-            _native(api, payload, binding, phone, deal)
+            contact_deal = _native(api, payload, binding, phone, deal)
         else:
             _native(api, payload, binding, phone)
             native, contact, leads = _identity(api, config, binding, phone, answer)
@@ -403,8 +407,12 @@ def process(payload, *, env=None, client=None):
                 if fresh_deal != deal:
                     raise Review("existing_management_changed")
                 _source_profile(api, config, payload, answer)
-                _native(api, payload, binding, phone, fresh_deal)
-            return {**result, "action": "assigned_case", "reason": "existing_assigned_case", "deal_id": str(deal["ID"]),
+                if _native(api, payload, binding, phone, fresh_deal) != contact_deal:
+                    raise Review("native_activity_changed")
+            if contact_deal:
+                result["contact_deal_stage"] = deal["STAGE_ID"]
+            return {**result, "action": "assigned_case", "reason": "existing_contact_deal" if contact_deal else "existing_assigned_case",
+                    "deal_id": str(deal["ID"]),
                     "seller_id": str(deal["ASSIGNED_BY_ID"]), "lead_id": str(deal.get("LEAD_ID") or ""),
                     "contact_id": str((contact or {}).get("ID") or deal.get("CONTACT_ID") or "")}
         target = _target(api, config, native, answer)

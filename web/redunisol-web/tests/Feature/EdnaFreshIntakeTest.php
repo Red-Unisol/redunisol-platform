@@ -6,6 +6,7 @@ use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFreshIntake;
+use App\Services\WebChatContinuity;
 use App\Services\EdnaIntakeBinding;
 use App\Services\EdnaIntakeChatRouting;
 use App\Services\EdnaMessageBinding;
@@ -167,6 +168,36 @@ test('fresh completed v3 reuses the existing identity contract and enqueues its 
     Http::assertSent(fn ($r) => $r['crm_binding']['version'] === 1 && $r['crm_binding']['activity_id'] === '801'
         && $r['provenance']['source_id'] === (string) $request->id && ! isset($r['flow_id']));
 });
+
+test('the contact deal proof is enabled by the original entry and retained for the queued transfer', function (bool $old) {
+    [$request, $send, $proof] = freshCompletedRequest();
+    foreach ([WebChatContinuity::NAME, EdnaFreshIntake::CONTACT_DEAL] as $name) {
+        DB::table('edna_intake_cutovers')->updateOrInsert(['name' => $name], [
+            'entry_id_after' => $old && $name === EdnaFreshIntake::CONTACT_DEAL ? $send->entry_event_id : 0,
+            'starts_at' => now()->subHour(),
+        ]);
+    }
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->andReturn(['status' => 'ready']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    Http::fake(['example.test/*' => function ($r) use ($send, $old) {
+        expect($r['contact_deal_activity'] ?? false)->toBe(! $old);
+
+        return Http::response(['ok' => true, 'contract' => EdnaOrganicLoan::CONTRACT,
+            'case_id' => $send->request_id, 'action' => $old ? 'manual_review' : 'assigned_case',
+            'reason' => $old ? 'native_activity_unverified' : 'existing_contact_deal',
+            'contact_deal_stage' => $old ? '' : 'C1:NEW', 'write_attempted' => false,
+            'lead_id' => '', 'contact_id' => '101', 'deal_id' => '301', 'seller_id' => '5737']);
+    }]);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    Http::assertSentCount(1);
+    $receipt = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->first();
+    if ($old) {
+        expect($receipt)->toBeNull();
+    } else {
+        expect(json_decode($receipt->assigned_case, true)['contact_deal_stage'])->toBe('C1:NEW');
+    }
+})->with([true, false]);
 
 test('human attention preserves a completed new intake without a CRM application post', function () {
     [$request, $send, $proof] = freshCompletedRequest();
