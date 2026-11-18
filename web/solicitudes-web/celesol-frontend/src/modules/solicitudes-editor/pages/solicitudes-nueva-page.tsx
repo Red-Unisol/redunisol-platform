@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CircleAlert, CircleCheckBig } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -112,6 +112,18 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     CreateSolicitudCoreGarantiaRequest[]
   >([]);
   const [isUploadingAdjunto, setIsUploadingAdjunto] = useState(false);
+  // Candado del alta. El ref corta el segundo clic en el acto (el estado de
+  // React llega recien en el proximo render); el estado mantiene el boton
+  // en "Guardando..." durante todo el guardado, adjuntos incluidos, hasta
+  // pasar al detalle. Sin esto, un doble clic o un clic mientras subian los
+  // adjuntos creaba otra solicitud igual (500432/500433, 18/11).
+  const guardandoSolicitudRef = useRef(false);
+  // Clave de esta alta. Se repite en cada reintento (por ejemplo, despues de
+  // que el pedido se corto a los 15 s pero el backend lo termino), y el
+  // backend devuelve la solicitud ya creada en vez de crear otra. Se renueva
+  // solo cuando el alta salio bien.
+  const claveAltaRef = useRef(crypto.randomUUID());
+  const [isGuardandoSolicitud, setIsGuardandoSolicitud] = useState(false);
   const [nuevaSolicitudTab, setNuevaSolicitudTab] =
     useState<NuevaSolicitudTab>("titular");
   const [datosPersonalesTab, setDatosPersonalesTab] =
@@ -168,6 +180,20 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
 
   async function onCreateSolicitud() {
+    if (guardandoSolicitudRef.current) return;
+
+    guardandoSolicitudRef.current = true;
+    setIsGuardandoSolicitud(true);
+
+    try {
+      await guardarSolicitud();
+    } finally {
+      guardandoSolicitudRef.current = false;
+      setIsGuardandoSolicitud(false);
+    }
+  }
+
+  async function guardarSolicitud() {
     const values = getValues();
 
     clearErrors(VALIDATED_FIELDS.map(({ name }) => name));
@@ -210,8 +236,11 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
           garantias,
         },
       );
-      const createdSolicitud =
-        await createSolicitudCoreMutation.mutateAsync(payload);
+      const createdSolicitud = await createSolicitudCoreMutation.mutateAsync({
+        ...payload,
+        idempotencyKey: claveAltaRef.current,
+      });
+      claveAltaRef.current = crypto.randomUUID();
       setCreatedSolicitudId(createdSolicitud.id);
       setAdjuntos([]);
       setIsUploadingAdjunto(pendingAdjuntos.length > 0);
@@ -624,7 +653,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
           errors={errors}
           garantias={garantias}
           isLoadingLineas={isLoadingLineas}
-          isSaving={createSolicitudCoreMutation.isPending}
+          isSaving={isGuardandoSolicitud}
           isUploadingAdjunto={isUploadingAdjunto}
           lineas={lineas}
           onAddAdjuntosLote={onAddAdjuntosLote}

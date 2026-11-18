@@ -22,10 +22,13 @@ type Dependencies = {
     "execute"
   >;
   localidadCatalog?: LocalidadCatalog;
-  repository: SolicitudesCoreRepository;
+  repository: SolicitudRepositoryConClave;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
 };
+
+type SolicitudRepositoryConClave = SolicitudesCoreRepository &
+  Required<Pick<SolicitudesCoreRepository, "findByIdempotencyKey">>;
 
 export class CreateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
@@ -33,7 +36,7 @@ export class CreateSolicitudUseCase {
     ConsultarCredixsaAlCrearSolicitud,
     "execute"
   >;
-  private readonly repository: SolicitudesCoreRepository;
+  private readonly repository: SolicitudRepositoryConClave;
   private readonly simularCuotaSolicitud: Pick<
     SimularCuotaSolicitud,
     "execute"
@@ -56,6 +59,18 @@ export class CreateSolicitudUseCase {
       throw new SolicitudFieldNotEditableInCurrentStateError(
         "solicitud.cuotaResultante",
       );
+    // Si esta alta ya se guardo (doble clic, o reintento despues de que el
+    // frontend corto el pedido por timeout pero el backend lo termino), se
+    // devuelve la misma solicitud en vez de crear otra igual.
+    const idempotencyKey = input.idempotencyKey ?? null;
+    if (idempotencyKey) {
+      const existente = await this.repository.findByIdempotencyKey(
+        idempotencyKey,
+        input.createdBy,
+      );
+      if (existente) return existente;
+    }
+
     const createdByLegacyUser = input.createdByLegacyUser.trim();
     const authenticatedSellerName = formatAuthenticatedSellerName(
       input.authenticatedSellerName,
@@ -104,8 +119,9 @@ export class CreateSolicitudUseCase {
       input.titular.localidadId,
     );
 
-    const solicitud = await this.repository.create({
+    const creacion = this.repository.create({
       createdBy: input.createdBy,
+      idempotencyKey,
       conyuge: input.conyuge
         ? {
             actividad: input.conyuge.actividad ?? null,
@@ -210,6 +226,22 @@ export class CreateSolicitudUseCase {
       },
       vendedorSolicitud: authenticatedSellerName,
     });
+
+    let solicitud: Awaited<typeof creacion>;
+    try {
+      solicitud = await creacion;
+    } catch (error) {
+      // Dos pedidos con la misma clave al mismo tiempo: el segundo choca con
+      // el indice unico. Se devuelve la que guardo el primero.
+      const existente = idempotencyKey
+        ? await this.repository.findByIdempotencyKey(
+            idempotencyKey,
+            input.createdBy,
+          )
+        : null;
+      if (!existente) throw error;
+      return existente;
+    }
 
     // Sin await a proposito: la consulta a CredixSA puede tardar minutos entre
     // la cola de Kestra y el scraping, y el vendedor esta esperando que la
