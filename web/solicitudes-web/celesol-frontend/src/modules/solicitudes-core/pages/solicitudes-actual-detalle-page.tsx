@@ -4692,10 +4692,12 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handlePreviewAdjunto(adjunto: SolicitudCoreAdjuntoResponse) {
+    // Recibo de sueldo o documentacion adicional: se abre junto a la
+    // calculadora, con ese documento elegido en el visor. El resto (y el Excel
+    // de evaluacion archivado, que el visor no muestra) va a la vista previa.
     if (
       canViewCalculadora &&
-      adjunto.tipoAdjunto === "Recibo de Sueldo" &&
-      adjunto.solicitudId === solicitudId
+      adjuntosDelVisor.some((item) => item.id === adjunto.id)
     ) {
       if (!cambiarVistaTab("evaluacion")) return;
       setReciboView({ solicitudId, selectedId: adjunto.id });
