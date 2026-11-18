@@ -13,6 +13,8 @@ from contextlib import closing
 
 from .archive import Archive
 from .component_store import build_component
+from .extended_formats import months_ending
+from .historical_names import REPORT_ENTITIES, REPORT_PERIOD, REPORT_URL
 from .source import SourceClient, SourceError, check_deadline, content_version
 from .store import connect_readonly, import_snapshot, read_manifest, timestamp
 
@@ -168,6 +170,62 @@ def _atomic_manifest(root: Path, manifest: dict):
     _atomic_json(root, manifest, 'active.json')
 
 
+def _entity_master(database: Path) -> dict:
+    with closing(connect_readonly(database)) as connection:
+        return dict(connection.execute('SELECT code,name FROM entities'))
+
+
+def _retired_entity_names(root, previous, legacy, legacy_database, period, current):
+    """Keep last official denominations across monthly cleanup and interrupted full loads."""
+    oldest = months_ending(period)[-1]
+    names = {}
+    if previous:
+        names.update(previous.get('retired_entity_names', {}))
+    sources = []
+    if legacy:
+        sources.append((legacy['period'], legacy_database))
+    if previous:
+        sources.append((previous['period'], inside(root, previous['components']['current']['path'])))
+    for source_period, database in sorted(sources, key=lambda source: source[0]):
+        if oldest <= source_period <= period and database != current:
+            for code, name in _entity_master(database).items():
+                if code not in names or source_period >= names[code]['period']:
+                    names[code] = {'period': source_period, 'name': name}
+    known = _entity_master(current)
+    return {code: record for code, record in names.items()
+            if code not in known and oldest <= record['period'] <= period}
+
+
+def _historical_entities(root, monthly, components, staged, archive):
+    """Whitelist historical-only labels from the verified base/control or effective rectifications."""
+    known = _entity_master(inside(root, monthly['components']['current']['path']))
+    missing = set(components['history']['entity_codes']).difference(known)
+    if missing:
+        control = set()
+        with archive('24DSF').lines('24dsf_control.txt') as lines:
+            for number, line in lines:
+                code = line[:5].strip()
+                if not code.isascii() or not code.isdigit():
+                    raise SourceError(f'Invalid historical entity control at line {number}')
+                control.add(code.zfill(5))
+        if missing - control:
+            raise SourceError('Historical entity absent from the official 24DSF control')
+    if set(components['corrections']['entity_codes']).difference(known):
+        path = staged.get('corrections') or inside(root, components['corrections']['path'])
+        with closing(connect_readonly(path)) as connection:
+            effective = connection.execute(
+                'SELECT DISTINCT entity FROM corrections WHERE situation <> 0 OR amount_tenths <> 0')
+            missing.update(code for (code,) in effective if code not in known)
+    # null means the code is verified but no official denomination is available.
+    labels = {code: monthly['retired_entity_names'].get(code) for code in sorted(missing)}
+    if REPORT_PERIOD in months_ending(monthly['period']):
+        for code in missing.intersection(REPORT_ENTITIES):
+            if labels[code] is None or labels[code]['period'] < REPORT_PERIOD:
+                page, name = REPORT_ENTITIES[code]
+                labels[code] = {'name': name, 'period': REPORT_PERIOD, 'source': f'{REPORT_URL}#page={page}'}
+    return labels
+
+
 def _publish_current(manager, period, downloaded, archive, guard, progress, work):
     """Publish a complete monthly database before any extended import can fail."""
     config, root = manager.config, manager.config.data_dir
@@ -216,6 +274,8 @@ def _publish_current(manager, period, downloaded, archive, guard, progress, work
                  'bytes': destination.stat().st_size}
     manifest = {'schema_version': 1, 'version': wanted, 'period': period, 'checked_at': timestamp(),
                 'rows': metadata['rows'], 'files': files, 'components': {'current': component},
+                'retired_entity_names': _retired_entity_names(root, previous, legacy, manager.database,
+                                                             period, destination),
                 'capabilities': {'current': True, 'history': False, 'padron': False, 'normal_since': False}}
     guard(force=True)
     with manager.snapshot_lock:
@@ -312,12 +372,8 @@ def refresh_bundle(manager, deadline: float) -> dict:
                 guard.completed.append(path)
             else:
                 path.unlink()
-        version = hashlib.sha256(json.dumps(['bundle-v1', period, versions], sort_keys=True).encode()).hexdigest()
         warnings = ['BCRA download log returned null for ' + file['name']
                     for file in downloaded if file.get('terms_log_result') == 'null_response']
-        if previous and version == previous['version']:
-            return {'action': 'unchanged', 'version': version, 'period': period,
-                    'capabilities': previous['capabilities'], 'warnings': warnings}
         components = {'current': monthly['components']['current']}
         staged = {}
         for kind, required in COMPONENT_KINDS.items():
@@ -354,11 +410,12 @@ def refresh_bundle(manager, deadline: float) -> dict:
                                 'version': wanted, 'bytes': path.stat().st_size}
             staged[kind] = path
         guard(force=True)
-        current_path = staged.get('current') or inside(root, components['current']['path'])
-        with closing(connect_readonly(current_path)) as connection:
-            known = {row[0] for row in connection.execute('SELECT code FROM entities')}
-        if any(set(components[kind].get('entity_codes', [])) - known for kind in ('history', 'corrections')):
-            raise SourceError('Historical publication references an entity absent from its master')
+        historical_entities = _historical_entities(root, monthly, components, staged, archive)
+        identity = ['bundle-v2', period, versions, historical_entities]
+        version = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        if previous and version == previous['version']:
+            return {'action': 'unchanged', 'version': version, 'period': period,
+                    'capabilities': previous['capabilities'], 'warnings': warnings}
         files = []
         reusable = {(file['kind'], file['sha256']): file.get('path') for file in (previous or {}).get('files', [])}
         legacy_files = {(file['kind'], file['sha256']): file for file in (legacy or {}).get('files', [])}
@@ -389,7 +446,7 @@ def refresh_bundle(manager, deadline: float) -> dict:
         manifest = {'schema_version': 2, 'version': version, 'period': period,
                     'checked_at': timestamp(), 'imported_at': timestamp(),
                     'rows': components['current']['rows'], 'files': files, 'components': components,
-                    'warnings': warnings,
+                    'historical_entities': historical_entities, 'warnings': warnings,
                     'capabilities': {'current': True, 'history': True, 'padron': True, 'normal_since': True}}
         progress('publish')
         with manager.snapshot_lock:
