@@ -372,6 +372,94 @@ class OrganicProfileReuseTests(unittest.TestCase):
         self.assertEqual(api.leads["10"]["ASSIGNED_BY_ID"], "777")
         self.assertFalse(api.writes)
 
+    def converted_case(self, *, cleared_lead=False):
+        api = OrganicCrm()
+        api.leads["10"].update(STATUS_ID="CONVERTED", STATUS_SEMANTIC_ID="S", ASSIGNED_BY_ID="44", UF_LEAD_CUIL=CUIL)
+        api.leads["10"][api.config.fields.lead_cuil] = CUIL
+        api.contacts["1"]["ASSIGNED_BY_ID"] = "44"
+        api.deals = [{"ID": "900", "LEAD_ID": "10", "CONTACT_ID": "1", "CATEGORY_ID": "1", "STAGE_ID": "C1:NEW",
+                      "STAGE_SEMANTIC_ID": "P", "ASSIGNED_BY_ID": "44"}]
+        api.activity.update(OWNER_TYPE_ID="2", OWNER_ID="900")
+        api.dialog["entity_data_2"] = "LEAD|" + ("0" if cleared_lead else "10") + "|CONTACT|1|COMPANY|0|DEAL|900"
+        request = payload()
+        request["routing_policy"] = reuse.CONTINUITY_POLICY
+        return api, request
+
+    def test_new_continuity_reuses_only_the_exact_unique_converted_deal_activity_without_writes(self):
+        for cleared in (False, True):
+            with self.subTest(cleared=cleared):
+                api, request = self.converted_case(cleared_lead=cleared)
+                before = copy.deepcopy((api.leads, api.contacts, api.deals))
+                result = process(request, env=ENV, client=api)
+                self.assertEqual((result["action"], result["lead_id"], result["contact_id"], result["deal_id"], result["seller_id"]),
+                                 ("assigned_case", "10", "1", "900", "44"))
+                self.assertFalse(result["write_attempted"])
+                self.assertFalse(api.writes)
+                self.assertEqual((api.leads, api.contacts, api.deals), before)
+
+    def test_queued_payload_without_exact_new_policy_keeps_the_original_deal_activity_rejection(self):
+        for marker in (None, "web-chat-continuity-v0"):
+            with self.subTest(marker=marker):
+                api, request = self.converted_case()
+                if marker is None:
+                    request.pop("routing_policy")
+                else:
+                    request["routing_policy"] = marker
+                result = process(request, env=ENV, client=api)
+                self.assertEqual((result["action"], result["reason"]), ("manual_review", "native_activity_unverified"))
+                self.assertFalse(api.writes)
+
+    def test_continuity_never_uses_a_deal_owner_to_relax_native_identity_or_activity_conflicts(self):
+        conditions = ["lead", "contact", "category", "deal", "multiple", "activity", "session", "user_code",
+                      "tracker_lead", "tracker_contact", "tracker_deal", "contact_only", "person", "manual_stage"]
+        for condition in conditions:
+            with self.subTest(condition=condition):
+                api, request = self.converted_case()
+                if condition == "lead": api.deals[0]["LEAD_ID"] = "999"
+                elif condition == "contact": api.deals[0]["CONTACT_ID"] = "999"
+                elif condition == "category": api.deals[0]["CATEGORY_ID"] = "5"
+                elif condition == "deal": api.deals = []
+                elif condition == "multiple": api.deals.append({**api.deals[0], "ID": "901"})
+                elif condition == "activity": api.activity["OWNER_ID"] = "901"
+                elif condition == "session": api.activity["ASSOCIATED_ENTITY_ID"] = "301"
+                elif condition == "user_code": api.activity["PROVIDER_PARAMS"]["USER_CODE"] += "-different"
+                elif condition == "tracker_lead": api.dialog["entity_data_2"] = "LEAD|999|CONTACT|1|DEAL|900"
+                elif condition == "tracker_contact": api.dialog["entity_data_2"] = "LEAD|10|CONTACT|999|DEAL|900"
+                elif condition == "tracker_deal": api.dialog["entity_data_2"] = "LEAD|10|CONTACT|1|DEAL|901"
+                elif condition == "contact_only":
+                    request["crm_binding"]["native_lead_id"] = None
+                    api.dialog["entity_data_2"] = "LEAD|0|CONTACT|1|DEAL|900"
+                elif condition == "person": api.contacts["1"]["UF_CONTACT_CUIL"] = "20999999999"
+                else: api.deals[0]["STAGE_ID"] = api.config.deal.manual_review_stage_id
+                result = process(request, env=ENV, client=api)
+                self.assertEqual(result["action"], "manual_review")
+                self.assertFalse(result["write_attempted"])
+                self.assertFalse(api.writes)
+
+    def test_continuity_rechecks_current_assigned_case_and_native_activity_before_returning_its_seller(self):
+        for condition in ("deal", "activity", "person"):
+            with self.subTest(condition=condition):
+                api, request = self.converted_case()
+                original = api.call
+                activity_reads = 0
+                identity_reads = 0
+                def changed(method, body):
+                    nonlocal activity_reads, identity_reads
+                    if method == "crm.activity.get":
+                        activity_reads += 1
+                        if condition == "activity" and activity_reads == 2:
+                            api.activity["ASSOCIATED_ENTITY_ID"] = "301"
+                    if method == "crm.lead.get" and str(body["id"]) == "10":
+                        identity_reads += 1
+                        if identity_reads == 2:
+                            if condition == "deal": api.deals[0]["STAGE_ID"] = "C1:WON"
+                            elif condition == "person": api.contacts["1"]["UF_CONTACT_CUIL"] = "20999999999"
+                    return original(method, body)
+                api.call = changed
+                result = process(request, env=ENV, client=api)
+                self.assertEqual(result["action"], "manual_review")
+                self.assertFalse(api.writes)
+
 
 if __name__ == "__main__":
     unittest.main()

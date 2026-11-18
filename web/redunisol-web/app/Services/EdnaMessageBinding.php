@@ -87,6 +87,75 @@ class EdnaMessageBinding
             }
         }
 
+        $chats = $this->candidateChats($candidates);
+
+        $proofs = [];
+        foreach ($chats as $chatId) {
+            // Keep all proofs from each chat: a locally ambiguous chat must not
+            // disappear behind another chat that happens to have one match.
+            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
+                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    /** The caller validates the exact server receipt identity; its lead only narrows discovery. */
+    public function resolveReceipt(object $event, array $payload, int $receiptLeadId): ?array
+    {
+        $this->deadline = microtime(true) + 30;
+        $this->calls = 0;
+        $this->reads = [];
+        $phoneHash = $this->entryPhone($event, $payload);
+        if (! $this->positiveId($receiptLeadId)) {
+            throw new RuntimeException('Invalid receipt lead hint.');
+        }
+        $records = $this->call('crm.lead.list', ['filter' => ['@ID' => [(string) $receiptLeadId]],
+            'select' => ['ID', 'PHONE', 'CONTACT_ID'], 'start' => -1]);
+        if (! is_array($records) || ! array_is_list($records) || count($records) !== 1
+            || (string) ($records[0]['ID'] ?? '') !== (string) $receiptLeadId
+            || ! is_array($records[0]['PHONE'] ?? null)
+            || ! collect($records[0]['PHONE'])->contains(fn ($phone) => is_array($phone)
+                && (new AttributionJourney)->phoneHash((string) ($phone['VALUE'] ?? '')) === $phoneHash)) {
+            throw new RuntimeException('Receipt lead does not match the authenticated sender.');
+        }
+        $contact = (string) ($records[0]['CONTACT_ID'] ?? '');
+        $candidates = ['lead' => [(string) $receiptLeadId]];
+        if ($this->positiveId($contact)) {
+            $candidates['contact'] = [$contact];
+        } elseif (! in_array($contact, ['', '0'], true)) {
+            throw new RuntimeException('Receipt contact hint is invalid.');
+        }
+        $deals = $this->call('crm.deal.list', ['filter' => ['LEAD_ID' => $receiptLeadId, 'CATEGORY_ID' => 1],
+            'select' => ['ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID'], 'start' => -1]);
+        if (! is_array($deals) || ! array_is_list($deals) || count($deals) >= 50) {
+            throw new RuntimeException('Receipt deal discovery is incomplete.');
+        }
+        foreach ($deals as $deal) {
+            if (! is_array($deal) || ! $this->positiveId($deal['ID'] ?? null)
+                || (string) ($deal['LEAD_ID'] ?? '') !== (string) $receiptLeadId
+                || (string) ($deal['CATEGORY_ID'] ?? '') !== '1'
+                || (string) ($deal['CONTACT_ID'] ?? '') !== $contact) {
+                throw new RuntimeException('Receipt deal does not match its exact lead and contact.');
+            }
+            $candidates['deal'][(string) $deal['ID']] = (string) $deal['ID'];
+        }
+        if (count($candidates['deal'] ?? []) > 25) {
+            throw new RuntimeException('Receipt deal window requires review.');
+        }
+        $proofs = [];
+        foreach ($this->candidateChats($candidates) as $chatId) {
+            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
+                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    private function candidateChats(array $candidates): array
+    {
         $chats = [];
         $connectors = [];
         foreach ($candidates as $entity => $ids) {
@@ -116,16 +185,7 @@ class EdnaMessageBinding
             }
         }
 
-        $proofs = [];
-        foreach ($chats as $chatId) {
-            // Keep all proofs from each chat: a locally ambiguous chat must not
-            // disappear behind another chat that happens to have one match.
-            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
-                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
-            }
-        }
-
-        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+        return $chats;
     }
 
     /** The phone discovers candidates; only the exact native connector message proves a binding. */

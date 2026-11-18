@@ -28,6 +28,8 @@ class CurrentMessageReadFake extends EdnaBitrix
 
     public array $dialogs = [];
 
+    public array $deals = [];
+
     public ?Closure $afterRead = null;
 
     public function call(string $method, array $payload = []): mixed
@@ -37,6 +39,7 @@ class CurrentMessageReadFake extends EdnaBitrix
             'crm.duplicate.findbycomm' => [$payload['entity_type'] => $this->ids[$payload['entity_type']]],
             'crm.lead.list' => $this->records['LEAD'],
             'crm.contact.list' => $this->records['CONTACT'],
+            'crm.deal.list' => $this->deals,
             'imopenlines.crm.chat.get' => $this->chats[$payload['CRM_ENTITY_TYPE'].':'.$payload['CRM_ENTITY']] ?? [],
             'imopenlines.dialog.get' => $this->dialogs[(string) $payload['CHAT_ID']] ?? [],
             'crm.activity.list' => isset($payload['filter']['ASSOCIATED_ENTITY_ID'])
@@ -86,6 +89,76 @@ function currentMessageSecondChat(CurrentMessageReadFake $fake): void
     $fake->histories['502'] = array_replace($fake->histories['501'], ['sessionId' => 502, 'chatId' => 602,
         'message' => ['702' => array_replace($fake->histories['501']['message']['701'], ['id' => '702', 'chatid' => '602'])]]);
 }
+
+function receiptCurrentMessageFixture(): array
+{
+    [$event, $payload, $fake] = currentMessageFixture();
+    $fake->records['LEAD'][0]['CONTACT_ID'] = '301';
+    $fake->deals = [['ID' => '401', 'LEAD_ID' => '101', 'CONTACT_ID' => '301', 'CATEGORY_ID' => '1']];
+    $fake->chats = ['deal:401' => [['CHAT_ID' => '601', 'CONNECTOR_ID' => 'whatsappbyedna']]];
+    $fake->activities['501'][0]['OWNER_TYPE_ID'] = '2';
+    $fake->activities['501'][0]['OWNER_ID'] = '401';
+    $fake->dialogs['601']['entity_data_1'] = 'Y|DEAL|401|N|N|501|0|0|0|0';
+    $fake->dialogs['601']['entity_data_2'] = 'LEAD|0|CONTACT|301|DEAL|401';
+
+    return [$event, $payload, $fake];
+}
+
+test('an exact server receipt lead discovers its converted deal chat without choosing among phone duplicates', function () {
+    [$event, $payload, $fake] = receiptCurrentMessageFixture();
+    $fake->ids = ['LEAD' => range(1, 101), 'CONTACT' => range(1, 101)];
+
+    expect((new EdnaMessageBinding($fake))->resolveReceipt($event, $payload, 101))->toMatchArray([
+        'chat_id' => '601', 'session_id' => '501', 'activity_id' => '801', 'native_lead_id' => null,
+    ]);
+    $methods = array_column($fake->calls, 0);
+    expect($methods)->not->toContain('crm.duplicate.findbycomm')
+        ->and($fake->calls[0][1]['filter'])->toBe(['@ID' => ['101']])
+        ->and($fake->calls[1][1]['filter'])->toBe(['LEAD_ID' => 101, 'CATEGORY_ID' => 1])
+        ->and(array_count_values($methods)['imopenlines.session.history.get'])->toBe(1);
+});
+
+test('a receipt hint cannot borrow a lead or deal whose exact identity relation changed', function (string $change) {
+    [$event, $payload, $fake] = receiptCurrentMessageFixture();
+    match ($change) {
+        'lead' => $fake->records['LEAD'][0]['ID'] = '102',
+        'phone' => $fake->records['LEAD'][0]['PHONE'] = [['VALUE' => '5493519999999']],
+        'deal lead' => $fake->deals[0]['LEAD_ID'] = '102',
+        'deal contact' => $fake->deals[0]['CONTACT_ID'] = '302',
+        'deal category' => $fake->deals[0]['CATEGORY_ID'] = '5',
+        'full page' => $fake->deals = array_fill(0, 50, $fake->deals[0]),
+    };
+    expect(fn () => (new EdnaMessageBinding($fake))->resolveReceipt($event, $payload, 101))->toThrow(RuntimeException::class)
+        ->and(array_column($fake->calls, 0))->not->toContain('imopenlines.dialog.get', 'imopenlines.session.history.get');
+})->with(['lead', 'phone', 'deal lead', 'deal contact', 'deal category', 'full page']);
+
+test('receipt discovery still requires the exact connector message in the current native session', function () {
+    [$event, $payload, $fake] = receiptCurrentMessageFixture();
+    $fake->histories['501']['message']['701']['params']['connectorMid'] = ['unrelated'];
+    $fake->histories['401'] = array_replace($fake->histories['501'], ['sessionId' => 401]);
+    $fake->histories['401']['message']['701']['params']['connectorMid'] = [$event->message_id];
+
+    expect((new EdnaMessageBinding($fake))->resolveReceipt($event, $payload, 101))->toBeNull();
+    $history = array_values(array_filter($fake->calls, fn ($call) => $call[0] === 'imopenlines.session.history.get'));
+    expect(array_column(array_column($history, 1), 'SESSION_ID'))->toBe([501]);
+});
+
+test('two current receipt chats proving the same connector message remain ambiguous', function () {
+    [$event, $payload, $fake] = receiptCurrentMessageFixture();
+    currentMessageSecondChat($fake);
+    $fake->chats['deal:401'][] = ['CHAT_ID' => '602', 'CONNECTOR_ID' => 'whatsappbyedna'];
+    expect((new EdnaMessageBinding($fake))->resolveReceipt($event, $payload, 101))->toBeNull();
+});
+
+test('a receipt discovery retry cannot revive the connector proof from an earlier session', function () {
+    [$event, $payload, $fake] = receiptCurrentMessageFixture();
+    $resolver = new EdnaMessageBinding($fake);
+    expect($resolver->resolveReceipt($event, $payload, 101)['session_id'])->toBe('501');
+    $fake->dialogs['601']['entity_data_1'] = 'Y|DEAL|401|N|N|502|0|0|0|0';
+    $fake->activities['502'] = [array_replace($fake->activities['501'][0], ['ASSOCIATED_ENTITY_ID' => '502'])];
+    $fake->histories['502'] = array_replace($fake->histories['501'], ['sessionId' => 502, 'message' => []]);
+    expect($resolver->resolveReceipt($event, $payload, 101))->toBeNull();
+});
 
 test('current discovery proves the exact message without examining a truncated old session', function () {
     [$event, $payload, $fake] = currentMessageFixture();

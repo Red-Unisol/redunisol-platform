@@ -33,6 +33,7 @@ from .deal_service import (
     active_open_line_owners,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
+    inspect_open_line_assignments,
     notify_distribution_supervisor,
     notify_unmatched_routing,
     resolve_round_robin_assignee,
@@ -304,6 +305,9 @@ def qualify_catamarca_deal(
 
     lead = get_lead(client, lead_id, active_logger)
     contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
+    guarded_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason, active_logger)
     province = lead_enum_label(client, lead, config.fields.lead_province) or ""
     employment_status = lead_enum_label(
         client, lead, config.fields.lead_employment_status
@@ -403,6 +407,9 @@ def qualify_catamarca_deal(
         _manual(config, vimarx_resolution.reason) if vimarx_resolution.reason
         else bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     )
+    fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason or fresh_sessions != guarded_sessions:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
     # Persist before leaving PENDING: stage alone cannot distinguish a rejection
     # from manual review. A failed write keeps this deal out of the chat sweep.
     persist_commercial_decision(client, deal_id_int, decision.action)
@@ -607,6 +614,9 @@ def qualify_catamarca_deal(
             logger=active_logger,
         )
     except NoOnlineSellersError as exc:
+        fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+        if guard_reason or fresh_sessions != guarded_sessions:
+            return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
         can_enqueue = (
             not _business_hours_gate_enabled(source)
             or (within_business_hours and created_within_distribution_window)
@@ -703,6 +713,9 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         logger=active_logger,
     )
+    fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason or fresh_sessions != guarded_sessions:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
     update_fields: dict[str, Any] = {
         "stageId": decision.stage_id,
         "assignedById": assigned_by_id,
@@ -740,6 +753,7 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=active_logger,
+        expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(
         client,
@@ -976,6 +990,62 @@ def _split_legacy_queue_bucket(client: Any, config: AppConfig, deal: dict[str, A
     deal[config.deal.routing_bucket_field] = key
 
 
+def _routing_preflight(client, config, deal, logger):
+    """Preserve human CRM owners and attention before changing responsibles."""
+    try:
+        fresh = _get_deal(client, _required_int(deal.get("id"), "id"))
+        if any(str(fresh.get(key) or "") != str(deal.get(key) or "")
+               for key in ("id", "leadId", "contactId", "categoryId", "stageId", "assignedById")):
+            return {}, "deal_changed_before_assignment"
+        lead_id = _required_int(fresh.get("leadId"), "leadId")
+        lead = get_lead(client, lead_id, logger)
+        deal.setdefault("_routing_lead_snapshot", {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")})
+        owners = [_optional_int(fresh.get("assignedById")), _optional_int(lead.get("ASSIGNED_BY_ID"))]
+        if any(owner not in (None, 0, config.deal.provisional_user_id) for owner in owners):
+            return {}, "manual_owner_preserved"
+        if lead.get("CONTACT_ID") and str(lead["CONTACT_ID"]) != str(fresh.get("contactId")):
+            return {}, "crm_identity_changed_before_assignment"
+        return inspect_open_line_assignments(client, lead_id=lead_id,
+            contact_id=_optional_int(fresh.get("contactId")), deal_id=_required_int(fresh.get("id"), "id"),
+            distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+    except Exception:
+        return {}, "attention_inspection_unavailable"
+
+
+def _routing_preserved(client, config, deal, processed_at, reason, logger):
+    action = "skipped"
+    current = deal
+    try:
+        current = _get_deal(client, _required_int(deal.get("id"), "id"))
+        same = all(str(current.get(key) or "") == str(deal.get(key) or "")
+                   for key in ("id", "leadId", "contactId", "categoryId", "stageId", "assignedById"))
+        expected = deal.get("_routing_lead_snapshot")
+        lead = get_lead(client, _required_int(current.get("leadId"), "leadId"), logger)
+        same_lead = isinstance(expected, dict) and all(str(lead.get(key) or "") == str(expected.get(key) or "")
+                   for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID"))
+        coherent = (str(lead.get("ID")) == str(current.get("leadId"))
+                    and str(current.get("categoryId")) == str(config.deal.category_id)
+                    and (not lead.get("CONTACT_ID") or str(lead["CONTACT_ID"]) == str(current.get("contactId"))))
+        if (same and same_lead and coherent and current.get("stageId") in
+                {config.deal.pending_qualification_stage_id, config.deal.assignment_queue_stage_id}):
+            # Remove only this automatic selector entry. Responsibles, chat and
+            # commercial decision are untouched; this is a routing review.
+            client.call("crm.item.update", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": current["id"],
+                "fields": {"stageId": config.deal.routing_review_stage_id, config.deal.queue_reason_field: reason}})
+            current = {**current, "stageId": config.deal.routing_review_stage_id}
+            action = "routing_review"
+    except Exception:
+        # A failed/uncertain stage write never authorizes a responsible change.
+        pass
+    return _result(action=action, has_pending=False, reason=reason, processed_at=processed_at,
+        deal_id=_optional_int(current.get("id")), lead_id=_optional_int(current.get("leadId")),
+        contact_id=_optional_int(current.get("contactId")), stage_id=current.get("stageId"),
+        assigned_by_id=_optional_int(current.get("assignedById")),
+        assignment_strategy="manual_assignment_preserved", distribution_action="preserved",
+        distribution_reason=reason, chat_transfer_status="manual_owner_preserved",
+        message="Se conservan responsables y chat; atención o identidad requieren revisión de enrutamiento.")
+
+
 def _guard_queued_ownership(client, config, deal, logger, processed_at):
     """Re-read live ownership; a queue entry never overrides a human handoff."""
     fresh = _get_deal(client, _required_int(deal.get("id"), "id"))
@@ -989,6 +1059,13 @@ def _guard_queued_ownership(client, config, deal, logger, processed_at):
         )
     lead_id = _required_int(fresh.get("leadId"), "leadId")
     lead = get_lead(client, lead_id, logger)
+    fresh["_routing_lead_snapshot"] = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
+    _, attention_reason = inspect_open_line_assignments(
+        client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
+        deal_id=_required_int(fresh.get("id"), "id"),
+        distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+    if attention_reason and attention_reason != "manual_owner_preserved":
+        return fresh, _routing_preserved(client, config, fresh, processed_at, attention_reason, logger)
     owners = set(active_open_line_owners(
         client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
         deal_id=_required_int(fresh.get("id"), "id"),
@@ -1078,6 +1155,9 @@ def _retry_queued_deal(
         deal.get(config.deal.queue_target_stage_field)
         or config.deal.manual_review_stage_id
     )
+    guarded_sessions, guard_reason = _routing_preflight(client, config, deal, logger)
+    if guard_reason:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason, logger)
     _assign_lead_responsible(
         client, lead_id=lead_id, assigned_by_id=assigned_by_id, logger=logger
     )
@@ -1107,6 +1187,7 @@ def _retry_queued_deal(
         logger=logger,
         preserve_existing_ownership=True,
         provisional_user_id=config.deal.provisional_user_id,
+        expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(
         client, config, deal_id=deal_id,

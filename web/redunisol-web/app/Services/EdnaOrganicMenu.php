@@ -104,6 +104,11 @@ class EdnaOrganicMenu
             || app(EdnaPaidEntry::class)->classify($event, $stored)) {
             return false;
         }
+        if (app(WebChatContinuity::class)->receive($event, $stored)) {
+            $this->record($event->id, 'web_form_continuation');
+
+            return true;
+        }
         $received = CarbonImmutable::parse($stored['receivedAt']);
         $phone = $stored['subscriber']['identifier'];
         $inserted = DB::table('edna_organic_menus')->insertOrIgnore([
@@ -170,6 +175,10 @@ class EdnaOrganicMenu
             $uncertainSend = in_array($menu->send_state, ['sending', 'accepted', 'unknown'], true);
             if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
                 return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
+            }
+            if ($menu->send_state === 'pending'
+                && app(WebChatContinuity::class)->blocksOutbound($event, $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null)) {
+                return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
             }
             // Pending work captured before the paid/organic split can change route
             // only while no greeting has been attempted. Accepted or uncertain
@@ -328,7 +337,21 @@ class EdnaOrganicMenu
             return $this->wait('menu_send_gate_changed');
         }
         $this->assertBudget(13);
-        $this->write(['send_state' => 'sending', 'send_started_at' => now()]);
+        $claim = function () use ($menu, $proof): bool {
+            $event = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+            if ($event && app(WebChatContinuity::class)->blocksOutbound($event, $proof)) {
+                return false;
+            }
+            $this->write(['send_state' => 'sending', 'send_started_at' => now()]);
+
+            return true;
+        };
+        $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+        $claimed = $entry && app(WebChatContinuity::class)->eligibleEntry($entry)
+            ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
+        if (! $claimed) {
+            return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
+        }
         $this->assertLease();
         $result = $this->transport->schedule($this->current());
         $this->write($result);

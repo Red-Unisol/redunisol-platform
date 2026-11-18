@@ -764,3 +764,50 @@ Para el puente, conservar `web_form_receipts`, `web_form_continuations`,
 jobs ya encolados. Revertir código no autoriza borrar rutas, quitar vínculos
 nativos ni repetir transferencias con acuse incierto. Una versión de rollback
 debe seguir pudiendo conciliar esos resultados mediante lecturas.
+
+
+## Continuidad de una solicitud web durante la vinculación
+
+`web-chat-continuity-v1` conserva la referencia web válida del primer WhatsApp
+en `web_chat_contexts`. Los siguientes mensajes del mismo canal y destinatario
+heredan la espera: no abren otro menú general ni solicitan nuevamente el v3.
+El teléfono sólo correlaciona esa espera; nunca elige una ficha CRM. Antes de
+vincular o transferir, el puente prueba el MID nativo del mensaje original y del
+actual, el chat, la sesión, la identidad declarada y el recibo web. Otra sesión
+libera únicamente su callback nuevo al ingreso habitual; no se reproduce el inbox.
+Dos solicitudes activas o evidencia incompatible quedan para revisión.
+La ventana de ocho horas es fija desde el mensaje original y no se renueva con
+mensajes ni reintentos; se mantienen el backoff exponencial con jitter y la
+prioridad de ingresos nuevos del puente.
+
+Una conversión de prospecto a negociación se acepta sólo con la negociación
+activa única en el embudo comercial, `LEAD_ID` y contacto exactos y actividad
+nativa de esa sesión. Se usa su vendedor vigente y se conserva el responsable
+histórico del prospecto convertido. Un Guest distinto o un vínculo ambiguo siguen
+bloqueados. Si el chat ya está con ese vendedor, se registra como observado:
+no se inventa una transferencia ni se repite el POST. Los recibos de intención,
+acuse y prueba nativa siguen siendo necesarios para contar una derivación.
+
+El calificador Kestra revisa atención y transferencias humanas antes de cambiar
+responsables y otra vez antes del POST de chat, conservando también una devolución
+manual al receptor provisional. Una reapertura de sesión invalida la prueba
+anterior. Esta guarda no ejecuta ni reencola casos históricos.
+
+Publicación: instalar primero los namespace files compatibles de Marketing CRM
+en Kestra y verificar sus hashes; luego desplegar Web por GitHub Actions. Las
+migraciones son aditivas. El deploy activa `edna:web-chat-continuity activate`
+sólo después de comprobar imágenes, workers y HTTP. El corte persiste el último
+ID del inbox y la fecha UTC, y es idempotente: otro deploy no mueve ese límite.
+`edna:web-chat-continuity status` sólo lee el corte y cantidades por estado.
+La continuidad requiere tanto un recibo web creado después del corte como un
+callback con ID y fecha original posteriores. Formularios previos, callbacks
+tardíos y rutas ya existentes conservan su recorrido; no hay backfill, rescate ni
+reenvío al desplegar. Los POST nuevos al consumidor incluyen la política sólo
+cuando su entrada original pasa ese corte; la actividad convertida sin ese
+marcador mantiene la validación anterior.
+
+Rollback: conservar las tablas, pruebas e IDs de corte. No borrar ni volver a
+activar el corte para recuperar casos. Si es necesario revertir Web, mantener el
+consumidor Kestra compatible con los trabajos ya iniciados y verificar que ningún
+intento incierto vuelva a enviarse. Toda recuperación histórica requiere un
+pedido aparte.
