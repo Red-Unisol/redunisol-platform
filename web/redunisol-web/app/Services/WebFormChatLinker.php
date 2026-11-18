@@ -130,6 +130,22 @@ class WebFormChatLinker
             if (in_array($route->transfer_state, ['sending', 'unknown'], true)) {
                 return $this->reconcileTransfer($route);
             }
+            // Reconcile the original uncertain POST first. Only an untouched
+            // fresh callback may yield to an independently guarded Benefits route.
+            $benefits = app(EdnaBenefitsRouting::class);
+            if ($benefits->eligibleEntry($entry)) {
+                try {
+                    $decision = $benefits->check($entry, $this->proof);
+                } catch (Throwable) {
+                    $decision = ['state' => 'waiting', 'reason' => 'benefits_preflight_unavailable'];
+                }
+                if ($decision !== null) {
+                    $state = in_array($decision['state'] ?? '', ['waiting', 'review'], true) ? $decision['state'] : 'preserved';
+
+                    return $this->finish($state, substr((string) ($decision['reason'] ?? 'benefits_routing'), 0, 80),
+                        $state === 'preserved' ? ['transfer_state' => 'preserved'] : []);
+                }
+            }
 
             $submission = $route->submission_id;
             $reentry = ($continuation->proof_source ?? null) === 'reentry';

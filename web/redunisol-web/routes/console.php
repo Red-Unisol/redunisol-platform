@@ -29,6 +29,8 @@ Schedule::command('edna:rejected-chats poll')->everyMinute()->withoutOverlapping
 
 Schedule::command('edna:web-chat-routes poll')->everyMinute()->withoutOverlapping(5)
     ->when(fn () => config('edna.enabled') && config('edna.intake_crm_enabled'));
+Schedule::command('edna:benefits-chats poll')->everyMinute()->withoutOverlapping(5)
+    ->when(fn () => config('edna.enabled') && config('edna.router_enabled') && config('edna.intake_enabled'));
 Schedule::command('edna:organic-menus poll')->everyMinute()->withoutOverlapping(5)
     ->when(fn () => config('edna.enabled') && config('edna.router_enabled')
         && config('edna.intake_enabled') && config('edna.organic_menu_enabled'));

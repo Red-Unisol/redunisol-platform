@@ -4,6 +4,7 @@ use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\SendEdnaFlow;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use App\Services\AttributionJourney;
+use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicProfile;
@@ -503,4 +504,59 @@ test('changing the authenticated entry identity after preparation blocks the bus
     $service->submit($menu->id);
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('review');
     Http::assertNothingSent();
+});
+
+test('benefits continuity prevents profile reuse and a fallback V3', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService($profile);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+
+    $service->prepare($menu->id);
+
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved')
+        ->and($profile->calls)->toBe(0)->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Http::assertNothingSent();
+});
+
+test('benefits identified after preparation prevents the business POST', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+
+    $service->submit($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('a delayed benefits decision after a no-write acknowledgement resumes fallback without another business POST', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->times(3)->andReturn(null, null,
+        ['state' => 'waiting', 'reason' => 'benefits_case_reads_pending']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu,
+        ['action' => 'reused_not_valid', 'write_attempted' => false]))]);
+
+    $service->submit($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('fallback_pending');
+    $service->submit($menu->id);
+    Http::assertSentCount(1);
+    $ready = Mockery::mock(EdnaBenefitsRouting::class);
+    $ready->shouldReceive('check')->once()->andReturn(null);
+    app()->instance(EdnaBenefitsRouting::class, $ready);
+    $this->travel(2)->minutes();
+    $service->prepare($menu->id);
+
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('flow_scheduled')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    Http::assertSentCount(1);
 });

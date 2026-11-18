@@ -3,6 +3,7 @@
 use App\Jobs\LinkWebFormChat;
 use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\ProcessEdnaOrganicMenu;
+use App\Jobs\RouteEdnaBenefitsChat;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicMenu;
@@ -52,7 +53,7 @@ test('queued and reserved work stays unique until a real queue ACK deletes its h
     expect(DB::table('jobs')->count())->toBe(0)
         ->and(DB::table('edna_work_queue_keys')->count())->toBe(0)
         ->and($dispatcher->push(new $class(42)))->toBeTrue();
-})->with([LinkWebFormChat::class, ProcessEdnaOrganicMenu::class, PrepareEdnaOrganicLoan::class, SubmitEdnaOrganicLoan::class]);
+})->with([LinkWebFormChat::class, ProcessEdnaOrganicMenu::class, PrepareEdnaOrganicLoan::class, SubmitEdnaOrganicLoan::class, RouteEdnaBenefitsChat::class]);
 
 test('failure after physical enqueue rolls back both the queue row and placeholder', function () {
     Event::listen(JobQueued::class, fn () => throw new RuntimeException('test enqueue interruption'));

@@ -191,6 +191,11 @@ class EdnaIntakeBinding
         if (! $proof) {
             return $this->pending($send, 'crm_binding_pending');
         }
+        // A native benefits deal is a routing identity, not a credit applicant.
+        // Resolve it before the LEAD/CONTACT gate (including deal-only dialogs).
+        if ($this->interceptBenefits($send, $entry, $proof)) {
+            return null;
+        }
         $snapshot = app(EdnaOrganicAttention::class)->snapshot($proof);
         $contact = $snapshot['dialog_tuple']['bindings']['contact'] ?? null;
         if (! ($proof['native_lead_id'] ?? null) && ! $contact) {
@@ -290,6 +295,39 @@ class EdnaIntakeBinding
         }
 
         return $proofs;
+    }
+
+    private function interceptBenefits(object $send, object $entry, array $proof): bool
+    {
+        $benefits = app(EdnaBenefitsRouting::class);
+        if (! $benefits->eligibleEntry($entry)) {
+            return false;
+        }
+        try {
+            $decision = $benefits->check($entry, $proof);
+        } catch (\Throwable) {
+            $this->pending($send, 'benefits_preflight_unavailable');
+
+            return true;
+        }
+        if ($decision === null) {
+            return false;
+        }
+        if (($decision['state'] ?? '') === 'waiting') {
+            $this->pending($send, substr((string) ($decision['reason'] ?? 'benefits_evidence_pending'), 0, 64));
+
+            return true;
+        }
+        $reason = ($decision['reason'] ?? '') === 'benefits_routing' ? 'benefits_case_routing' : 'benefits_case_preserved';
+        DB::transaction(function () use ($send, $reason): void {
+            DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)->where('state', 'pending')
+                ->update(['state' => 'review', 'reason' => $reason, 'updated_at' => now()]);
+            app(EdnaFlowTransport::class)->update($send, ['pending'], [
+                'state' => 'cancelled', 'reason' => $reason, 'updated_at' => now(),
+            ]);
+        });
+
+        return true;
     }
 
     private function pending(object $send, string $reason): ?array
