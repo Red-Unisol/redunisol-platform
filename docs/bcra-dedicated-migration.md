@@ -22,7 +22,7 @@ mediante argumentos con secretos ni inventarios versionados.
 
 - El dedicado ejecuta la misma imagen OCI por digest y conserva sus datos en
   `/srv/redunisol/state/bcra-file-api`, sobre el NVMe existente.
-  La imagen fijada es
+  La imagen de la copia inicial fue
   `ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4`.
 - Su API escucha exclusivamente en `127.0.0.1:18082`.
 - La VPS mantiene un enlace SSH persistente hacia una cuenta restringida del
@@ -111,6 +111,10 @@ operativa del servicio. Los playbooks `bcra-data-*`, `bcra-backup-cold.yml` y
 `bcra-private-link.yml` separan transferencia, integridad, respaldo y transporte.
 Los defaults no autorizan escrituras; cada apply recibe la revision Git exacta
 y la autorizacion correspondiente. CI valida codigo sin contactar los hosts.
+
+Para actualizaciones posteriores, el inventario fija la imagen del servicio y el rol
+valida los recibos de la migración y el respaldo con su digest original. El digest
+de ejecución de la imagen del PR #765 es `sha256:0047d453c8ac636ae9f68e1a3a99ea1df503e37b89c0486598c53ed8ea067613`.
 
 El workflow manual legacy `deploy-bcra-file-poc.yml` se retira para impedir que
 un despliegue habitual vuelva a levantar el importador en la VPS. El publisher
