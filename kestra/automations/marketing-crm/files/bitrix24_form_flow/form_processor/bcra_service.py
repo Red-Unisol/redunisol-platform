@@ -6,7 +6,7 @@ import json
 import os
 from typing import Any
 
-from .bcra_client import BcraClient, BcraConsultationResult
+from .bcra_client import BCRA_PROVIDER, BcraClient, BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
 from .distribution_schedule import is_within_business_hours
@@ -195,6 +195,7 @@ def _persist_retryable_failure(
     message = result.message or "BCRA no disponible temporalmente."
     raw_snapshot = {
         "source": "bcra_central_deudores_v1",
+        "provider": BCRA_PROVIDER,
         "queried_at": result.checked_at or now.isoformat(),
         "http_status": result.http_status,
         "identification": str(result.identification or "").strip(),

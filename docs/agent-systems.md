@@ -12,7 +12,7 @@ Este documento sirve para ubicar rapidamente el sistema correcto, su fuente de v
 | VPS | Docker, Apache y servicios publicados | Compose/configuracion Git mas estado runtime | SSH |
 | Dedicado `dedicated_prod_01` | Base de host y servicio de archivos BCRA | `infra/ansible`, inventario y roles por servicio | SSH canonico `[DEDICATED_PRODUCTION_SSH]`; apply/verify Ansible separados |
 | MetaMap / Transferencias | Webhooks, validaciones recientes y actualizador firmado | Backend y SQLite del dedicado; historico anterior conservado en VPS | API bajo kestra.redunisol.com.ar/metamap-platform; [estado operativo](metamap-dedicated-migration.md) |
-| BCRA desde archivos | API interna e importacion de archivos; distinto de la API oficial usada por consumidores comerciales | Imagen por digest, datos del dedicado y [contrato de migracion](bcra-dedicated-migration.md) | API privada; Kestra conserva alias Docker mediante enlace SSH y relay VPS |
+| BCRA desde archivos | API de archivos para deuda vigente de Bitrix; los informes CredixSA usan la API publica | Imagen por digest, datos del dedicado y [contrato de migracion](bcra-dedicated-migration.md) | API privada; Kestra conserva alias Docker mediante enlace SSH y relay VPS |
 | Datos de recorrido web/WhatsApp/CRM | Eventos crudos para Marketing, management e IA | Volumen `/srv/redunisol-tracking`, por ambiente; [contrato y operaciÃ³n](journey-data.md) | Export API autenticada; credenciales `JOURNEY_EXPORT_*` |
 | Core, CredixSA y servicios financieros | Datos transaccionales | API propietaria correspondiente | endpoint y credencial local |
 | Google Sheets | Planillas compartidas | Google Drive/Sheets | service account u OAuth |

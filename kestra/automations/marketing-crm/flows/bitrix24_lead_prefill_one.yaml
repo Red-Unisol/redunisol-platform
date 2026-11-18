@@ -88,9 +88,12 @@ tasks:
     - bitrix24_form_flow/**
   taskRunner:
     type: io.kestra.plugin.scripts.runner.docker.Docker
+    networkMode: kestra_net
     pullPolicy: IF_NOT_PRESENT
   containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
   env:
+    BCRA_FILE_BASE_URL: "{{ envs.bcra_file_poc_url }}"
+    BCRA_FILE_TOKEN: "{{ secret('BCRA_FILE_POC_TOKEN') }}"
     ARCA_IDENTITY_OK: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.ok ?? false) : false }}"
     ARCA_IDENTITY_STATUS: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.status ?? '') : '' }}"
     ARCA_IDENTITY_CUIL: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.cuil ?? '') : '' }}"
