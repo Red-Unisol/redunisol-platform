@@ -139,6 +139,9 @@ adaptador de base de datos:
 - `finish`: estado, resultados parciales y outbox en la misma transacción.
   APPLIED exige todas las cuotas VERIFIED. Ningún vencimiento de lease libera
   una intención WRITING o UNCERTAIN para repetir el POST.
+- `release`: libera solo el lease del token vigente con fencing; no modifica
+  estados, intentos, reservas de cuotas ni outbox. Al reprocesar un terminal se
+  libera antes de publicar, incluso si la notificación vuelve a fallar.
 - `publish`: entrega idempotente desde el resultado persistido. Un callback
   fallido reintenta la publicación, no el cobro. Actualizar el resultado no debe
   volver a emitir un trabajo de cobro en bucle.
@@ -247,7 +250,8 @@ No se declaran esas verificaciones como realizadas.
 
 ## PRs, configuración y orden de integración
 
-1. PR Platform inicial: este plan, núcleo y pruebas; mantener en borrador.
+1. PR Platform inicial: este plan, núcleo y pruebas; integrar como base inactiva,
+   sin habilitar cobros ni interpretar el merge como autorización de activación.
 2. Recuperar acceso a `Red-Unisol/prestamos-celesol`; preparar PR coordinada del
    portal con migraciones, persistencia, webhook e interfaz autenticada.
 3. Completar en Platform clientes, adaptador legacy comprobado y flows
@@ -270,3 +274,12 @@ intenciones, resultados ni outbox. No hacer rollback destructivo del journal ni
 borrar estados inciertos para volver a cobrar. Conciliación futura deberá ser
 administrativa, auditada y basada en evidencia: no se incluye una acción que
 libere reservas sin demostrar que no hubo aplicación.
+
+## Corrección de reintentos — 18/11/2026
+
+Los reintentos de publicación de APPLIED y RECONCILIATION liberan el lease
+antes de notificar, sin volver a finalizar la operación ni recrear el outbox.
+La prueba de regresión cubre fallos consecutivos, recuperación y duplicados
+posteriores; conserva intentos, motivo y estado, con un solo intento de cobro.
+Validación local: 68 pruebas de Cobranzas correctas, 36 de Pago360. Los
+adaptadores reales siguen pendientes; este cambio no habilita cobros.

@@ -65,6 +65,14 @@ class Repository(Protocol):
         """
         ...
 
+    def release(self, token: str) -> None:
+        """Libera solo el lease del token vigente, revalidando fencing.
+
+        No modifica estado, intentos, reservas de cuotas ni outbox. Un token
+        vencido no puede liberar el lease de otro ejecutor.
+        """
+        ...
+
     def publish(self, operation_id: str) -> None:
         """Publica desde el resultado persistido; idempotente y sin volver a cobrar."""
         ...
@@ -151,6 +159,9 @@ class Processor:
         if claim.operation.operation_id != operation_id:
             raise ContractError("La reserva pertenece a otra operación")
         if claim.status in {Status.APPLIED, Status.RECONCILIATION}:
+            # Publicar un terminal no requiere conservar el lease de cobro.
+            # Tampoco debe reescribir el resultado ni regenerar su outbox.
+            self.repo.release(claim.token)
             return self._publish(operation_id, claim.status, claim.reason)
         operation = claim.operation
         selected = {i.key: i for i in operation.installments}

@@ -97,6 +97,10 @@ class MemoryRepository:
         self.status, self.reason = status, reason
         self.busy = False
 
+    def release(self, token):
+        with self.lock:
+            self.busy = False
+
     def publish(self, operation_id):
         self.notifications += 1
         if self.publish_fail:
@@ -351,6 +355,38 @@ class Pago360Tests(unittest.TestCase):
         repo.publish_fail=False
         self.assertTrue(worker.run('operation-test','execution-2').notified)
         self.assertEqual(legacy.calls,['9001'])
+
+    def test_terminal_callback_retries_release_lease_without_changing_payment(self):
+        for terminal in (Status.APPLIED, Status.RECONCILIATION):
+            with self.subTest(terminal=terminal):
+                repo, provider, legacy, worker = self.fixture()
+                if terminal == Status.RECONCILIATION:
+                    legacy.fail_at = 1
+                repo.publish_fail = True
+                first = worker.run('operation-test', 'execution-1')
+                self.assertEqual(first.status, terminal.value)
+                self.assertFalse(first.notified)
+                attempts = dict(repo.attempts)
+                reason = repo.reason
+                repo.finish = Mock(side_effect=AssertionError('Terminal result must not be rewritten'))
+                for execution in ('execution-2', 'execution-3'):
+                    retry = worker.run('operation-test', execution)
+                    self.assertEqual(retry.status, terminal.value)
+                    self.assertFalse(retry.notified)
+                    self.assertFalse(repo.busy)
+                repo.publish_fail = False
+                for execution in ('execution-4', 'execution-5'):
+                    recovered = worker.run('operation-test', execution)
+                    self.assertEqual(recovered.status, terminal.value)
+                    self.assertTrue(recovered.notified)
+                    self.assertFalse(repo.busy)
+                self.assertEqual(repo.notifications, 5)
+                self.assertEqual(repo.attempts, attempts)
+                self.assertEqual(repo.reason, reason)
+                self.assertEqual(repo.status, terminal)
+                self.assertEqual(legacy.calls, ['9001'])
+                self.assertEqual(provider.verify.call_count, 1)
+                repo.finish.assert_not_called()
 
     def test_finish_commit_failure_recovers_verified_attempt_without_write(self):
         repo, provider, legacy, worker = self.fixture()
