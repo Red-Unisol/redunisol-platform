@@ -90,6 +90,8 @@ export type CreateSolicitudInput = {
   linkFirmaDigital?: string | null;
   firmaDigitalmente?: boolean;
   garantias?: CreateSolicitudGarantiaInput[];
+  // Clave del alta que genera el frontend (ver CreateSolicitudUseCase).
+  idempotencyKey?: string;
   lineaPrestamoLegacyOid: string;
   montoAFinanciar?: number;
   motivo?: string;

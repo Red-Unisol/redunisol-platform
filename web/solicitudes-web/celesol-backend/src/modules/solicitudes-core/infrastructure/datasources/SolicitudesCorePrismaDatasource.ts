@@ -169,6 +169,7 @@ export class SolicitudesCorePrismaDatasource {
       cuotaResultante: input.cuotaResultante,
       cuotas: input.cuotas,
       cupoTitular: input.cupoTitular,
+      idempotencyKey: input.idempotencyKey ?? null,
       fechaPrimerVencimiento:
         SolicitudesCorePrismaDatasource.toDateOrNull(
           input.fechaPrimerVencimiento,
@@ -467,6 +468,18 @@ export class SolicitudesCorePrismaDatasource {
     const solicitud = await this.prisma.solicitud.findUnique({
       where: {
         id,
+      },
+      include: solicitudDetailInclude,
+    });
+
+    return solicitud ? SolicitudCoreMapper.toDomain(solicitud) : null;
+  }
+
+  async findByIdempotencyKey(idempotencyKey: string, createdBy: string) {
+    const solicitud = await this.prisma.solicitud.findFirst({
+      where: {
+        createdBy,
+        idempotencyKey,
       },
       include: solicitudDetailInclude,
     });

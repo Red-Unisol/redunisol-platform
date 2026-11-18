@@ -90,6 +90,9 @@ export type CreateSolicitudCoreRequest = {
   firmaDigitalmente?: boolean;
   garantias?: CreateSolicitudCoreGarantiaRequest[];
   fechaPrimerVencimiento?: string;
+  // Clave del alta: la misma en cada reintento, para que el backend no cree
+  // otra solicitud si el primer pedido ya se guardo.
+  idempotencyKey?: string;
   lineaPrestamoLegacyOid: string;
   montoAFinanciar?: number;
   motivo?: string;
