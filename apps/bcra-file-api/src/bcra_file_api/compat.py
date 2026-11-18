@@ -95,6 +95,9 @@ def historical_response(root: Path, current: Path, bundle: dict, identification:
     with closing(connect_readonly(current)) as connection:
         names = dict(connection.execute('SELECT code,name FROM entities'))
         fallback = connection.execute('SELECT name FROM names WHERE identification=?', (identification,)).fetchone()
+    for code, record in bundle.get('historical_entities', {}).items():
+        label = record['name'] if record else f'Entidad BCRA {code} · nombre pendiente'
+        names.setdefault(code, label)
     result = []
     for index, period in enumerate(periods):
         entities = []
