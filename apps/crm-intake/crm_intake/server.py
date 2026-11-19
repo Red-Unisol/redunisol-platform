@@ -27,6 +27,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "revision": os.environ.get("CRM_INTAKE_REVISION", "local"),
             "mode": "inactive",
             "capture_enabled": False,
+            "normalization_worker_enabled": False,
             "normalizer_version": VERSION,
             "supported_forms": sorted(form for _, form in SUPPORTED),
         })

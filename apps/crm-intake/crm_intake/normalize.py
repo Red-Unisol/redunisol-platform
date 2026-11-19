@@ -3,7 +3,9 @@
 import re
 import unicodedata
 
-VERSION = "intake-1"
+from .capture import decode_json
+from .contract import NORMALIZER_VERSION as VERSION
+
 SUPPORTED = {("web", "web-loan-v1"), ("whatsapp", "whatsapp-intake-v3"), ("whatsapp", "whatsapp-grouped-v1")}
 
 PROVINCES = {
@@ -188,12 +190,37 @@ def whatsapp_fields(payload, *, legacy_grouped):
     return fields | identity(payload, None)
 
 
-def normalize(submission):
-    key = (submission.channel, submission.form_version)
-    if key not in SUPPORTED:
-        return {"version": VERSION, "status": "unsupported_form_version", "fields": {}}
-    if submission.channel == "web":
-        fields = web_fields(submission.payload)
+def response_at(payload, path):
+    value = payload
+    try:
+        for key in path:
+            if ((isinstance(value, dict) and isinstance(key, str))
+                    or (isinstance(value, list) and type(key) is int)):
+                value = value[key]
+            else:
+                return None
+        if isinstance(value, str):
+            value = decode_json(value)
+    except (KeyError, IndexError, ValueError, RecursionError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def normalize_document(channel, form_version, payload, path):
+    base = {"version": VERSION, "fields": {}}
+    if (channel, form_version) not in SUPPORTED:
+        return base | {"status": "unsupported_form_version"}
+    answers = response_at(payload, path)
+    if answers is None:
+        return base | {"status": "unsupported_response_shape"}
+    if channel == "web":
+        fields = web_fields(answers)
     else:
-        fields = whatsapp_fields(submission.payload, legacy_grouped=submission.form_version == "whatsapp-grouped-v1")
-    return {"version": VERSION, "status": "interpreted", "fields": fields}
+        fields = whatsapp_fields(answers, legacy_grouped=form_version == "whatsapp-grouped-v1")
+    return base | {"status": "interpreted", "fields": fields}
+
+
+def normalize(submission):
+    return normalize_document(
+        submission.channel, submission.form_version, submission.payload, submission.answers_path,
+    )
