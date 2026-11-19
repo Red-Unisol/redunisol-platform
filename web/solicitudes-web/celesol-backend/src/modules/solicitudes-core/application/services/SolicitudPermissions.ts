@@ -1,3 +1,5 @@
+import { hasWorkflowArea, hasWorkflowAreaId, userWorkflowAreas } from "../../../auth/domain/workflow-areas";
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudFieldAccessRuleRecord } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 
@@ -5,6 +7,7 @@ export type SolicitudPermissionUser = {
   id: string;
   isAnalista?: boolean;
   isSystemAdmin?: boolean;
+  workflowOwners?: AuthWorkflowOwner[];
   workflowOwnerId: string | null;
   workflowOwnerCode?: string | null;
 };
@@ -56,8 +59,7 @@ export function canEditSolicitud(
 
   if (
     action === "CREATE_CANCELACION" &&
-    user.workflowOwnerCode === "RIESGO" &&
-    isCurrentOwnerUser(user, solicitud)
+    userWorkflowAreas(user).some(area => area.code === "RIESGO" && area.id && area.id === solicitud.estadoActual.ownerId)
   ) {
     return true;
   }
@@ -68,8 +70,7 @@ export function canEditSolicitud(
 
   if (
     action === "UPLOAD_ATTACHMENT" &&
-    user.workflowOwnerId &&
-    ["RIESGO", "VENDEDORES", "TESORERIA"].includes(user.workflowOwnerCode ?? "")
+    userWorkflowAreas(user).some(area => area.id && ["RIESGO", "VENDEDORES", "TESORERIA"].includes(area.code))
   ) {
     return canViewSolicitud(user, solicitud);
   }
@@ -98,7 +99,7 @@ export function canEditSolicitud(
   // Se mantienen las reglas de campos del estado y las demás operaciones.
   if (
     action === "EDIT_DATA" &&
-    user.workflowOwnerCode === "RIESGO" &&
+    hasWorkflowArea(user, "RIESGO") &&
     solicitud.estadoActual.owner?.code === "VENDEDORES"
   ) {
     return true;
@@ -110,7 +111,7 @@ export function canEditSolicitud(
   if (
     action === "CHANGE_STATE" &&
     solicitud.estadoActual.code === "Transferir" &&
-    user.workflowOwnerCode === "RIESGO"
+    hasWorkflowArea(user, "RIESGO")
   ) {
     return true;
   }
@@ -188,9 +189,5 @@ function isCurrentOwnerUser(
   user: SolicitudPermissionUser,
   solicitud: SolicitudPermissionTarget,
 ) {
-  return Boolean(
-    user.workflowOwnerId &&
-    solicitud.estadoActual.ownerId &&
-    user.workflowOwnerId === solicitud.estadoActual.ownerId,
-  );
+  return hasWorkflowAreaId(user, solicitud.estadoActual.ownerId);
 }

@@ -51,6 +51,19 @@ describe("SolicitudTransitionPolicy", () => {
     assert.throws(() => policy.validate(context), ForbiddenSolicitudAccessError);
   });
 
+  it("authorizes a secondary operational area and denies actions after it is removed", () => {
+    const policy = new SolicitudTransitionPolicy();
+    const treasury = { id: "treasury", code: "TESORERIA", name: "Tesorería" };
+    const legajos = { id: "owner-1", code: "LEGAJOS_DIGITALES", name: "Legajos Digitales" };
+    const context = baseContext({
+      command: { ...baseCommand(), workflowOwnerId: treasury.id, workflowOwners: [treasury, legajos] },
+    });
+
+    assert.doesNotThrow(() => policy.validate(context));
+    context.command.workflowOwners = [treasury];
+    assert.throws(() => policy.validate(context), ForbiddenSolicitudAccessError);
+  });
+
   it("rejects missing transition candidate", () => {
     const policy = new SolicitudTransitionPolicy();
     const context = baseContext({

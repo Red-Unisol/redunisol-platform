@@ -1,3 +1,5 @@
+import { canActOnWorkflowState } from "../../domain/workflow/SolicitudTransitionPolicy";
+import { activeWorkflowAreaWhere, hasWorkflowArea, hasWorkflowAreaId, userWorkflowAreaIds, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
 import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
 import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
@@ -251,6 +253,15 @@ export class SolicitudWorkflowPrismaDatasource {
             solicitudId: input.plan.command.solicitudId,
           });
           throw new WorkflowExecutionPlanStateConflictError();
+        }
+        if (input.plan.command.workflowOwners !== undefined) {
+          const actor = await tx.user.findFirst({
+            where: { id: input.plan.command.changedBy, state: 1, deletedAt: null },
+            include: workflowAreaInclude,
+          });
+          if (!actor || (!actor.isSystemAdmin && !canActOnWorkflowState(
+            actor, solicitud.estadoActual.ownerId, solicitud.estadoActual.code, input.plan.command.actionCode,
+          ))) throw new ForbiddenSolicitudAccessError();
         }
         let updatedSolicitud = await this.loadSolicitudCoreById(
           executor,
@@ -543,7 +554,7 @@ export class SolicitudWorkflowPrismaDatasource {
         deletedAt: null,
         recibeAsignacionAutomatica: true,
         state: 1, // USER_STATE.ACTIVE
-        workflowOwnerId: ownerId,
+        ...activeWorkflowAreaWhere({ id: ownerId }),
       },
       select: {
         firstName: true,
@@ -737,17 +748,21 @@ export class SolicitudWorkflowPrismaDatasource {
     // owner actual (TESORERIA). No aplica a ningun otro estado.
     const isRiesgoTransferirException =
       solicitud.estadoActual.code === "Transferir" &&
-      input.workflowOwnerCode === "RIESGO";
+      hasWorkflowArea(input, "RIESGO");
 
-    if (!input.isSystemAdmin && !isRiesgoTransferirException) {
-      this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
+    const isLegajosTransferirException = solicitud.estadoActual.code === "Liquidada" &&
+      hasWorkflowArea(input, "LEGAJOS_DIGITALES");
+    if (!input.isSystemAdmin && !isRiesgoTransferirException && !isLegajosTransferirException) {
+      this.validateWorkflowOwner(input, solicitud);
     }
 
     if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
     const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
     const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
       ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
-    return transitions.filter(t => t.actionCode !== "liquidar_con_firma").map(t => {
+    return transitions.filter(t => t.actionCode !== "liquidar_con_firma" &&
+      (input.isSystemAdmin || canActOnWorkflowState(input, solicitud.estadoActual.ownerId, solicitud.estadoActual.code, t.actionCode))
+    ).map(t => {
       if (isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code) && returnBlocked)
         return { ...t, blockedReason: returnBlocked };
       // Closing analysis runs the authoritative financial reconciliation first.
@@ -877,14 +892,14 @@ export class SolicitudWorkflowPrismaDatasource {
   }
 
   private validateWorkflowOwner(
-    workflowOwnerId: string | null | undefined,
+    user: Parameters<SolicitudWorkflowRepository["listAvailableTransitions"]>[0],
     solicitud: SolicitudWithOwner,
   ) {
-    if (!workflowOwnerId) {
+    if (!userWorkflowAreaIds(user).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
-    if (solicitud.estadoActual.ownerId !== workflowOwnerId) {
+    if (!hasWorkflowAreaId(user, solicitud.estadoActual.ownerId)) {
       throw new ForbiddenSolicitudAccessError();
     }
   }

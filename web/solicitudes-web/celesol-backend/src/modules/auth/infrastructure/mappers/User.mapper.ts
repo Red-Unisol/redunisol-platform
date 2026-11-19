@@ -1,4 +1,8 @@
-import type { AuthUser } from "../../domain/entities/User.entity";
+import type { AuthUser, AuthWorkflowOwner } from "../../domain/entities/User.entity";
+import { userWorkflowAreas } from "../../domain/workflow-areas";
+
+type StoredOwner = AuthWorkflowOwner & { isActive?: boolean };
+const ownerSelect = { code: true, id: true, name: true, isActive: true } as const;
 
 export type PrismaUserShape = {
   email: string;
@@ -11,15 +15,15 @@ export type PrismaUserShape = {
   recibeAsignacionAutomatica: boolean;
   state: number;
   workflowOwnerId: string | null;
-  workflowOwner?: {
-    code: string;
-    id: string;
-    name: string;
-  } | null;
+  workflowOwner?: StoredOwner | null;
+  workflowOwnerMemberships?: { workflowOwner: StoredOwner }[];
 };
 
 export class UserMapper {
   static toDomain(user: PrismaUserShape): AuthUser {
+    const workflowOwners = userWorkflowAreas(user);
+    const representative = workflowOwners.find(area => area.id === user.workflowOwnerId)
+      ?? workflowOwners[0] ?? null;
     return {
       email: user.email,
       emailVerified: user.emailVerified,
@@ -30,14 +34,9 @@ export class UserMapper {
       legacyUser: user.legacyUser,
       recibeAsignacionAutomatica: user.recibeAsignacionAutomatica,
       state: user.state,
-      workflowOwnerId: user.workflowOwnerId,
-      workflowOwner: user.workflowOwner
-        ? {
-            code: user.workflowOwner.code,
-            id: user.workflowOwner.id,
-            name: user.workflowOwner.name,
-          }
-        : null,
+      workflowOwnerId: representative?.id ?? null,
+      workflowOwner: representative,
+      workflowOwners,
     };
   }
 
@@ -53,12 +52,10 @@ export class UserMapper {
       recibeAsignacionAutomatica: true,
       state: true,
       workflowOwnerId: true,
-      workflowOwner: {
-        select: {
-          code: true,
-          id: true,
-          name: true,
-        },
+      workflowOwner: { select: ownerSelect },
+      workflowOwnerMemberships: {
+        select: { workflowOwner: { select: ownerSelect } },
+        orderBy: { workflowOwner: { sortOrder: "asc" } },
       },
     } as const;
   }

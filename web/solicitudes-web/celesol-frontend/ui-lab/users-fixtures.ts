@@ -5,6 +5,8 @@ import type {
 
 export const USERS_WORKFLOW_OWNERS: WorkflowOwner[] = [
   { id: "demo-riesgo", code: "RIESGO", name: "Riesgo de ejemplo" },
+  { id: "demo-tesoreria", code: "TESORERIA", name: "Tesorería" },
+  { id: "demo-legajos", code: "LEGAJOS_DIGITALES", name: "Legajos Digitales" },
   { id: "demo-ventas", code: "VENDEDORES", name: "Ventas de ejemplo" },
 ];
 
@@ -41,6 +43,7 @@ export const USERS_FIXTURE: UsersAdminUser[] = [
   isSystemAdmin: false,
   recibeAsignacionAutomatica: false,
   state: index === 2 ? 0 : index === 3 ? 2 : 1,
-  workflowOwnerId:
-    index === 3 ? null : index === 0 ? "demo-riesgo" : "demo-ventas",
+  workflowOwnerId: index === 3 ? null : index === 0 ? "demo-tesoreria" : "demo-ventas",
+  workflowOwners: index === 3 ? [] : USERS_WORKFLOW_OWNERS.filter((owner) => index === 0 ?
+    ["TESORERIA", "LEGAJOS_DIGITALES"].includes(owner.code) : owner.code === "VENDEDORES"),
 }));

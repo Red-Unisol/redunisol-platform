@@ -78,6 +78,7 @@ export function createDocumentReviewWorkflow(db: PrismaClient, dependencies: {
       currentUser: {
         id: user.id,
         workflowOwnerId: user.workflowOwnerId ?? "",
+        workflowOwners: user.workflowOwners,
         isSystemAdmin: user.isSystemAdmin,
       },
     });

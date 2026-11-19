@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import type { Prisma } from "@prisma/client";
 import type { WorkflowTransition } from "../../domain/entities/WorkflowTransition.entity";
 import type { WorkflowCommand } from "../../domain/workflow/types";
@@ -27,8 +28,8 @@ export async function prepareDismissal(
 ): Promise<Prisma.InputJsonObject> {
   const s = input.source;
   if (!input.comment?.trim()) throw new SolicitudWorkflowCommentRequiredError();
-  const actor = await db.user.findFirst({ where: { id: input.actorId, state: 1, deletedAt: null } });
-  if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== s.estadoActual.ownerId))
+  const actor = await db.user.findFirst({ where: { id: input.actorId, state: 1, deletedAt: null }, include: workflowAreaInclude });
+  if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, s.estadoActual.ownerId)))
     throw new ForbiddenSolicitudAccessError();
   assertNoLoanReplacementPending(s);
   if (s.archivedAt || s.estadoActual.code === "Desestimada")

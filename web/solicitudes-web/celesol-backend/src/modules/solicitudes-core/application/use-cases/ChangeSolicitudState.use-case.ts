@@ -105,7 +105,7 @@ export class ChangeSolicitudStateUseCase {
     }
 
     const workflowOwnerCode =
-      !input.currentUser.isSystemAdmin &&
+      input.currentUser.workflowOwners === undefined && !input.currentUser.isSystemAdmin &&
       RIESGO_OWNER_ACTION_EXCEPTIONS.has(input.actionCode) &&
       this.solicitudesRepository.findWorkflowOwnerCodeById
         ? await this.solicitudesRepository.findWorkflowOwnerCodeById(
@@ -121,6 +121,7 @@ export class ChangeSolicitudStateUseCase {
       motivo: input.motivo,
       now: this.now(),
       solicitudId: input.solicitudId,
+      ...(input.currentUser.workflowOwners ? { workflowOwners: input.currentUser.workflowOwners } : {}),
       workflowOwnerId: input.currentUser.workflowOwnerId,
       ...(workflowOwnerCode ? { workflowOwnerCode } : {}),
       ...(input.currentUser.isSystemAdmin ? { isSystemAdmin: true } : {}),

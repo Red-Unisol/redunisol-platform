@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import { actingContext } from "../../../auth/impersonation/context";
@@ -54,10 +55,10 @@ export class ControlledLoanReplacementService {
 
   private async actor(tx: Prisma.TransactionClient, user: AuthUser, solicitudId: string, requireAdmin = false) {
     if (requireAdmin) assertAdministrativeActor(user);
-    const actor = await tx.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null } });
+    const actor = await tx.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null }, include: workflowAreaInclude });
     const s = await administrativeSource(tx, solicitudId);
     if (!actor || (requireAdmin && !actor.isSystemAdmin) || (!actor.isSystemAdmin &&
-      (s.estadoActual.code !== "Confirmada" || actor.workflowOwnerId !== s.estadoActual.ownerId)))
+      (s.estadoActual.code !== "Confirmada" || !hasWorkflowAreaId(actor, s.estadoActual.ownerId))))
       throw new AdministrativeCorrectionError("Se requiere un operador habilitado para generar el préstamo desde Confirmada.", 403);
     return actor;
   }
@@ -104,7 +105,7 @@ export class ControlledLoanReplacementService {
     });
     const last = operations[0];
     const canRecover = Boolean(last && last.status !== "LINKED" && (last.status !== "CREATING" || Date.now() - last.createdAt.getTime() > (this.deps.creationTimeoutMs ?? 30000) + 60000));
-    const canOperate = user.isSystemAdmin || (s.estadoActual.code === "Confirmada" && user.workflowOwnerId === s.estadoActual.ownerId);
+    const canOperate = user.isSystemAdmin || (s.estadoActual.code === "Confirmada" && hasWorkflowAreaId(user, s.estadoActual.ownerId));
     return { canRecover: canAdmin && canRecover, canAdmin, canReplace: canOperate && !blockedReason, blockedReason,
       updatedAt: s.updatedAt.toISOString(), currentLoanId: s.legacyOid, operations,
       amount: s.montoAFinanciar === null ? null : Number(s.montoAFinanciar), cuotas: s.cuotas,
@@ -136,7 +137,7 @@ export class ControlledLoanReplacementService {
     assertCancelledLoan(previous);
     const prepared = await this.deps.prepare.prepareReplacement({
       convenio: input.convenio,
-      solicitudId: id, currentUser: { id: user.id, isSystemAdmin: user.isSystemAdmin, workflowOwnerId: user.workflowOwnerId ?? "" },
+      solicitudId: id, currentUser: { id: user.id, isSystemAdmin: user.isSystemAdmin, workflowOwnerId: user.workflowOwnerId ?? "", workflowOwners: user.workflowOwners },
     });
     const fingerprint = coreConditionsFingerprint(before);
     try {

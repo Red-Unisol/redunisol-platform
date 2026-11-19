@@ -43,7 +43,7 @@ export class GetSolicitudByIdUseCase {
 
     // El área autenticada determina las excepciones de edición y workflow.
     const workflowOwnerCode =
-      !input.currentUser.isSystemAdmin &&
+      input.currentUser.workflowOwners === undefined && !input.currentUser.isSystemAdmin &&
       input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(

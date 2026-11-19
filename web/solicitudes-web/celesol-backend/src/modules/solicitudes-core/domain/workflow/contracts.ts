@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudCore } from "../entities/SolicitudCore.entity";
 import type { WorkflowTransition } from "../entities/WorkflowTransition.entity";
 import type { DismissalReversal } from "./Dismissal";
@@ -12,6 +13,7 @@ export type ExecuteSolicitudTransitionInput = {
   motivo?: string;
   now: Date;
   solicitudId: string;
+  workflowOwners?: AuthWorkflowOwner[];
   workflowOwnerId: string;
   workflowOwnerCode?: string | null;
 };

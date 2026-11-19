@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../auth/domain/workflow-areas";
 import { Prisma, type PrismaClient, type SolicitudDocumentReview, type SolicitudDocumentDecision } from "@prisma/client";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { digest, hasMatchingSignedOperation, signedDocuments, type Assessment, type Attempt, type ProviderCandidate, type ReviewSource } from "./domain";
@@ -28,7 +29,7 @@ export type SignatureSummary = {
 };
 
 export function isLegajosUser(user: AuthUser) {
-  return user.isSystemAdmin || user.workflowOwner?.code === SIGNATURE_OWNER;
+  return user.isSystemAdmin || hasWorkflowArea(user, SIGNATURE_OWNER);
 }
 
 export function isSignatureOpen(row: SignatureSourceRow) {
@@ -81,7 +82,7 @@ export function eligibleSignatureCandidates(row: SignatureSourceRow, candidates:
 
 // The final webhook is delivery metadata. Signed originals also establish that
 // an attempt was submitted; retain completedAt unchanged in the audit evidence.
-function signatureSubmissionAt(attempt: Attempt): string | null {
+export function signatureSubmissionAt(attempt: Attempt): string | null {
   if (attempt.completedAt && Number.isFinite(Date.parse(attempt.completedAt))) return attempt.completedAt;
   if (!attempt.evidenceAvailable || !attempt.documents.length ||
     !attempt.documents.every(d => d.url && d.signedAt && Number.isFinite(Date.parse(d.signedAt)))) return null;

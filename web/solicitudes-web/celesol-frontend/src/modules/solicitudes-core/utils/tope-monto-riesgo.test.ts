@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getMontoSuperaTopeError, getTopeMontoRiesgo } from "./tope-monto-riesgo";
+import { getMontoSuperaTopeError, getTopeMontoRiesgo } from "./tope-monto-riesgo.ts";
 
 const vendedor = {
   isSystemAdmin: false,

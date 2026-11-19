@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../auth/domain/workflow-areas";
 import { CalculoConValoresEfectivosError } from "../domain/solicitudes-core-errors";
 import type { GetRevisionPrestamoUseCase } from "../application/use-cases/GetRevisionPrestamo.use-case";
 import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
@@ -267,6 +268,7 @@ export class SolicitudesCoreController {
         analistaId: user.id,
         umbralDias: query.umbralDias ?? 7,
         vista: query.vista ?? "mis_casos",
+        ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
         workflowOwnerId: user.workflowOwnerId,
       });
 
@@ -292,6 +294,7 @@ export class SolicitudesCoreController {
         analistaId: user.id,
         umbralDias: query.umbralDias ?? 7,
         vista: query.vista ?? "mis_casos",
+        ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
         workflowOwnerId: user.workflowOwnerId,
       });
 
@@ -322,6 +325,7 @@ export class SolicitudesCoreController {
         ...(creadoresVisibles ? { creadoresVisibles } : {}),
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -347,7 +351,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -386,7 +390,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -438,7 +442,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -467,7 +471,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -499,7 +503,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -533,7 +537,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -572,7 +576,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -601,7 +605,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -618,6 +622,7 @@ export class SolicitudesCoreController {
           currentUser: {
             id: user.id,
             workflowOwnerCode: user.workflowOwner?.code ?? null,
+            ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
             workflowOwnerId: user.workflowOwnerId,
             ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
           },
@@ -641,7 +646,7 @@ export class SolicitudesCoreController {
     try {
       const user = await this.getCurrentUser(req);
 
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -658,6 +663,7 @@ export class SolicitudesCoreController {
           currentUser: {
             id: user.id,
             workflowOwnerCode: user.workflowOwner?.code ?? null,
+            ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
             workflowOwnerId: user.workflowOwnerId,
             ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
           },
@@ -682,6 +688,7 @@ export class SolicitudesCoreController {
       const solicitud = await this.getSolicitudByIdUseCase.execute({
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -711,6 +718,7 @@ export class SolicitudesCoreController {
       const transitions =
         await this.listSolicitudTransitionsUseCase.execute({
           solicitudId: params.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         });
@@ -744,6 +752,7 @@ export class SolicitudesCoreController {
         comment: body.comment,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -774,6 +783,7 @@ export class SolicitudesCoreController {
       const solicitud = await this.getRevisionPrestamoUseCase.execute({
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -808,6 +818,7 @@ export class SolicitudesCoreController {
         ...(body.convenio ? { convenio: body.convenio } : {}),
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -834,6 +845,7 @@ export class SolicitudesCoreController {
       const history = await this.listSolicitudHistoryUseCase.execute({
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
         },
         solicitudId: params.id,
@@ -876,6 +888,7 @@ export class SolicitudesCoreController {
         ...body,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -904,6 +917,7 @@ export class SolicitudesCoreController {
       const solicitud = await this.assignSolicitudToSelfUseCase.execute({
         currentUser: {
           id: authenticatedUser.id,
+          ...(authenticatedUser.workflowOwners ? { workflowOwners: authenticatedUser.workflowOwners } : {}),
           workflowOwnerId: authenticatedUser.workflowOwnerId,
           ...(authenticatedUser.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -930,6 +944,7 @@ export class SolicitudesCoreController {
       const solicitud = await this.assignSolicitudToUserUseCase.execute({
         currentUser: {
           id: authenticatedUser.id,
+          ...(authenticatedUser.workflowOwners ? { workflowOwners: authenticatedUser.workflowOwners } : {}),
           workflowOwnerId: authenticatedUser.workflowOwnerId,
           ...(authenticatedUser.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -958,6 +973,7 @@ export class SolicitudesCoreController {
         currentUser: {
           id: user.id,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
         },
         solicitudId: params.id,

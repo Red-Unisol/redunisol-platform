@@ -362,7 +362,7 @@ describe("SolicitudesCorePrismaDatasource", () => {
     assert.equal(prisma.historyCreateCalls.length, 0);
   });
 
-  it("finds target user by id with workflowOwnerId only", async () => {
+  it("reads all active workflow areas for an assignment candidate", async () => {
     const prisma = new FakeSolicitudesCorePrisma();
     const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
 
@@ -372,6 +372,8 @@ describe("SolicitudesCorePrismaDatasource", () => {
       select: {
         id: true,
         workflowOwnerId: true,
+        workflowOwner: true,
+        workflowOwnerMemberships: { include: { workflowOwner: true } },
       },
       where: {
         id: "user-2",
@@ -380,6 +382,10 @@ describe("SolicitudesCorePrismaDatasource", () => {
     assert.deepEqual(user, {
       id: "user-2",
       workflowOwnerId: "owner-2",
+      workflowOwners: [
+        { id: "owner-2", code: "TESORERIA", name: "Tesorería" },
+        { id: "owner-1", code: "RIESGO", name: "Riesgo" },
+      ],
     });
   });
 
@@ -400,7 +406,10 @@ describe("SolicitudesCorePrismaDatasource", () => {
       where: {
         deletedAt: null,
         state: 1,
-        workflowOwnerId: "owner-1",
+        OR: [
+          { workflowOwnerMemberships: { some: { workflowOwner: { id: "owner-1", isActive: true } } } },
+          { workflowOwnerMemberships: { none: {} }, workflowOwner: { id: "owner-1", isActive: true } },
+        ],
       },
     });
     assert.deepEqual(agents, [
@@ -1160,6 +1169,11 @@ class FakeSolicitudesCorePrisma {
             return {
               id: userRecord.id,
               workflowOwnerId: userRecord.workflowOwnerId,
+              workflowOwnerMemberships: [
+                { workflowOwner: { id: "owner-2", code: "TESORERIA", name: "Tesorería", isActive: true } },
+                { workflowOwner: { id: "owner-1", code: "RIESGO", name: "Riesgo", isActive: true } },
+                { workflowOwner: { id: "old", code: "TEST", name: "Histórica", isActive: false } },
+              ],
             };
           }
 

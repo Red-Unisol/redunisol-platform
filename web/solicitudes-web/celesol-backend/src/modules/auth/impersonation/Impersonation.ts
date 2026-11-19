@@ -7,6 +7,7 @@ import type { RefreshTokenRepository } from "../domain/repositories/RefreshToken
 import type { RefreshTokenService } from "../domain/services/RefreshTokenService";
 import { resolveRefreshToken } from "../application/resolve-refresh-token";
 import type { AuthUser } from "../domain/entities/User.entity";
+import { userWorkflowAreaIds } from "../domain/workflow-areas";
 import { actingContext } from "./context";
 
 const COOKIE = "actingSession";
@@ -144,7 +145,7 @@ export class Impersonation {
         if (userId === admin.id)
           fail(400, "Ya estás en tu usuario administrador.");
         const target = await this.deps.users.findById(userId);
-        if (!target || target.state !== 1 || !target.workflowOwnerId)
+        if (!target || target.state !== 1 || !userWorkflowAreaIds(target).length)
           fail(
             400,
             "Solo se puede ingresar a usuarios activos con área asignada.",
@@ -247,7 +248,7 @@ export class Impersonation {
       if (
         !selectedUser ||
         selectedUser.state !== 1 ||
-        !selectedUser.workflowOwnerId
+        !userWorkflowAreaIds(selectedUser).length
       )
         fail(
           403,

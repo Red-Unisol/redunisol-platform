@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../auth/domain/workflow-areas";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { HistorialSolicitudesGateway } from "../../domain/services/HistorialSolicitudesGateway";
@@ -18,7 +19,7 @@ export class ListSolicitudesDelTitularUseCase {
   async execute(input: { solicitudId: string; currentUser: AuthUser }) {
     if (
       !input.currentUser.isSystemAdmin &&
-      input.currentUser.workflowOwner?.code === "VENDEDORES"
+      hasWorkflowArea(input.currentUser, "VENDEDORES")
     ) {
       throw new ForbiddenSolicitudAccessError();
     }

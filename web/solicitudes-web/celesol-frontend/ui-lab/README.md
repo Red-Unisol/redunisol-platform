@@ -199,3 +199,7 @@ de fondo lentas o fallidas. Los errores permanecen visibles después de cerrar e
 campo de comentario manual. `?scenario=required` conserva un comentario
 obligatorio para Devolver a Revisar y `?scenario=transfer` conserva el campo
 opcional de Mandar a transferir. La confirmación sólo registra un resultado ficticio.
+
+## Áreas internas combinadas
+
+En `/production?list=recientes&role=tesoreria-legajos` o `role=analisis-legajos` se puede abrir «Mis áreas», la campana y la bandeja de firmas con un usuario ficticio sin administración. `/production?list=usuarios&role=admin&areas=edit` permite guardar las áreas en memoria y revisar las solicitudes de ejemplo pendientes de reasignación. Con el laboratorio activo, `node ui-lab/internal-areas.browser-test.mjs` verifica ambos recorridos a 1365 y 390 px y guarda las capturas en `.local/ui-internal-areas/`.

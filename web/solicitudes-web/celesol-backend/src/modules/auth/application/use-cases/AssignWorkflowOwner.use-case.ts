@@ -14,7 +14,7 @@ export class AssignWorkflowOwnerUseCase {
   }
 
   async execute(input: AssignWorkflowOwnerInput) {
-    if (input.workflowOwnerId !== null) {
+    if ("workflowOwnerId" in input && input.workflowOwnerId !== null) {
       const owner = await this.userRepository.findActiveWorkflowOwnerById(
         input.workflowOwnerId,
       );
@@ -24,9 +24,6 @@ export class AssignWorkflowOwnerUseCase {
       }
     }
 
-    return this.userRepository.assignWorkflowOwner({
-      userId: input.userId,
-      workflowOwnerId: input.workflowOwnerId,
-    });
+    return this.userRepository.assignWorkflowOwner(input);
   }
 }

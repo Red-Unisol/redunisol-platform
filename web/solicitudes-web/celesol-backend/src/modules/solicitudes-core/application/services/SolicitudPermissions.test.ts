@@ -68,6 +68,17 @@ describe("SolicitudPermissions", () => {
     );
   });
 
+  it("conserva por rol los permisos de una cuenta interna con dos áreas", () => {
+    const tesoreria = { id: "tesoreria", code: "TESORERIA", name: "Tesorería" };
+    const riesgo = { id: "riesgo", code: "RIESGO", name: "Riesgo" };
+    const actor = { id: "operador", workflowOwnerId: tesoreria.id, workflowOwners: [tesoreria, riesgo] };
+
+    assert.equal(canEditSolicitud(actor, solicitud({ ownerId: riesgo.id }), "CREATE_CANCELACION"), true);
+    assert.equal(canEditSolicitud(actor, solicitud({ ownerId: tesoreria.id }), "CREATE_CANCELACION"), false);
+    assert.equal(canEditSolicitud(actor, solicitud({ ownerId: "sistema" }), "CHANGE_STATE"), false);
+    assert.equal(canEditSolicitud(actor, solicitud({ ownerId: riesgo.id }), "DELETE_ATTACHMENT"), false);
+  });
+
   it("permite a Riesgo editar datos en Vendedores y cargar adjuntos sin cambiar estado ni borrar", () => {
     const target = solicitud({
       stateCode: "PreAprobada",

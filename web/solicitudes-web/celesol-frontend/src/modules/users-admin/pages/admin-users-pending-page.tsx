@@ -3,10 +3,9 @@ import { CircleAlert, CircleCheckBig, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { StyledSelect } from "@/modules/solicitudes-editor/components/fields/base";
-import type { StyledSelectOption } from "@/modules/solicitudes-editor/types";
+import { WorkflowAreaSelector } from "@/modules/users-admin/components/workflow-area-selector";
 import {
-  assignWorkflowOwner,
+  assignWorkflowOwners,
   getPendingAreaUsers,
   getWorkflowOwners,
 } from "@/modules/users-admin/services/users-admin-api";
@@ -15,18 +14,9 @@ import { ApiError } from "@/shared/services/http/api-error";
 
 const ASSIGN_SUCCESS_TOAST_ID = "assign-workflow-owner-success";
 const ASSIGN_ERROR_TOAST_ID = "assign-workflow-owner-error";
-// Backend currently returns all active workflow owners.
-// Hide non-operational owners in this admin selector until backend exposes
-// assignable owners only or provides an explicit assignable flag/capability.
-const NON_ASSIGNABLE_WORKFLOW_OWNER_CODES = new Set([
-  "TESORERIA",
-  "SISTEMA",
-  "HISTORIAL",
-]);
-
 export function AdminUsersPendingPage() {
   const [selectedByUserId, setSelectedByUserId] = useState<
-    Record<string, string>
+    Record<string, string[]>
   >({});
   const pendingUsersQuery = useQuery({
     queryFn: getPendingAreaUsers,
@@ -41,30 +31,26 @@ export function AdminUsersPendingPage() {
   const assignMutation = useMutation({
     mutationFn: ({
       userId,
-      workflowOwnerId,
+      workflowOwnerIds,
     }: {
       userId: string;
-      workflowOwnerId: string;
-    }) => assignWorkflowOwner(userId, workflowOwnerId),
+      workflowOwnerIds: string[];
+    }) => assignWorkflowOwners(userId, workflowOwnerIds),
   });
 
   const users = pendingUsersQuery.data?.users ?? [];
-  const workflowOwners = workflowOwnersQuery.data?.workflowOwners ?? [];
-  const workflowOwnerOptions: StyledSelectOption[] = workflowOwners
-    .filter((owner) => !NON_ASSIGNABLE_WORKFLOW_OWNER_CODES.has(owner.code))
-    .map((owner) => ({
-      label: owner.name,
-      value: owner.id,
-    }));
+  const workflowOwners = (
+    workflowOwnersQuery.data?.workflowOwners ?? []
+  ).filter((owner) => !["SISTEMA", "HISTORIAL"].includes(owner.code));
   const isLoading =
     pendingUsersQuery.isLoading || workflowOwnersQuery.isLoading;
   const hasLoadError = pendingUsersQuery.isError || workflowOwnersQuery.isError;
 
   async function onAssignArea(userId: string) {
-    const workflowOwnerId = selectedByUserId[userId];
+    const workflowOwnerIds = selectedByUserId[userId];
 
-    if (!workflowOwnerId) {
-      toast.error("Seleccion\u00e1 un \u00e1rea antes de asignar.", {
+    if (!workflowOwnerIds?.length) {
+      toast.error("Seleccioná al menos un área.", {
         duration: 3000,
         icon: <CircleAlert className="size-5" />,
         id: ASSIGN_ERROR_TOAST_ID,
@@ -76,14 +62,14 @@ export function AdminUsersPendingPage() {
     toast.dismiss(ASSIGN_ERROR_TOAST_ID);
 
     try {
-      await assignMutation.mutateAsync({ userId, workflowOwnerId });
+      await assignMutation.mutateAsync({ userId, workflowOwnerIds });
       await pendingUsersQuery.refetch();
       setSelectedByUserId((current) => {
         const next = { ...current };
         delete next[userId];
         return next;
       });
-      toast.success("\u00c1rea asignada correctamente.", {
+      toast.success("Áreas asignadas correctamente.", {
         duration: 3000,
         icon: <CircleCheckBig className="size-5" />,
         id: ASSIGN_SUCCESS_TOAST_ID,
@@ -92,7 +78,7 @@ export function AdminUsersPendingPage() {
       const message =
         error instanceof ApiError || error instanceof Error
           ? error.message
-          : "No se pudo asignar el \u00e1rea.";
+          : "No se pudieron asignar las áreas.";
 
       toast.error(message, {
         duration: 3500,
@@ -173,7 +159,7 @@ export function AdminUsersPendingPage() {
                     Usuario legacy
                   </th>
                   <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    {"\u00c1rea"}
+                    Áreas
                   </th>
                   <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
                     {"Acci\u00f3n"}
@@ -182,8 +168,8 @@ export function AdminUsersPendingPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {users.map((user) => {
-                  const selectedWorkflowOwnerId =
-                    selectedByUserId[user.id] ?? "";
+                  const selectedWorkflowOwnerIds =
+                    selectedByUserId[user.id] ?? [];
                   const isAssigning =
                     assignMutation.isPending &&
                     assignMutation.variables?.userId === user.id;
@@ -203,8 +189,7 @@ export function AdminUsersPendingPage() {
                       </td>
                       <td className="px-3 py-2">
                         <div className="min-w-56">
-                          <StyledSelect
-                            emptyOptionLabel="Seleccionar"
+                          <WorkflowAreaSelector
                             disabled={isAssigning}
                             onChange={(value) =>
                               setSelectedByUserId((current) => ({
@@ -212,19 +197,20 @@ export function AdminUsersPendingPage() {
                                 [user.id]: value,
                               }))
                             }
-                            options={workflowOwnerOptions}
-                            placeholder="Seleccionar"
-                            value={selectedWorkflowOwnerId}
+                            owners={workflowOwners}
+                            selected={selectedWorkflowOwnerIds}
                           />
                         </div>
                       </td>
                       <td className="px-3 py-2">
                         <Button
-                          disabled={isAssigning || !selectedWorkflowOwnerId}
+                          disabled={
+                            isAssigning || !selectedWorkflowOwnerIds.length
+                          }
                           onClick={() => void onAssignArea(user.id)}
                           type="button"
                         >
-                          {isAssigning ? "Asignando..." : "Asignar \u00e1rea"}
+                          {isAssigning ? "Asignando..." : "Asignar áreas"}
                         </Button>
                       </td>
                     </tr>

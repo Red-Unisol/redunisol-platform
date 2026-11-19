@@ -218,9 +218,12 @@ los accesos: `DOCUMENT_REVIEW_SERVER_BASE_URL`, `DOCUMENT_REVIEW_SERVER_CLIENT_I
 del env cifrado Git-managed; no se guardan credenciales en esta documentación.
 
 La puesta en marcha de este circuito requiere habilitar esa configuración y
-asignar los usuarios revisores al nuevo owner `LEGAJOS_DIGITALES` desde la
-administración de usuarios. La migración crea el área y cambia el owner de
-`VerificarFirmaYDocumentacion`, pero no reasigna personas automáticamente.
+asignar Legajos Digitales a quienes revisan firmas desde Administración de usuarios.
+Una misma cuenta puede combinar Análisis (Riesgo), Tesorería y Legajos Digitales.
+La campana entrega los avisos de firmas nuevas a cada integrante activo de Legajos.
+Al incorporar el área, las firmas pendientes anteriores están disponibles en su bandeja.
+La persona que aprobó una firma también puede tramitar el pago de esa solicitud
+si tiene el permiso correspondiente. Ambas operaciones conservan su propia auditoría.
 Tesorería conserva `Transferir`. Las guardas de firma para transferir son
 obligatorias aun si el módulo está deshabilitado: apagarlo no permite eludir la
 aprobación. Preparar la configuración y los revisores antes del despliegue.

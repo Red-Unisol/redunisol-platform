@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type {
   SolicitudCore,
   SolicitudCoreConyuge,
@@ -42,7 +43,7 @@ export type ListSolicitudesByOwnerInput = {
   limit: number;
   nroDocumento?: string;
   offset: number;
-  workflowOwnerId?: string;
+  workflowOwnerId?: string | string[];
 };
 
 export type ListSolicitudesTrackingInput = {
@@ -59,7 +60,7 @@ export type ListSolicitudesTrackingInput = {
 
 export type ListSolicitudesRecientesInput = {
   search?: string;
-  estadoOwnerId?: string;
+  estadoOwnerId?: string | string[];
   creadoPorIn?: string[];
   createdFrom?: string;
   createdTo?: string;
@@ -234,7 +235,7 @@ export type VendedorDashboardStatsResult = {
 
 export type GetAnalistaStatsInput = GetSolicitudesStatsInput & {
   analistaId: string;
-  areaOwnerCode: string;
+  areaOwnerCode: string | string[];
   vista: "mis_casos" | "sin_asignar" | "ambos";
   conRetrabajo?: "con" | "sin";
   umbralDias: number;
@@ -330,6 +331,7 @@ export type SolicitudesCoreRepository = {
   assignToUserIfUnassigned?(input: {
     actorUserId: string;
     allowReassignment?: boolean;
+    requiredAreaId?: string;
     solicitudId: string;
     assignedToUserId: string;
   }): Promise<SolicitudCore | null>;
@@ -347,7 +349,7 @@ export type SolicitudesCoreRepository = {
   // Usuario del legado del vendedor de la solicitud (si no tiene, el de quien
   // la creo): define de que agente salen las lineas que se le pueden asignar.
   findVendedorLegacyUser?(solicitudId: string): Promise<string | null>;
-  findUserById?(id: string): Promise<{ id: string; workflowOwnerId: string | null } | null>;
+  findUserById?(id: string): Promise<{ id: string; workflowOwnerId: string | null; workflowOwners?: AuthWorkflowOwner[] } | null>;
   listUsersByWorkflowOwnerId?(workflowOwnerId?: string): Promise<
     Array<{
       id: string;

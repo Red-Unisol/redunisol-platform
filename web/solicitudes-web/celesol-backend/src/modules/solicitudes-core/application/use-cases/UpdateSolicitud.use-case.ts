@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../auth/domain/workflow-areas";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { UpdateSolicitudInput } from "../dtos/UpdateSolicitud.dto";
 import {
@@ -70,7 +71,7 @@ export class UpdateSolicitudUseCase {
     }
 
     const workflowOwnerCode =
-      !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
+      input.currentUser.workflowOwners === undefined && !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId)
         : null;
@@ -139,7 +140,7 @@ export class UpdateSolicitudUseCase {
     });
     if (lineaOid !== solicitud.lineaPrestamoLegacyOid)
       assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, efectivos);
-    const editaRiesgo = workflowOwnerCode === "RIESGO";
+    const editaRiesgo = hasWorkflowArea(permissionUser, "RIESGO");
     const enforceMontoAprobadoRiesgo =
       !input.currentUser.isSystemAdmin && !input.currentUser.isAnalista && !editaRiesgo;
     if (input.solicitud?.montoAFinanciar !== undefined && enforceMontoAprobadoRiesgo)

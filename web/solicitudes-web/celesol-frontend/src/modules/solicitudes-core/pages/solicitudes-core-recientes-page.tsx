@@ -1,3 +1,4 @@
+import { areaName, hasArea, isVendedor, onlyArea, userAreaIds, userAreas } from "@/modules/auth/utils/auth-user";
 import {
   type CSSProperties,
   lazy,
@@ -13,7 +14,6 @@ import { toast } from "sonner";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import type { AuthUser } from "@/modules/auth/services/auth-api";
-import { isVendedor } from "@/modules/auth/utils/auth-user";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/cn";
@@ -131,7 +131,7 @@ export function SolicitudesCoreRecientesPage() {
   if (!session.data) return <SolicitudesContentLoader />;
   return (
     <RecientesList
-      key={`${session.data.id}:${session.data.workflowOwnerId}:${session.data.isSystemAdmin}`}
+      key={`${session.data.id}:${userAreaIds(session.data).sort().join(",")}:${session.data.isSystemAdmin}`}
       user={session.data}
     />
   );
@@ -141,20 +141,15 @@ function RecientesList({ user }: { user: AuthUser }) {
   // El vendedor arranca viendo todas las suyas, en cualquier area: si
   // arrancara en "Mi area", la solicitud se le iria al enviarla a Riesgo.
   // "Ver todas" nunca le muestra las de otros (lo limita el backend).
-  const esVendedor = user.workflowOwner?.code === "VENDEDORES";
-  const areaLabel =
-    user.workflowOwner?.code === "RIESGO"
-      ? "Riesgo"
-      : esVendedor
-        ? "Pendientes de mi lado"
-        : (user.workflowOwner?.name ?? "Sin área asignada");
+  const areas = userAreas(user);
+  const areaIds = userAreaIds(user).sort();
+  const esVendedor = isVendedor(user);
+  const areaLabel = areas.length > 1 ? "Mis áreas"
+    : esVendedor ? "Pendientes de mi lado"
+    : areas[0] ? areaName(areas[0]) : "Sin área asignada";
   const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
-    !user.isSystemAdmin &&
-    user.workflowOwnerId &&
-    user.workflowOwner?.code === "RIESGO"
-      ? "mi-area"
-      : "todas",
+    !user.isSystemAdmin && (areas.length > 1 || hasArea(user, "RIESGO")) ? "mi-area" : "todas",
   );
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
@@ -171,7 +166,7 @@ function RecientesList({ user }: { user: AuthUser }) {
     useSolicitudesCoreRecientesQuery({
       vista,
       userId: user.id,
-      workflowOwnerId: user.workflowOwnerId,
+      workflowOwnerIds: areaIds,
       search: searchTerm,
       page,
       pageSize: PAGE_SIZE,
@@ -314,7 +309,7 @@ function RecientesList({ user }: { user: AuthUser }) {
           Simulador
         </Button>
 
-        {user.workflowOwner?.code !== "TESORERIA" ? (
+        {!onlyArea(user, "TESORERIA") ? (
           <div
             aria-label="Vista por área"
             className="order-last flex h-10 w-full items-center rounded-full border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto"
@@ -329,7 +324,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                     ? "bg-verde text-white"
                     : "text-foreground-secondary hover:text-foreground",
                 )}
-                disabled={value === "mi-area" && !user.workflowOwnerId}
+                disabled={value === "mi-area" && areaIds.length === 0}
                 key={value}
                 onClick={() => {
                   if (vista === value) return;
@@ -397,7 +392,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 </p>
                 {vista === "mi-area" && !searchTerm.trim() ? (
                   <p className="max-w-sm text-sm text-foreground-secondary">
-                    Cuando una solicitud quede en manos de tu área, aparece acá.
+                    {areas.length > 1 ? "Cuando una solicitud quede en manos de alguna de tus áreas, aparece acá." : "Cuando una solicitud quede en manos de tu área, aparece acá."}
                   </p>
                 ) : null}
               </>

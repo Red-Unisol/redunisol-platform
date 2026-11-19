@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { actingContext } from "../../../auth/impersonation/context";
@@ -19,8 +20,8 @@ export async function prepareConfirmedReturnToReview(db: Prisma.TransactionClien
   if (source.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
     throw new WorkflowExecutionPlanStateConflictError();
   if (!input.comment?.trim()) throw new SolicitudWorkflowCommentRequiredError();
-  const actor = await db.user.findFirst({ where: { id: input.changedBy, state: 1, deletedAt: null } });
-  if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== source.estadoActual.ownerId))
+  const actor = await db.user.findFirst({ where: { id: input.changedBy, state: 1, deletedAt: null }, include: workflowAreaInclude });
+  if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, source.estadoActual.ownerId)))
     throw new ForbiddenSolicitudAccessError();
   const blocked = await correctionBlockedReason(db, source);
   if (blocked) throw new AdministrativeCorrectionError(blocked);

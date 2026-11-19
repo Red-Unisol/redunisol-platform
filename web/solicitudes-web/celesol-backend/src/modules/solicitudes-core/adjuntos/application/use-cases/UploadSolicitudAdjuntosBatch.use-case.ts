@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../../auth/domain/entities/User.entity";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -43,6 +44,7 @@ export type UploadSolicitudAdjuntosBatchInput = {
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   workflowOwnerId: string;
@@ -83,7 +85,7 @@ export class UploadSolicitudAdjuntosBatchUseCase {
     }
 
     const workflowOwnerCode =
-      input.currentUser.workflowOwnerId &&
+      input.currentUser.workflowOwners === undefined && input.currentUser.workflowOwnerId &&
       this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
         ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(
             input.currentUser.workflowOwnerId,

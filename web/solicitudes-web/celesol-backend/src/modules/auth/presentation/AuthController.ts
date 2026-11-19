@@ -32,6 +32,7 @@ import {
 } from "./AuthCookies";
 import {
   assignWorkflowOwnerBodySchema,
+  assignWorkflowOwnersBodySchema,
   assignWorkflowOwnerParamsSchema,
   type AssignWorkflowOwnerBody,
   type AssignWorkflowOwnerParams,
@@ -398,7 +399,14 @@ export class AuthController {
     }
   };
 
-  assignWorkflowOwner = async (
+  assignWorkflowOwner = (req: Request, res: Response, next: NextFunction) =>
+    this.saveWorkflowOwners(false, req, res, next);
+
+  assignWorkflowOwners = (req: Request, res: Response, next: NextFunction) =>
+    this.saveWorkflowOwners(true, req, res, next);
+
+  private saveWorkflowOwners = async (
+    multiple: boolean,
     req: Request,
     res: Response,
     next: NextFunction,
@@ -414,17 +422,13 @@ export class AuthController {
         assignWorkflowOwnerParamsSchema,
         req.params,
       );
-      const body = this.parseBody<AssignWorkflowOwnerBody>(
-        assignWorkflowOwnerBodySchema,
-        req.body,
-      );
-
-      const user = await this.assignWorkflowOwnerUseCase.execute({
-        userId: params.id,
-        workflowOwnerId: body.workflowOwnerId,
+      const body = multiple
+        ? this.parseBody<{ workflowOwnerIds: string[] }>(assignWorkflowOwnersBodySchema, req.body)
+        : this.parseBody<AssignWorkflowOwnerBody>(assignWorkflowOwnerBodySchema, req.body);
+      const { pendingAssignments, ...user } = await this.assignWorkflowOwnerUseCase.execute({
+        userId: params.id, ...body,
       });
-
-      res.status(200).json({ user });
+      res.status(200).json(multiple ? { user, pendingAssignments: pendingAssignments ?? [] } : { user });
     } catch (error) {
       next(error);
     }

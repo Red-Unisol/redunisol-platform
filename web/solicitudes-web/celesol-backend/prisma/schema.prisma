@@ -46,6 +46,7 @@ model User {
   passwordTokens                PasswordResetToken[]
   refreshTokens                 RefreshToken[]
   createdSolicitudes            Solicitud[]
+  workflowOwnerMemberships      UserWorkflowOwner[]
   assignmentCursors             WorkflowAssignmentCursor[] @relation("AssignmentCursorLastUser")
   assignedSolicitudes           Solicitud[]                @relation("SolicitudAssignedToUser")
   vendedorSolicitudes           Solicitud[]                @relation("SolicitudVendedor")
@@ -106,9 +107,22 @@ model WorkflowOwner {
   isActive         Boolean                   @default(true) @map("is_active")
   states           WorkflowState[]
   users            User[]
+  memberships      UserWorkflowOwner[]
   assignmentCursor WorkflowAssignmentCursor?
 
   @@map("workflow_owners")
+}
+
+model UserWorkflowOwner {
+  userId          String        @map("user_id") @db.Uuid
+  workflowOwnerId String        @map("workflow_owner_id") @db.Uuid
+  assignedAt      DateTime      @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflowOwner   WorkflowOwner @relation(fields: [workflowOwnerId], references: [id], onDelete: Restrict)
+
+  @@id([userId, workflowOwnerId])
+  @@index([workflowOwnerId, userId])
+  @@map("user_workflow_owners")
 }
 
 model WorkflowAssignmentCursor {

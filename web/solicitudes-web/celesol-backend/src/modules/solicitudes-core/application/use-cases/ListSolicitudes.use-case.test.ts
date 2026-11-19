@@ -47,6 +47,23 @@ describe("ListSolicitudesUseCase", () => {
     await assert.rejects(useCase.execute({ scope: "recientes", vista: "mi-area", currentUser: { id: "user", workflowOwnerId: null }, limit: 10, offset: 0 }), /área asignada/);
   });
 
+  it("filters work and recent requests by both internal memberships before pagination", async () => {
+    const areas = [
+      { id: "tesoreria", code: "TESORERIA", name: "Tesorería" },
+      { id: "legajos", code: "LEGAJOS_DIGITALES", name: "Legajos" },
+    ];
+    const applied: Array<string | string[] | undefined> = [];
+    const useCase = new ListSolicitudesUseCase({ repository: {
+      listByOwner: async (input: ListSolicitudesByOwnerInput) => { applied.push(input.workflowOwnerId); return []; },
+      listRecientes: async (input: ListSolicitudesRecientesInput) => { applied.push(input.estadoOwnerId); return []; },
+    } as unknown as SolicitudesCoreRepository });
+    const currentUser = { id: "operador", workflowOwnerId: areas[0].id, workflowOwners: areas };
+    for (const scope of ["work", "recientes"] as const) {
+      await useCase.execute({ scope, currentUser, workflowOwnerId: "otra", vista: "mi-area", offset: 5, limit: 10 });
+    }
+    assert.deepEqual(applied, [["tesoreria", "legajos"], ["tesoreria", "legajos"]]);
+  });
+
   it("lists work solicitudes scoped to the current workflow owner and forwards filters", async () => {
     let receivedInput: ListSolicitudesByOwnerInput | null = null;
     const repository: SolicitudesCoreRepository = {

@@ -1,3 +1,4 @@
+import { userWorkflowAreas } from "../auth/domain/workflow-areas";
 import { timingSafeEqual } from "node:crypto";
 import {
   Router,
@@ -33,12 +34,14 @@ export function tokenMatches(
       ),
   );
 }
+type ServiceArea = { id: string; code: string; isActive: boolean };
 type User = {
   id: string;
   state: number;
   deletedAt: Date | null;
   isSystemAdmin: boolean;
-  workflowOwner: { id: string; code: string; isActive: boolean } | null;
+  workflowOwner: ServiceArea | null;
+  workflowOwnerMemberships?: { workflowOwner: ServiceArea }[];
 };
 type Dependencies = {
   config: IntegrationConfig;
@@ -70,13 +73,13 @@ export function createTransferenciasRouter(deps: Dependencies) {
         fail("UNAUTHORIZED", "Credencial de integración inválida.", 401);
       }
       const user = await deps.findUser(deps.config.userId);
+      const treasury = user && userWorkflowAreas(user).find(area => area.code === "TESORERIA");
       if (
         !user ||
         user.state !== 1 ||
         user.deletedAt ||
         user.isSystemAdmin ||
-        !user.workflowOwner?.isActive ||
-        user.workflowOwner.code !== "TESORERIA"
+        !treasury
       )
         fail(
           "FORBIDDEN",
@@ -85,7 +88,7 @@ export function createTransferenciasRouter(deps: Dependencies) {
         );
       actors.set(req, {
         id: user.id,
-        workflowOwnerId: user.workflowOwner.id,
+        workflowOwnerId: treasury.id,
         clientId: deps.config.clientId,
       });
       next();

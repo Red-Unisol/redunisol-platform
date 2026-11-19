@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, userWorkflowAreaIds } from "../../../auth/domain/workflow-areas";
 import type { AssignSolicitudToUserInput } from "../dtos/AssignSolicitudToUser.dto";
 import {
   ForbiddenSolicitudAccessError,
@@ -25,7 +26,7 @@ export class AssignSolicitudToUserUseCase {
       throw new Error("Assignment repository methods are not available.");
     }
 
-    if (!input.currentUser.isSystemAdmin && !input.currentUser.workflowOwnerId) {
+    if (!input.currentUser.isSystemAdmin && !userWorkflowAreaIds(input.currentUser).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
@@ -39,7 +40,7 @@ export class AssignSolicitudToUserUseCase {
     const isRiesgoOwnedByCurrentUser =
       solicitud.estadoActual.owner?.code === "RIESGO" &&
       ownerId !== null &&
-      ownerId === input.currentUser.workflowOwnerId;
+      hasWorkflowAreaId(input.currentUser, ownerId);
     const canReassignFreely =
       Boolean(input.currentUser.isSystemAdmin) || isRiesgoOwnedByCurrentUser;
 
@@ -48,7 +49,7 @@ export class AssignSolicitudToUserUseCase {
     }
 
     if (!input.currentUser.isSystemAdmin && !input.currentUser.isAnalista) {
-      if (!ownerId || ownerId !== input.currentUser.workflowOwnerId) {
+      if (!hasWorkflowAreaId(input.currentUser, ownerId)) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -67,23 +68,27 @@ export class AssignSolicitudToUserUseCase {
       throw new TargetUserNotFoundError();
     }
 
-    if (!targetUser.workflowOwnerId) {
+    if (!userWorkflowAreaIds(targetUser).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
     if (input.currentUser.isSystemAdmin) {
       // Admin may assign to any target user, regardless of the solicitud's current owner.
     } else if (input.currentUser.isAnalista) {
-      if (targetUser.workflowOwnerId !== input.currentUser.workflowOwnerId) {
+      const analystArea = input.currentUser.workflowOwners === undefined
+        ? input.currentUser.workflowOwnerId
+        : input.currentUser.workflowOwners.find(area => area.code === "RIESGO")?.id;
+      if (!hasWorkflowAreaId(targetUser, analystArea)) {
         throw new ForbiddenSolicitudAccessError();
       }
-    } else if (targetUser.workflowOwnerId !== ownerId) {
+    } else if (!hasWorkflowAreaId(targetUser, ownerId)) {
       throw new ForbiddenSolicitudAccessError();
     }
 
     const assigned = await this.repository.assignToUserIfUnassigned({
       actorUserId: input.currentUser.id,
       allowReassignment: canReassignFreely,
+      ...(!input.currentUser.isSystemAdmin && !input.currentUser.isAnalista && ownerId ? { requiredAreaId: ownerId } : {}),
       assignedToUserId: input.targetUserId,
       solicitudId: input.solicitudId,
     });

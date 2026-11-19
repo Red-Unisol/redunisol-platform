@@ -126,6 +126,42 @@ export class UsersRoutes {
      *         description: Workflow owner is inactive.
      */
     router.patch("/:id/workflow-owner", controller.assignWorkflowOwner);
+    /**
+     * @openapi
+     * /auth/users/{id}/workflow-owners:
+     *   patch:
+     *     summary: Reemplaza las áreas de un usuario
+     *     description: Solo administradores. Se pueden combinar Análisis, Tesorería y Legajos Digitales.
+     *     tags: [Auth]
+     *     security:
+     *       - accessTokenCookie: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: string, format: uuid }
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [workflowOwnerIds]
+     *             properties:
+     *               workflowOwnerIds:
+     *                 type: array
+     *                 uniqueItems: true
+     *                 maxItems: 3
+     *                 items: { type: string, format: uuid }
+     *     responses:
+     *       200:
+     *         description: Usuario actualizado y solicitudes activas asignadas en las áreas retiradas.
+     *       400:
+     *         description: Áreas inválidas, inactivas o incompatibles.
+     *       403:
+     *         description: Requiere un administrador de sistemas.
+     */
+    router.patch("/:id/workflow-owners", controller.assignWorkflowOwners);
 
     return router;
   }

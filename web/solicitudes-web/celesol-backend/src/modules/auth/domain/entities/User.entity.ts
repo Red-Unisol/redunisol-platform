@@ -16,6 +16,7 @@ export type AuthUser = {
   state: number;
   workflowOwnerId: string | null;
   workflowOwner?: AuthWorkflowOwner | null;
+  workflowOwners?: AuthWorkflowOwner[];
 };
 
 export type PersistedAuthUser = AuthUser & {
@@ -35,6 +36,7 @@ export function toAuthUser(user: PersistedAuthUser): AuthUser {
     state: user.state,
     workflowOwnerId: user.workflowOwnerId,
     workflowOwner: user.workflowOwner ?? null,
+    ...(user.workflowOwners && { workflowOwners: user.workflowOwners }),
   };
 }
 

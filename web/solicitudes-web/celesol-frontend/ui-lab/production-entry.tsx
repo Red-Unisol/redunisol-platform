@@ -1,3 +1,6 @@
+import { AdminUsersPendingPage } from "@/modules/users-admin/pages/admin-users-pending-page";
+import { LegajosOnlyRoute } from "@/modules/auth/components/auth-route-guards";
+import { SignatureInboxPage } from "@/modules/solicitudes-core/pages/signature-inbox-page";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/app/layouts/app-layout";
 import { SolicitudesActualDetallePage } from "@/modules/solicitudes-core/pages/solicitudes-actual-detalle-page";
@@ -16,6 +19,8 @@ export function App() {
     recientes: "/solicitudes/core/recientes",
     historicas: "/solicitudes/core/historicas",
     usuarios: "/admin/users",
+    pendientes: "/admin/users/pending",
+    firmas: "/legajos/firmas",
   };
   return (
     <MemoryRouter
@@ -25,6 +30,8 @@ export function App() {
     >
       <Routes>
         <Route element={<AppLayout />}>
+          <Route path="/legajos/firmas" element={<LegajosOnlyRoute><SignatureInboxPage /></LegajosOnlyRoute>} />
+          <Route path="/admin/users/pending" element={<AdminUsersPendingPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/solicitudes/core/precarga" element={<SolicitudesActualPrecargaPage />} />
           <Route path="/solicitudes/core/recientes" element={<SolicitudesCoreRecientesPage />} />

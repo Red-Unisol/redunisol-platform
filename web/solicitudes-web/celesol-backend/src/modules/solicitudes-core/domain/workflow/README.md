@@ -131,7 +131,7 @@ La politica funcional vigente queda separada en lectura y operacion:
 
 - Usuarios autenticados y activos pueden leer detalle, historial y adjuntos.
 - Operaciones requieren pertenecer al owner actual de la solicitud:
-  `solicitud.estadoActual.ownerId === user.workflowOwnerId`.
+  el área del estado pertenece a las áreas asignadas al usuario.
 - `creator`, `participant` y `assignedToUserId` no otorgan permisos operativos.
 - En `RIESGO`, cualquier usuario del owner `RIESGO` puede operar aunque no sea `assignedToUserId`.
 - `GET /solicitudes` conserva sus scopes/bandejas actuales; lectura amplia no implica listado global por defecto.

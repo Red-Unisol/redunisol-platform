@@ -1,3 +1,4 @@
+import { hasWorkflowArea, hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { inspectLinkedLoan, assertLinkedLoanReady, type LinkedLoanGateways } from "../../application/services/LinkedLoanRules";
 import { administrativeSource, type CoreLoanSnapshot } from "./AdministrativeCorrectionService";
@@ -90,9 +91,9 @@ export async function assertWorkflowFinancialReady(
     if (current.archivedAt || current.desembolso || current.pagoExterno ||
       !["Revisar", "RevisionRiesgo", "PreAprobada", "Confirmada", "Liquidada", "VerificarFirmaYDocumentacion", "Transferir"].includes(current.estadoActual.code))
       throw new AdministrativeCorrectionError("La solicitud no admite conciliación automática con reservas, pagos o en su estado actual.");
-    const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null }, include: { workflowOwner: true } });
-    const legacyLegajos = current.estadoActual.code === "Liquidada" && actor?.workflowOwner?.code === "LEGAJOS_DIGITALES";
-    if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== current.estadoActual.ownerId && !legacyLegajos))
+    const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null }, include: workflowAreaInclude });
+    const legacyLegajos = current.estadoActual.code === "Liquidada" && actor && hasWorkflowArea(actor, "LEGAJOS_DIGITALES");
+    if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, current.estadoActual.ownerId) && !legacyLegajos))
       throw new AdministrativeCorrectionError("El responsable no tiene permiso para conciliar esta operación.", 403);
     const reconciledAt = new Date();
     await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {

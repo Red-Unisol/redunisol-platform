@@ -1,3 +1,4 @@
+import type { AuthUser } from "../auth/domain/entities/User.entity";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { ChangeSolicitudStateUseCase } from "../solicitudes-core/application/use-cases/ChangeSolicitudState.use-case";
 import { SolicitudWorkflowEngine } from "../solicitudes-core/domain/workflow/SolicitudWorkflowEngine";
@@ -25,7 +26,7 @@ export function createPayWorkflow(db: PrismaClient) {
   return async (
     tx: Prisma.TransactionClient,
     solicitudId: string,
-    actor: Actor & { isSystemAdmin?: boolean },
+    actor: Actor & { isSystemAdmin?: boolean; workflowOwners?: AuthUser["workflowOwners"] },
     comment: string,
   ) => {
     const repository = new SolicitudWorkflowRepositoryImpl(
@@ -45,6 +46,7 @@ export function createPayWorkflow(db: PrismaClient) {
       currentUser: {
         id: actor.id,
         workflowOwnerId: actor.workflowOwnerId,
+        workflowOwners: actor.workflowOwners,
         ...(actor.isSystemAdmin ? { isSystemAdmin: true } : {}),
       },
     });

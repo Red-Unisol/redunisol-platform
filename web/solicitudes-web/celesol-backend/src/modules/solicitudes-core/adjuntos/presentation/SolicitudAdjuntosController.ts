@@ -90,6 +90,7 @@ export class SolicitudAdjuntosController {
         createdBy: user.id,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -149,6 +150,7 @@ export class SolicitudAdjuntosController {
         createdBy: user.id,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -187,6 +189,7 @@ export class SolicitudAdjuntosController {
         currentUser: {
           id: user.id,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
         },
         solicitudId: params.id,
@@ -224,6 +227,7 @@ export class SolicitudAdjuntosController {
           currentUser: {
             id: user.id,
             ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+            ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
             workflowOwnerId: user.workflowOwnerId,
           },
           solicitudId: params.id,
@@ -274,6 +278,7 @@ export class SolicitudAdjuntosController {
         comentario: body.comentario,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -310,6 +315,7 @@ export class SolicitudAdjuntosController {
         adjuntoId: params.adjuntoId,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },

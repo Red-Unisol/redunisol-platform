@@ -1,3 +1,8 @@
+import { UserMapper } from "../auth/infrastructure/mappers/User.mapper";
+import { notifySignatureEvent } from "../notifications/SignatureNotifications";
+import type { AdjuntosObjectStorage } from "../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
+import { ExternalPaymentService, argentinaToday } from "../transferencias-integration/ExternalPaymentService";
+import { createPayWorkflow } from "../transferencias-integration/workflow";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -62,6 +67,17 @@ test(
       changeDuringPreflight = false,
       revokeDuringPreflight = false;
     const workflow = createDocumentReviewWorkflow(db, { financialGuard: async () => undefined });
+    const storage: AdjuntosObjectStorage = {
+      uploadObject: async (i) => {
+        if (storageFails) throw new Error("storage unavailable");
+        objects.set(i.key, i.body);
+      },
+      deleteObject: async (i) => {
+        objects.delete(i.key);
+      },
+      getObjectStream: async (i) =>
+        Readable.from(objects.get(i.key) ?? Buffer.alloc(0)),
+    };
     const service = new DocumentReviewService({
       db,
       bucket: "test-bucket",
@@ -74,17 +90,8 @@ test(
         Buffer.from(
           `%PDF-1.7\n${i.assessment.decision}/${i.human?.decision ?? "pending"}\n%%EOF`,
         ),
-      storage: {
-        uploadObject: async (i) => {
-          if (storageFails) throw new Error("storage unavailable");
-          objects.set(i.key, i.body);
-        },
-        deleteObject: async (i) => {
-          objects.delete(i.key);
-        },
-        getObjectStream: async (i) =>
-          Readable.from(objects.get(i.key) ?? Buffer.alloc(0)),
-      },
+      storage,
+      onSignatureEvent: notifySignatureEvent,
       financialPreflight: async (id) => {
         if (changeDuringPreflight) await db.solicitud.update({ where: { id }, data: { cuotas: 7 } });
         if (revokeDuringPreflight) await db.user.update({ where: { id: actor.id }, data: { workflowOwnerId: null } });
@@ -155,6 +162,44 @@ test(
       return { requestId: randomUUID(), sourceFingerprint: digest(reviewSource(row)), reason: "Legajo físico verificado",
         confirmed: true, files: [{ name: "legajo.pdf", contentType: "application/pdf", bytes: Buffer.from(await pdf.save()) }] };
     }
+
+    await t.test("one non-admin in Treasury and Legajos receives the signature, approves it and records the payment", async () => {
+      const treasury = await db.workflowOwner.findUniqueOrThrow({ where: { code: "TESORERIA" } });
+      const employee = await db.user.create({ data: {
+        email: `${randomUUID()}@example.invalid`, legacyUser: randomUUID(),
+        passwordHash: "no-login", workflowOwnerId: treasury.id,
+      } });
+      await db.userWorkflowOwner.createMany({
+        data: [treasury, owner].map(area => ({ userId: employee.id, workflowOwnerId: area.id })),
+        skipDuplicates: true,
+      });
+      const profile = UserMapper.toDomain(await db.user.findUniqueOrThrow({
+        where: { id: employee.id }, select: UserMapper.profileSelect(),
+      }));
+      assert.equal(profile.isSystemAdmin, false);
+      const row = await fixture();
+      // Only one of the two completed submissions happened after the employee joined Legajos.
+      provider.find(attempt => attempt.verificationId === "good-old")!.completedAt = new Date().toISOString();
+      const review = await service.evaluate(row.id);
+      await service.evaluate(row.id);
+      assert.equal(await db.beexNotification.count({ where: {
+        solicitudId: row.id, recipientId: employee.id, kind: "signature_received",
+      } }), 1);
+      const approval = decision(review.id);
+      await service.decide(row.id, profile, approval);
+      const saved = await db.solicitudDocumentDecision.findUniqueOrThrow({ where: { requestId: approval.requestId } });
+      assert.equal(saved.decidedBy, employee.id);
+
+      const payments = new ExternalPaymentService({ db, storage, bucket: "test-bucket", maxFileBytes: 100000, pay: createPayWorkflow(db) });
+      await payments.register(row.id, profile, {
+        requestId: randomUUID(), paidOn: argentinaToday(), comment: "", reference: "",
+      }, Buffer.from("%PDF-1.7\nComprobante de prueba\n%%EOF"));
+      const paid = await db.solicitud.findUniqueOrThrow({
+        where: { id: row.id }, include: { estadoActual: true, pagoExterno: true },
+      });
+      assert.equal(paid.estadoActual.code, "Pagada");
+      assert.equal(paid.pagoExterno?.recordedBy, employee.id);
+    });
 
     await t.test("external approval needs no provider attempts, is immutable, idempotent and advances atomically", async () => {
       const row = await fixture(); provider = [];

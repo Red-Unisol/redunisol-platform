@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { CreatePrestamoLegacyInput } from "../../application/dtos/CreatePrestamoLegacy.dto";
@@ -88,8 +89,8 @@ export class InitialLoanGenerationService {
     const pending = await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
       const s = await administrativeSource(tx, id);
-      const actor = await tx.user.findFirst({ where: { id: input.currentUser.id, state: 1, deletedAt: null } });
-      if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== s.estadoActual.ownerId))
+      const actor = await tx.user.findFirst({ where: { id: input.currentUser.id, state: 1, deletedAt: null }, include: workflowAreaInclude });
+      if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, s.estadoActual.ownerId)))
         throw new AdministrativeCorrectionError("No tenés permiso para generar este préstamo.", 403);
       if (s.legacyOid) return null;
       assertNoLoanReplacementPending(s);
@@ -281,8 +282,8 @@ export class InitialLoanGenerationService {
           coreConditionsFingerprint(s) !== pending.sourceFingerprint || s.archivedAt ||
           s.estadoActual.code !== "Confirmada" || s.desembolso || s.pagoExterno)
           throw new AdministrativeCorrectionError("La solicitud cambió. El préstamo generado quedó reservado para recuperación; no generes otro.");
-        const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null } });
-        if (!actor || (reason ? !actor.isSystemAdmin : (!actor.isSystemAdmin && actor.workflowOwnerId !== s.estadoActual.ownerId)))
+        const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null }, include: workflowAreaInclude });
+        if (!actor || (reason ? !actor.isSystemAdmin : (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, s.estadoActual.ownerId))))
           throw new AdministrativeCorrectionError("El responsable ya no tiene permiso para vincular el préstamo; solicitá recuperación administrativa.", 403);
         if (await tx.solicitud.findFirst({ where: { id: { not: id }, legacyOid: newLoanId }, select: { id: true } }))
           throw new AdministrativeCorrectionError("El préstamo ya está vinculado a otra solicitud. Solicitá una revisión administrativa.");

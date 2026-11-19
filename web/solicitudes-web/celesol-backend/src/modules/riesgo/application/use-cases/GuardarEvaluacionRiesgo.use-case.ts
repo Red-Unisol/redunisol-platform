@@ -1,3 +1,4 @@
+import { userWorkflowAreas } from "../../../auth/domain/workflow-areas";
 import { randomUUID } from "node:crypto";
 import type { AdjuntosObjectStorage } from "../../../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
 import {
@@ -49,9 +50,7 @@ export class GuardarEvaluacionRiesgoUseCase {
     }
 
     const esRiesgoACargo =
-      input.currentUser.workflowOwnerCode === "RIESGO" &&
-      Boolean(input.currentUser.workflowOwnerId) &&
-      input.currentUser.workflowOwnerId === estadoActual.ownerId &&
+      userWorkflowAreas(input.currentUser).some(area => area.code === "RIESGO" && area.id === estadoActual.ownerId) &&
       canEditSolicitud(input.currentUser, { estadoActual }, "EDIT_DATA");
 
     if (!input.currentUser.isSystemAdmin && !esRiesgoACargo) {

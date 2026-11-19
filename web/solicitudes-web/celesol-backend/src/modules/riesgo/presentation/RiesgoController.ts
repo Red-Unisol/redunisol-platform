@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../auth/domain/workflow-areas";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 
@@ -108,6 +109,7 @@ export class RiesgoController {
           isSystemAdmin: currentUser.isSystemAdmin,
           workflowOwnerCode: currentUser.workflowOwner?.code ?? null,
           workflowOwnerId: currentUser.workflowOwnerId,
+          workflowOwners: currentUser.workflowOwners,
         },
         nivelRiesgo: body.data.nivelRiesgo,
         snapshot: body.data.snapshot,
@@ -272,7 +274,7 @@ export class RiesgoController {
 
     if (
       !currentUser.isSystemAdmin &&
-      currentUser.workflowOwner?.code !== "RIESGO"
+      !hasWorkflowArea(currentUser, "RIESGO")
     ) {
       throw new ForbiddenCalculadoraAccessError();
     }

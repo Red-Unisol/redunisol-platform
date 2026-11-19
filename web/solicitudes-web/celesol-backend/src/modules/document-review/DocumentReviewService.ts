@@ -1,3 +1,5 @@
+import type { SignatureNotificationEvent } from "../notifications/types";
+import { UserMapper } from "../auth/infrastructure/mappers/User.mapper";
 import { randomUUID } from "node:crypto";
 import {
   Prisma,
@@ -10,7 +12,8 @@ import type { AdjuntosObjectStorage } from "../solicitudes-core/adjuntos/domain/
 import {
   assess,
   decisionDisparity,
-  digest,  hasMatchingSignedOperation,
+  digest,
+  hasMatchingSignedOperation,
   DocumentReviewError,
   providerFingerprint,
   REVIEW_POLICY_VERSION,
@@ -25,21 +28,11 @@ import { buildExternalLegajo, externalDocuments, type ExternalFile } from "./Ext
 import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 import type { SignatureInboxLoanState } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 import {
-  canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
+  canManageSignature, signatureSubmissionAt, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
   isAnalysisReady, isLegajosUser, reviewSource,
   signatureSourceInclude, type SignatureSourceRow, type SignatureStatus,
 } from "./signature-workflow";
 export { reviewSource } from "./signature-workflow";
-
-export type SignatureEvent = {
-  type: "signature_received" | "signature_requested";
-  solicitudId: string;
-  loanId: string;
-  cycleId: string;
-  verificationId?: string;
-  reason?: string;
-  requestId?: string;
-};
 
 export type SignatureFinancialProof = {
   loanId: string;
@@ -64,7 +57,7 @@ type Dependencies = {
   transition: Transition;
   maxPdfBytes: number;
   now?: () => Date;
-  onSignatureEvent?: (tx: Prisma.TransactionClient, event: SignatureEvent) => Promise<void>;
+  onSignatureEvent?: (tx: Prisma.TransactionClient, event: SignatureNotificationEvent) => Promise<void>;
   financialPreflight?: (id: string, user: AuthUser) => Promise<SignatureFinancialProof>;
   inboxLoanStates?: (rows: SignatureSourceRow[]) => Promise<ReadonlyMap<string, SignatureInboxLoanState>>;
 };
@@ -417,11 +410,13 @@ export class DocumentReviewService {
             legajoAdjuntoId: pdfSaved ? adjuntoId : null,
           },
         });
-        for (const attempt of completedSignatureAttempts(assessment)) {
+        for (const attempt of assessment.attempts) {
+          const submittedAt = signatureSubmissionAt(attempt);
+          if (!submittedAt) continue;
           await this.deps.onSignatureEvent?.(tx, {
             type: "signature_received", solicitudId: id,
             loanId: source.prestamoId!, cycleId: source.cycleId,
-            verificationId: attempt.verificationId,
+            verificationId: attempt.verificationId, submittedAt: new Date(submittedAt),
           });
         }
         return savedReview;
@@ -440,6 +435,17 @@ export class DocumentReviewService {
       }
       throw e;
     }
+  }
+
+  private async currentReviewer(tx: Prisma.TransactionClient, id: string): Promise<AuthUser> {
+    const row = await tx.user.findFirst({
+      where: { id, state: 1, deletedAt: null },
+      select: UserMapper.profileSelect(),
+    });
+    const user = row && UserMapper.toDomain(row);
+    if (!user || !isLegajosUser(user))
+      throw new DocumentReviewError("Tus permisos para revisar firmas cambiaron. No se registró la decisión.", 403);
+    return user;
   }
 
   private async lockSource(tx: Prisma.TransactionClient, id: string) {
@@ -537,9 +543,7 @@ export class DocumentReviewService {
       }
       await this.deps.db.$transaction(async tx => {
         await this.lockSource(tx, id);
-        const actor = await tx.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null }, include: { workflowOwner: true } });
-        if (!actor || !isLegajosUser(actor) || (!actor.isSystemAdmin && !actor.workflowOwner?.isActive))
-          throw new DocumentReviewError("Tus permisos para revisar legajos cambiaron. No se registró la decisión.", 403);
+        const actor = await this.currentReviewer(tx, user.id);
         const replay = await tx.solicitudDocumentDecision.findUnique({ where: { requestId: input.requestId }, include: { review: true } });
         if (replay) { checkReplay(replay); replayed = true; return; }
         const current = await this.source(id, tx);
@@ -662,7 +666,11 @@ export class DocumentReviewService {
       );
     }
     if (input.decision === "approve" && !hasMatchingSignedOperation(attempt, { requireCycle: Boolean(source.signatureRequestedAt) })) {
-      throw new DocumentReviewError(        "La firma debe corresponder al préstamo, titular y condiciones vigentes. Estos controles no admiten una excepción manual.",      );    }    const financialProof = input.decision === "approve"
+      throw new DocumentReviewError(
+        "La firma debe corresponder al préstamo, titular y condiciones vigentes. Estos controles no admiten una excepción manual.",
+      );
+    }
+    const financialProof = input.decision === "approve"
       ? await this.deps.financialPreflight?.(id, user)
       : undefined;
     if (financialProof) {
@@ -835,17 +843,7 @@ export class DocumentReviewService {
       await this.deps.db.$transaction(
         async (tx) => {
           await this.lockSource(tx, id);
-          const currentActor = await tx.user.findFirst({
-            where: { id: user.id, state: 1, deletedAt: null },
-            include: { workflowOwner: true },
-          });
-          if (!currentActor || !isLegajosUser(currentActor) ||
-            (!currentActor.isSystemAdmin && !currentActor.workflowOwner?.isActive)) {
-            throw new DocumentReviewError(
-              "Tus permisos para revisar firmas cambiaron. No se registró la decisión.",
-              403,
-            );
-          }
+          const currentActor = await this.currentReviewer(tx, user.id);
           const replay = await tx.solicitudDocumentDecision.findUnique({
             where: { requestId: input.requestId },
           });

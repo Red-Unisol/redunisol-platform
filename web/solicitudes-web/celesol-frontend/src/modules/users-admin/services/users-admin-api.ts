@@ -8,6 +8,7 @@ export type PendingAreaUser = {
   legacyUser: string;
   state: number;
   workflowOwnerId: string | null;
+  workflowOwners?: WorkflowOwner[];
 };
 
 export type UsersAdminUser = {
@@ -21,6 +22,7 @@ export type UsersAdminUser = {
   recibeAsignacionAutomatica: boolean;
   state: number;
   workflowOwnerId: string | null;
+  workflowOwners?: WorkflowOwner[];
 };
 
 export type WorkflowOwner = {
@@ -63,13 +65,22 @@ export function getWorkflowOwners() {
   return apiClient.get<WorkflowOwnersResponse>("/auth/workflow-owners");
 }
 
-export function assignWorkflowOwner(
+export type PendingAssignment = {
+  id: string;
+  nroSolicitud: string | null;
+  areaName: string;
+  areaCode: string;
+  stateName: string;
+};
+
+export function assignWorkflowOwners(
   userId: string,
-  workflowOwnerId: string | null,
+  workflowOwnerIds: string[],
 ) {
-  return apiClient.patch<void>(`/auth/users/${userId}/workflow-owner`, {
-    workflowOwnerId,
-  });
+  return apiClient.patch<{
+    user: UsersAdminUser;
+    pendingAssignments: PendingAssignment[];
+  }>(`/auth/users/${userId}/workflow-owners`, { workflowOwnerIds });
 }
 
 export function updateUser(userId: string, payload: UpdateAdminUserRequest) {

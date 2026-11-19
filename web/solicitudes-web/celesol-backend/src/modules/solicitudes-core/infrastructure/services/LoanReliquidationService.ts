@@ -1,3 +1,4 @@
+import { activeWorkflowAreaWhere, hasWorkflowAreaId, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
@@ -35,8 +36,8 @@ export class LoanReliquidationService {
   private async actor(db: Prisma.TransactionClient, s: Source, user: AuthUser) {
     // Do not grant new cross-area permissions through an impersonated identity.
     if (actingContext.getStore()) throw new AdministrativeCorrectionError("Usá tu propia sesión para confirmar la anulación.", 403);
-    const actor = await db.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null }, include: { workflowOwner: true } });
-    if (!actor || (!actor.isSystemAdmin && (!actor.workflowOwner?.isActive || actor.workflowOwnerId !== s.estadoActual.ownerId)))
+    const actor = await db.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null }, include: workflowAreaInclude });
+    if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, s.estadoActual.ownerId)))
       throw new AdministrativeCorrectionError("Sólo el área a cargo de Legajos o Tesorería puede devolver esta solicitud a Riesgo.", 403);
     return actor;
   }
@@ -51,7 +52,7 @@ export class LoanReliquidationService {
     delete control.reliquidationHold;
     await assertReliquidationFinanciallyClear(db, { ...s, administrativeCoreControl: control });
     const analyst = s.assignedToUserId && await db.user.findFirst({ where: {
-      id: s.assignedToUserId, state: 1, deletedAt: null, workflowOwner: { code: "RIESGO", isActive: true },
+      id: s.assignedToUserId, state: 1, deletedAt: null, ...activeWorkflowAreaWhere("RIESGO"),
     }, select: { id: true } });
     if (!analyst) throw new AdministrativeCorrectionError("Asigná un analista activo de Riesgo antes de devolver la solicitud.");
     return actor;
