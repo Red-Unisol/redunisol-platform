@@ -1,159 +1,129 @@
-from copy import deepcopy
+"""Integration of the two disabled Kestra flows with the Pago360 processor."""
+from contextlib import redirect_stdout
+from dataclasses import replace
+import io
+import json
+import os
 from pathlib import Path
 import sys
-from concurrent.futures import ThreadPoolExecutor
 import unittest
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "files"))
-from pago360.worker import Executor, UnverifiedVimarx, Reconcile
+from unittest.mock import ANY, Mock, call, patch
+
+import yaml
+
+DOMAIN = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DOMAIN / "files"))
+
+from pago360 import entrypoint
+from pago360_cuotas.processor import Processor
+from kestra.automations.cobranzas.tests import test_pago360_cuotas as fixtures
 
 
-class MemoryPortal:
-    # HTTP/SQL boundaries are tested against real PostgreSQL in the portal PR.
-    def __init__(self):
-        from threading import Lock
-        self.lock = Lock()
-        self.state = "pendiente"
-        self.token = 0
-        self.fail = None
-        self.items = [{"cuota_id": str(n), "prestamo_id": "900000001", "nro_cuota": str(n),
-                       "saldo": "100.00", "estado": "pendiente"} for n in [1, 2]]
-        self.actions = []
-
-    def call(self, action, operation_id=None, token=None, quota_id=None, data=None):
-        with self.lock:
-            self.actions.append(action)
-            if self.fail == action:
-                self.fail = None
-                raise RuntimeError("synthetic portal failure")
-            if action == "tomar":
-                if self.state not in ["pendiente"]:
-                    return {"resultado": "occupied"}
-                if any(i["estado"] == "escribiendo" for i in self.items):
-                    self.state = "conciliacion"
-                    return {"resultado": "conciliacion"}
-                self.state = "procesando"
-                self.token += 1
-            else:
-                if token != self.token or self.state != "procesando":
-                    raise RuntimeError("fenced")
-                item = next((i for i in self.items if i["cuota_id"] == quota_id), None)
-                if action == "iniciar":
-                    assert item["estado"] == "pendiente"
-                    item.update(estado="escribiendo", intencion=data)
-                elif action == "respuesta":
-                    item.update(estado="respondido", respuesta=data)
-                elif action == "confirmar":
-                    item.update(estado="confirmado", evidencia=data)
-                elif action == "conciliar":
-                    self.state = "conciliacion"
-                elif action == "liberar":
-                    self.state = "pendiente"
-                elif action == "finalizar":
-                    assert all(i["estado"] == "confirmado" for i in self.items)
-                    self.state = "aplicado"
-            return {"resultado": "ok", "token": self.token, "estado": self.state,
-                    "cuotas": deepcopy(self.items), "total": 200, "proveedorRef": "123"}
+OPERATION_ID = "ad9f33c9-ea14-4406-bca3-1873856970a1"
+SECOND_ID = "3f061711-41ac-44e4-b2f7-16d39c361b37"
+EXECUTION_ID = "kestra-test-execution"
 
 
-class FakeVimarx:
-    enabled = True
-    def __init__(self, portal):
-        self.portal = portal
-        self.writes = []
-        self.bad_debt = False
-        self.timeout_on = None
-        self.verify_failure = False
-        self.wrong_link = False
-
-    def inspect(self, item):
-        return {"prestamoId": item["prestamo_id"], "nroCuota": item["nro_cuota"],
-                "idCuota": str(99000000 + int(item["cuota_id"])), "vencida": True,
-                "pagada": self.bad_debt, "saldo": 0 if self.bad_debt else 100}
-
-    def write(self, intent):
-        assert self.portal.items[int(intent["nroCuota"]) - 1]["estado"] == "escribiendo"
-        self.writes.append(intent)
-        if intent["nroCuota"] == self.timeout_on:
-            raise TimeoutError("possibly committed")
-        return {"cobroId": str(700 + int(intent["nroCuota"])), "importe": 100}
-
-    def verify(self, intent, response):
-        if self.verify_failure:
-            self.verify_failure = False
-            raise TimeoutError("read failure")
-        return {"operacionId": "another" if self.wrong_link else intent["operacionId"],
-                "idCuota": intent["idCuota"], "cobroId": response["cobroId"],
-                "importe": 100, "saldo": 0, "vinculoVerificado": True}
+def run_entrypoint(*arguments, **env):
+    output = io.StringIO()
+    environment = {"KESTRA_EXECUTION_ID": EXECUTION_ID, **env}
+    with patch.dict(os.environ, environment, clear=True), \
+            patch.object(sys, "argv", ["pago360.entrypoint", *arguments]), \
+            redirect_stdout(output):
+        entrypoint.main()
+    return [json.loads(line) for line in output.getvalue().splitlines()]
 
 
-class ExecutorTests(unittest.TestCase):
+class Pago360FlowTests(unittest.TestCase):
     def setUp(self):
-        self.portal = MemoryPortal()
-        self.vimarx = FakeVimarx(self.portal)
-        self.executor = Executor(self.portal, self.vimarx)
+        # Even a regression that bypasses the disabled processor must stay offline.
+        self.http = self.enterContext(patch(
+            "requests.sessions.Session.request",
+            side_effect=AssertionError("Unexpected HTTP request"),
+        ))
 
-    def test_default_gateway_cannot_write_or_claim(self):
-        self.assertEqual(Executor(self.portal, UnverifiedVimarx()).process("op"), "writes_disabled")
-        self.assertEqual(self.portal.actions, [])
+    def test_verified_mode_requires_all_ports(self):
+        with self.assertRaises(ValueError):
+            Processor(contracts_verified=True)
+        for port in ("repository", "provider", "legacy"):
+            with self.subTest(missing=port):
+                ports = {"repository": Mock(), "provider": Mock(), "legacy": Mock()}
+                del ports[port]
+                with self.assertRaises(ValueError):
+                    Processor(**ports, contracts_verified=True)
 
-    def test_duplicate_event_and_concurrent_workers_only_write_once(self):
-        with ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(self.executor.process, ["op"] * 5))
-        self.assertEqual(results.count("aplicado"), 1)
-        self.assertEqual(len(self.vimarx.writes), 2)
-        self.assertEqual(self.portal.state, "aplicado")
-        self.executor.process("op")
-        self.assertEqual(len(self.vimarx.writes), 2)
+    def test_manual_webhook_and_recovery_use_real_blocked_processor(self):
+        envs = [
+            {"OPERATION_ID": OPERATION_ID},
+            {"TRIGGER_BODY_JSON": json.dumps({"operacion_id": OPERATION_ID})},
+        ]
+        with patch.object(Processor, "run", autospec=True, side_effect=Processor.run) as run, \
+                patch("pago360.pending.pending_operations", return_value=[OPERATION_ID, SECOND_ID]) as pending:
+            logged = []
+            for env in envs:
+                logged.extend(run_entrypoint(**env))
+            pending.assert_not_called()
+            logged.extend(run_entrypoint("recover"))
+            pending.assert_called_once_with()
+        operation_ids = [OPERATION_ID, OPERATION_ID, OPERATION_ID, SECOND_ID]
+        self.assertEqual(run.call_args_list, [call(ANY, op, EXECUTION_ID) for op in operation_ids])
+        self.assertEqual([line["operation_id"] for line in logged], operation_ids)
+        for line in logged:
+            self.assertEqual(line["result"], "BLOCKED")
+            self.assertEqual(line["reason"], "CONTRACTS_NOT_VERIFIED")
+        self.http.assert_not_called()
 
-    def test_paid_by_another_method_goes_to_reconciliation(self):
-        self.vimarx.bad_debt = True
-        self.assertEqual(self.executor.process("op"), "conciliacion")
-        self.assertEqual(self.vimarx.writes, [])
+    def test_recovery_continues_after_invalid_pending_item_and_reports_failure(self):
+        with patch.object(Processor, "run", autospec=True, side_effect=Processor.run) as run, \
+                patch("pago360.pending.pending_operations", return_value=["invalid", SECOND_ID]), \
+                self.assertRaises(RuntimeError):
+            run_entrypoint("recover")
+        run.assert_called_once_with(ANY, SECOND_ID, EXECUTION_ID)
+        self.http.assert_not_called()
 
-    def test_changed_amount_never_writes(self):
-        self.portal.items[0]["saldo"] = "99.00"
-        self.assertEqual(self.executor.process("op"), "conciliacion")
-        self.assertEqual(self.vimarx.writes, [])
+    def test_recovery_and_late_webhook_share_the_same_journal(self):
+        # The first notification was lost. Recovery sees the pending operation
+        # before a delayed webhook; neither a successful nor an uncertain write repeats.
+        for timeout, expected_status in [(False, "APPLIED"), (True, "RECONCILIATION")]:
+            with self.subTest(timeout=timeout):
+                operation = replace(fixtures.operation(), operation_id=OPERATION_ID)
+                repo = fixtures.MemoryRepository(operation)
+                legacy = fixtures.FakeLegacy(repo)
+                if timeout:
+                    legacy.fail_at = 1
+                provider = Mock()
+                provider.verify.return_value = fixtures.payment(operation)
+                processor = Processor(repo, provider, legacy, contracts_verified=True)
+                with patch.object(entrypoint, "Processor", return_value=processor), \
+                        patch("pago360.pending.pending_operations", return_value=[OPERATION_ID]):
+                    recovered = run_entrypoint("recover")
+                    delayed = run_entrypoint(TRIGGER_BODY_JSON=json.dumps({"operacion_id": OPERATION_ID}))
+                self.assertEqual(recovered[0]["result"], expected_status)
+                self.assertEqual(delayed[0]["result"], expected_status)
+                if timeout:
+                    self.assertEqual(recovered[0]["reason"], "WRITE_UNCERTAIN")
+                expected_quota = operation.installments[0].installment_id
+                self.assertEqual(legacy.calls, [expected_quota])
+                self.assertEqual(provider.verify.call_count, 1)
+        self.http.assert_not_called()
 
-    def test_partial_success_and_timeout_preserve_confirmed_quota(self):
-        self.vimarx.timeout_on = "2"
-        self.assertEqual(self.executor.process("op"), "conciliacion")
-        self.assertEqual(self.portal.items[0]["estado"], "confirmado")
-        self.executor.process("op")
-        self.assertEqual(len(self.vimarx.writes), 2)
-
-    def test_failed_portal_response_persistence_leaves_intent_uncertain(self):
-        self.portal.fail = "respuesta"
-        with self.assertRaises(RuntimeError): self.executor.process("op")
-        self.portal.state = "pendiente"  # expiry
-        self.assertEqual(self.executor.process("op"), "conciliacion")
-        self.assertEqual(len(self.vimarx.writes), 1)
-
-    def test_failed_portal_confirmation_recovers_response_without_rewrite(self):
-        self.portal.fail = "confirmar"
-        with self.assertRaises(RuntimeError): self.executor.process("op")
-        self.portal.state = "pendiente"  # expiry
-        self.assertEqual(self.executor.process("op"), "aplicado")
-        self.assertEqual(len(self.vimarx.writes), 2)
-
-    def test_post_write_read_failure_recovers_only_verification(self):
-        self.vimarx.verify_failure = True
-        with self.assertRaises(TimeoutError): self.executor.process("op")
-        self.assertEqual(self.executor.process("op"), "aplicado")
-        self.assertEqual(len(self.vimarx.writes), 2)
-
-    def test_zero_balance_without_operation_link_is_insufficient(self):
-        self.vimarx.wrong_link = True
-        self.assertEqual(self.executor.process("op"), "conciliacion")
-        self.assertEqual(len(self.vimarx.writes), 1)
-
-    def test_both_flows_and_triggers_ship_disabled(self):
-        import yaml
-        root = Path(__file__).resolve().parents[1]
-        for file in ["pago360_imputar.yaml", "pago360_recuperar.yaml"]:
-            flow = yaml.safe_load((root / "flows" / file).read_text())
-            self.assertIs(flow["disabled"], True)
-            self.assertTrue(all(t["disabled"] is True for t in flow["triggers"]))
+    def test_flows_and_triggers_ship_disabled_with_both_packages(self):
+        flows = {"pago360_imputar": "python -m pago360.entrypoint",
+                 "pago360_recuperar": "python -m pago360.entrypoint recover"}
+        for flow_id, command in flows.items():
+            with self.subTest(flow_id=flow_id):
+                flow_file = DOMAIN / "flows" / f"{flow_id}.yaml"
+                flow = yaml.safe_load(flow_file.read_text(encoding="utf-8"))
+                self.assertIs(flow["disabled"], True)
+                self.assertTrue(flow["triggers"])
+                for trigger in flow["triggers"]:
+                    self.assertIs(trigger["disabled"], True)
+                task, = flow["tasks"]
+                self.assertTrue(task["namespaceFiles"]["enabled"])
+                self.assertIn("pago360/**", task["namespaceFiles"]["include"])
+                self.assertIn("pago360_cuotas/**", task["namespaceFiles"]["include"])
+                self.assertEqual(task["commands"], [command])
+                self.assertEqual(task["env"]["KESTRA_EXECUTION_ID"], "{{ execution.id }}")
 
 
 if __name__ == "__main__":

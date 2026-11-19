@@ -9,7 +9,7 @@ labels:
   domain: cobranzas
   integration: pago360
   schedule_scope: prod_only
-description: Recupera pendientes a traves del mismo ejecutor; no reenvia escrituras inciertas.
+description: Lista operaciones pendientes del portal y entrega sus IDs al mismo motor que el webhook.
 tasks:
   - id: ejecutar
     type: io.kestra.plugin.scripts.python.Commands
@@ -17,12 +17,14 @@ tasks:
       enabled: true
       include:
         - pago360/**
+        - pago360_cuotas/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
     containerImage: ghcr.io/kestra-io/pydata:latest
     beforeCommands:
       - pip install requests > /dev/null
     env:
+      KESTRA_EXECUTION_ID: "{{ execution.id }}"
       PAGO360_PORTAL_API_URL: "{{ envs.pago360_portal_api_url }}"
       PAGO360_PORTAL_API_SECRET: "{{ secret('PAGO360_PORTAL_API_SECRET') }}"
     commands:

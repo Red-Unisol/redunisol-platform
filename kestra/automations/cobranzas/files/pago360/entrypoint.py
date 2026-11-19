@@ -1,54 +1,42 @@
-"""Authenticated portal client. Exceptions never print response bodies/secrets."""
+"""Kestra entry point shared by Pago360 notifications and pending jobs."""
 import json
 import os
 import sys
-from urllib.parse import urlparse
 from uuid import UUID
-import requests
-from .worker import Executor, UnverifiedVimarx
 
-
-class PortalClient:
-    def __init__(self, url, secret, session=None):
-        if urlparse(url).scheme != "https" or not secret:
-            raise ValueError("Portal HTTPS URL and API secret are required")
-        self.url, self.secret = url, secret
-        self.session = session or requests.Session()
-
-    def call(self, action, operation_id=None, token=None, quota_id=None, data=None):
-        body = {"accion": action}
-        for key, value in (("operacion_id", operation_id), ("token", token), ("cuota_id", quota_id), ("datos", data)):
-            if value is not None:
-                body[key] = value
-        try:
-            r = self.session.post(self.url, json=body, headers={"x-kestra-secret": self.secret}, timeout=20, allow_redirects=False)
-            if r.status_code != 200:
-                raise RuntimeError()
-            return r.json()
-        except Exception:
-            raise RuntimeError("Portal transition failed; durable state must be recovered") from None
+from pago360_cuotas.processor import Processor
 
 
 def main():
-    portal = PortalClient(os.environ["PAGO360_PORTAL_API_URL"], os.environ["PAGO360_PORTAL_API_SECRET"])
-    executor = Executor(portal, UnverifiedVimarx())
-    if len(sys.argv) > 1 and sys.argv[1] == "recover":
-        operations = portal.call("pendientes")
+    execution_id = os.environ["KESTRA_EXECUTION_ID"]
+    processor = Processor()
+    if sys.argv[1:] == ["recover"]:
+        from .pending import pending_operations
+
+        operations = pending_operations()
     else:
-        body = json.loads(os.environ.get("TRIGGER_BODY_JSON", "{}"))
-        value = os.environ.get("OPERATION_ID") or body.get("operacion_id", "")
-        operations = [str(UUID(value))]
+        operation_id = os.environ.get("OPERATION_ID")
+        if not operation_id:
+            body = json.loads(os.environ.get("TRIGGER_BODY_JSON", "{}"))
+            operation_id = body.get("operacion_id")
+        operations = [operation_id]
+
     failed = False
-    for operation_id in operations:
+    for value in operations:
         try:
-            result = executor.process(str(UUID(operation_id)))
-            print(json.dumps({"operation_id": operation_id, "result": result}))
-        except Exception:
-            # Continue other pending jobs, but leave this execution failed.
+            operation_id = str(UUID(value))
+        except (ValueError, TypeError, AttributeError):
             failed = True
-            print(json.dumps({"operation_id": operation_id, "result": "recovery_required"}))
+            print(json.dumps({"result": "INVALID_OPERATION_ID"}))
+            continue
+        try:
+            result = processor.run(operation_id, execution_id)
+            print(json.dumps({"operation_id": operation_id, "result": result.status, "reason": result.reason}))
+        except Exception:
+            failed = True
+            print(json.dumps({"operation_id": operation_id, "result": "RECOVERY_REQUIRED"}))
     if failed:
-        raise RuntimeError("Some operations require recovery")
+        raise RuntimeError("Some Pago360 operations require review")
 
 
 if __name__ == "__main__":

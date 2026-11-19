@@ -111,8 +111,10 @@ class Result:
 
 
 class Processor:
-    def __init__(self, repository: Repository, provider: Provider, legacy: Legacy,
-                 *, contracts_verified: bool = False):
+    def __init__(self, repository: Repository | None = None, provider: Provider | None = None,
+                 legacy: Legacy | None = None, *, contracts_verified: bool = False):
+        if contracts_verified and (repository is None or provider is None or legacy is None):
+            raise ValueError("Los contratos verificados requieren repositorio, proveedor y legacy")
         self.repo = repository
         self.provider = provider
         self.legacy = legacy

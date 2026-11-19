@@ -209,8 +209,8 @@ jobs:
         env:
           PYTHONPATH: kestra/automations/contabilidad/files
 
-      - name: Test Pago360 durable executor
-        run: python -m unittest kestra.automations.cobranzas.tests.test_pago360 -v
+      - name: Test Pago360 flows and processor
+        run: python -m unittest discover -s kestra/automations/cobranzas/tests -p 'test_pago360*.py' -v
 
       - name: Dry-run Marketing CRM deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain marketing-crm --dry-run
