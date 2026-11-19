@@ -7,19 +7,33 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import json
 import logging
+import os
 import re
 import time
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .service import build_normalized_payload, normalize_cuit
 
-BASE_URL = "https://api.bcra.gob.ar/centraldedeudores/v1.0/Deudas/"
+DEBT_PATH = "/centraldedeudores/v1.0/Deudas/"
+PROVIDER = "bcra_monthly_files"
 MAX_ATTEMPTS = 3
 RETRY_PAUSE_SECONDS = 12
 TIMEOUT_SECONDS = 8
 MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 logger = logging.getLogger(__name__)
+
+
+class _MissingConfiguration(Exception):
+    pass
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_private_http = build_opener(ProxyHandler({}), _NoRedirect())
 
 
 def _timestamp() -> str:
@@ -36,17 +50,34 @@ def _period_label(period: str) -> str:
 
 
 def _fetch(path: str) -> tuple[int, object]:
-    request = Request(BASE_URL + path, headers={"Accept": "application/json"})
+    base_url = os.getenv("BCRA_FILE_BASE_URL", "").strip().rstrip("/")
+    token = os.getenv("BCRA_FILE_TOKEN", "").strip()
+    if not base_url or not token:
+        raise _MissingConfiguration
+
+    request = Request(base_url + DEBT_PATH + path, headers={
+        "Accept": "application/json",
+        "Authorization": "Bearer " + token,
+    })
     try:
-        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            return response.status, json.load(response)
+        response = _private_http.open(request, timeout=TIMEOUT_SECONDS)
     except HTTPError as exc:
-        with exc:
-            try:
-                payload = json.loads(exc.read())
-            except (ValueError, UnicodeError):
-                payload = None
-            return exc.code, payload
+        response = exc
+
+    with response:
+        status = response.code
+        if status not in {200, 404}:
+            return status, None
+        headers = response.headers
+        if headers.get("X-BCRA-Source") != "monthly-files" or not all(
+            headers.get("X-BCRA-" + field) for field in ("Period", "Version", "Checked-At")
+        ):
+            # A response without a validated publication cannot establish that a person has no data.
+            return status, None
+        try:
+            return status, json.load(response)
+        except ValueError:
+            return status, None
 
 
 def _periods(status: int, payload: object, cuit: str) -> dict:
@@ -80,7 +111,7 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
                 raise ValueError("Invalid BCRA entity")
             entities[name] = {
                 "situacion": situation,
-                # The official API reports thousands of pesos. Store integer cents.
+                # The compatible endpoint reports thousands of pesos. Store integer cents.
                 "cents": int((amount * 100000).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
                 "observacion": " · ".join(filter(None, [
                     "En revisión" if entity.get("enRevision") else "",
@@ -101,9 +132,12 @@ def consult_bcra(cuit: str, *, attempts: list | None = None, max_attempts: int =
         with ThreadPoolExecutor(max_workers=2) as pool:
             pending = {key: pool.submit(_fetch, path) for key, path in paths.items() if key not in reports}
             for key, future in pending.items():
-                outcome = {"endpoint": key, "attempt": attempt + 1}
+                outcome = {"endpoint": key, "attempt": attempt + 1, "provider": PROVIDER}
                 try:
                     status, payload = future.result()
+                except _MissingConfiguration:
+                    logger.warning("BCRA file API is not configured; retaining CredixSA fallback.")
+                    return None
                 except (ValueError, UnicodeError):
                     outcome["result"] = "invalid_response"
                 except Exception:

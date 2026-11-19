@@ -2,8 +2,9 @@
 
 Servicio interno FastAPI/Uvicorn que consulta los archivos de la Central de
 Deudores. Expone contratos compatibles de deudas vigentes e histórico de 24
-meses. El enriquecimiento y la calificación de Bitrix consultan deuda vigente por
-el enlace privado. El servicio usa archivos oficiales y atiende consultas de lectura. Cheques rechazados queda fuera de alcance.
+meses. Por el enlace privado, Bitrix consulta deuda vigente y CredixSA consulta
+deuda vigente e histórica. El servicio usa archivos oficiales y atiende consultas
+de lectura. Cheques rechazados queda fuera de alcance.
 
 ## Contrato compatible
 

@@ -25,7 +25,8 @@ Dominio para automatizaciones de analisis y calificacion de credito.
   habilitado por flag; carga manual con run_now=true.
 - bcra_archivo_consultar_poc: webhook síncrono con HTTP nativo hacia un
   contenedor persistente, sin crear un contenedor por consulta.
-- No hay consumidores existentes ni cambios de reglas comerciales.
+- CredixSA consulta deuda vigente e historica por el enlace privado.
+  [Integracion y recuperacion](bcra-recovery.md).
 - [Arquitectura, contrato, límites y activación](../../../../apps/bcra-file-api/README.md).
 
 ## renovacion_cruz_del_eje

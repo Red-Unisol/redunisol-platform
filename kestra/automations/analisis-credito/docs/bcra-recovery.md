@@ -5,6 +5,13 @@ Lee informes version 4 vigentes de SQLite cuyo bloque BCRA quedo como
 `CredixSA` con estado `unavailable`, `invalid_response` o `processing_error`.
 No consulta CredixSA, no navega el portal y no modifica datos comerciales.
 
+Los informes bajo demanda, el precalentamiento y este recuperador consultan
+deuda vigente e historica en la API interna del BCRA mediante `kestra_net`.
+Los tres workers usan `envs.bcra_file_poc_url` y el secreto
+`BCRA_FILE_POC_TOKEN`. El cliente valida los encabezados de publicacion antes
+de aceptar una respuesta con datos o un 404 por ausencia de registros. Los
+logs de cada intento identifican el proveedor como `bcra_monthly_files`.
+
 La cola `bcra_recovery`, dentro de la misma base compartida, deduplica por CUIL
 y huella del informe. La primera oportunidad llega dos minutos despues de
 `cached_at`; ante fallos, las siguientes esperan 5, 15 y 60 minutos desde el
