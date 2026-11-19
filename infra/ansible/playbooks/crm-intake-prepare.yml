@@ -1,0 +1,11 @@
+---
+- name: Install the inactive CRM intake draft
+  hosts: crm_intake_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: crm_intake
