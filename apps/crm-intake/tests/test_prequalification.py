@@ -28,6 +28,44 @@ class PrequalificationTest(unittest.TestCase):
         self.assertEqual(len(web.policy_sha256), 64)
         self.assertEqual(web.policy_version, commercial.RULE_VERSION)
 
+    def test_cordoba_fund_can_advance_without_bank_from_either_scope(self):
+        wa = {"provincia": "cordoba", "organismo": "caja_cordoba"}
+        cases = [
+            ("web", "web-loan-v1", {"province": "Córdoba", "employment_status": "Jubilado Provincial"}),
+            ("whatsapp", "whatsapp-intake-v3", wa | {"situacion_cordoba": "jubilado"}),
+            ("whatsapp", "whatsapp-intake-v3", wa | {"situacion_cordoba": "pensionado"}),
+            ("whatsapp", "whatsapp-grouped-v1", wa | {"situacion_cordoba": "jubilado_pensionado"}),
+        ]
+        for channel, version, answers in cases:
+            for scope, cuad in (("public_web", None), ("crm_lead", CuadEvidence("not_found", "lookup"))):
+                with self.subTest(version=version, answers=answers, scope=scope):
+                    profile = normalize_document(channel, version, answers, ())
+                    result = evaluate(profile, profile_ref="example", evaluated_at=NOW, scope=scope, cuad=cuad)
+                    self.assertEqual(result.applied_rule, "cordoba_caja_benefit_any_bank")
+                    self.assertEqual(result.outcome, "qualified")
+                    self.assertTrue(result.commercially_qualified and result.measurement_qualified and result.permits_whatsapp)
+                    self.assertNotIn("value", profile["fields"]["payment_bank"])
+
+    def test_cordoba_fund_requires_identifiable_benefit_and_organization(self):
+        for fields in (
+            {"province": "Córdoba", "employment_status": "Pensionado"},
+            {"province": "Córdoba", "employment_status": "Jubilado Municipal"},
+            {"province": "Catamarca", "employment_status": "Jubilado Provincial"},
+        ):
+            with self.subTest(fields=fields):
+                result = decision(fields)
+                self.assertIsNone(result.applied_rule)
+                self.assertEqual(result.outcome, "pending")
+        wa = {"provincia": "cordoba", "situacion_cordoba": "pensionado", "organismo": "ayuda"}
+        self.assertEqual(decision(wa, channel="whatsapp").outcome, "pending")
+
+    def test_cordoba_fund_preserves_cuad_precedence(self):
+        fields = {"province": "Córdoba", "employment_status": "Jubilado Provincial"}
+        self.assertEqual(decision(fields, scope="crm_lead").reason, "cuad_evidence_required")
+        result = decision(fields, scope="crm_lead", cuad=CuadEvidence("matched", "lookup"))
+        self.assertEqual(result.outcome, "external_referral")
+        self.assertIsNone(result.applied_rule)
+
     def test_police_uses_argentine_date_and_distinguishes_conversion(self):
         pfa = {"province": "CABA", "employment_status": "Policía Federal", "payment_bank": "Otros"}
         before = decision(pfa, evaluated_at=datetime(2026, 10, 2, 2, 59, tzinfo=timezone.utc))

@@ -6,7 +6,7 @@ from datetime import datetime
 from .contract import NORMALIZER_VERSION
 from .kestra_policy import POLICY_SHA256, commercial, input_parser, rules
 
-ADAPTER_VERSION = "prequalification-1"
+ADAPTER_VERSION = "prequalification-2"
 SUPPORTED_NORMALIZERS = {"intake-2", NORMALIZER_VERSION}
 BANKS = {
     "bancor": "Banco de la Provincia de Cordoba S.A.",
@@ -57,12 +57,28 @@ class Decision:
     permits_whatsapp: bool | None = None
     rejection_label: str | None = None
     missing_facts: tuple[str, ...] = ()
+    applied_rule: str | None = None
 
 
 def fact_value(fields, name):
     item = fields.get(name, {})
     value = item.get("value")
     return value if item.get("status") in {"declared", "inferred"} and isinstance(value, str) else None
+
+
+def is_cordoba_fund_benefit(fields):
+    if (fact_value(fields, "province") != "cordoba"
+            or fact_value(fields, "paying_organization") != "provincial_fund"
+            or fields.get("employment_kind", {}).get("status") != "not_applicable"
+            or fact_value(fields, "benefit_regime") == "municipal"):
+        return False
+    if fact_value(fields, "benefit_kind") in {"retirement", "pension"}:
+        return True
+    # The older grouped question proves membership in the eligible pair
+    # without identifying which of the two benefits the person receives.
+    benefit = fields.get("benefit_kind", {})
+    return (benefit.get("status") == "ambiguous"
+            and set(benefit.get("alternatives", ())) == {"retirement", "pension"})
 
 
 def employment_key(fields):
@@ -119,6 +135,12 @@ def evaluate(
             return completed(rules.haberes_cuad_referral_result())
 
     fields = profile["fields"]
+    if is_cordoba_fund_benefit(fields):
+        return Decision(
+            **context, applied_rule="cordoba_caja_benefit_any_bank",
+            outcome="qualified", reason="qualified", commercially_qualified=True,
+            measurement_qualified=True, permits_whatsapp=True,
+        )
     employment = employment_key(fields)
     if employment is None:
         return Decision(

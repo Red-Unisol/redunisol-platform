@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from .capture import capture
-from .normalize import normalize
+from .normalize import normalize, normalize_document
 from .prequalification import CuadEvidence, evaluate
 
 
@@ -51,6 +51,15 @@ def main():
     )
     if not all(result.commercially_qualified for result in (web_decision, whatsapp_decision)):
         raise SystemExit("web and WhatsApp prequalification check failed")
+    caja = normalize_document("whatsapp", "whatsapp-intake-v3", {
+        "provincia": "cordoba", "situacion_cordoba": "pensionado", "organismo": "caja_cordoba",
+    }, ())
+    caja_decision = evaluate(
+        caja, profile_ref="synthetic-caja", evaluated_at=now, scope="crm_lead",
+        cuad=CuadEvidence("not_found", "synthetic-registry"),
+    )
+    if caja_decision.outcome != "qualified" or caja_decision.applied_rule != "cordoba_caja_benefit_any_bank":
+        raise SystemExit("Caja Cordoba without payment bank check failed")
     print("web + WhatsApp snapshot, normalization and prequalification OK (synthetic)")
 
 
