@@ -6,7 +6,7 @@ Type=simple
 DynamicUser=yes
 RuntimeDirectory=redunisol-crm-intake
 RuntimeDirectoryMode=0700
-WorkingDirectory=/srv/redunisol/platform/crm-intake/releases/{{ crm_intake_revision }}
+WorkingDirectory=/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}
 Environment=CRM_INTAKE_REVISION={{ crm_intake_revision }}
 Environment=CRM_INTAKE_STATUS_SOCKET=/run/redunisol-crm-intake/status.sock
 ExecStart=/usr/bin/python3 -B -m crm_intake.server

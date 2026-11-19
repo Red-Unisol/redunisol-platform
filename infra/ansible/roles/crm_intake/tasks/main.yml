@@ -11,7 +11,7 @@
   block:
     - name: Create a root-owned release directory
       ansible.builtin.file:
-        path: "/srv/redunisol/platform/crm-intake/releases/{{ crm_intake_revision }}"
+        path: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}"
         owner: root
         group: root
         mode: "0755"
@@ -20,7 +20,7 @@
     - name: Install the verified source and schema from the reviewed checkout
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../../apps/crm-intake/{{ item.source }}"
-        dest: "/srv/redunisol/platform/crm-intake/releases/{{ crm_intake_revision }}/{{ item.destination }}"
+        dest: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/{{ item.destination }}"
         owner: root
         group: root
         mode: "0644"
@@ -32,7 +32,7 @@
     - name: Check normalization with synthetic examples before switching releases
       ansible.builtin.command:
         argv: [/usr/bin/python3, -B, -m, crm_intake.sample]
-        chdir: "/srv/redunisol/platform/crm-intake/releases/{{ crm_intake_revision }}"
+        chdir: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}"
       changed_when: false
 
     - name: Render the private status service unit

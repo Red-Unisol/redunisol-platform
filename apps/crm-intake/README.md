@@ -36,6 +36,6 @@ La prueba PostgreSQL exige CRM_INTAKE_TEST_DSN apuntando a una base descartable 
 
 ## Instalación inactiva
 
-Desde un controlador Ansible conforme a infra/ansible/README.md, usar el inventario de producción, limitar a dedicated_prod_01 y pasar crm_intake_revision con el SHA completo de main. El playbook crm-intake-prepare.yml instala el código versionado en /srv/redunisol/platform/crm-intake y ejecuta una normalización sintética antes de arrancar el proceso de estado. crm-intake-verify.yml comprueba la revisión y que una captura de prueba se rechace con 503.
+Desde un controlador Ansible conforme a infra/ansible/README.md, usar el inventario de producción, limitar a dedicated_prod_01 y pasar crm_intake_revision con el SHA completo de main. El playbook crm-intake-prepare.yml instala el código versionado en /opt/redunisol-crm-intake y ejecuta una normalización sintética antes de arrancar el proceso de estado. crm-intake-verify.yml comprueba la revisión y que una captura de prueba se rechace con 503.
 
 El servicio redunisol-crm-intake está aislado de la red y el socket /run/redunisol-crm-intake/status.sock es privado. PostgreSQL se prepara en otro paso. El único efecto de este despliegue es instalar y servir el estado de la versión inactiva. Git y Ansible conservan el estado deseado.
