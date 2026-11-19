@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from .capture import capture
 from .normalize import normalize
+from .prequalification import CuadEvidence, evaluate
 
 
 def sample(channel="web"):
@@ -43,7 +44,14 @@ def main():
         actual = {name: result["fields"][name].get("value") for name in expected}
         if actual != expected:
             raise SystemExit("web and WhatsApp normalization check failed")
-    print("web + WhatsApp snapshot and normalization OK (synthetic)")
+    web_decision = evaluate(web, profile_ref="synthetic-web", evaluated_at=now, scope="public_web")
+    whatsapp_decision = evaluate(
+        whatsapp, profile_ref="synthetic-whatsapp", evaluated_at=now, scope="crm_lead",
+        cuad=CuadEvidence("not_found", "synthetic-registry"),
+    )
+    if not all(result.commercially_qualified for result in (web_decision, whatsapp_decision)):
+        raise SystemExit("web and WhatsApp prequalification check failed")
+    print("web + WhatsApp snapshot, normalization and prequalification OK (synthetic)")
 
 
 if __name__ == "__main__":

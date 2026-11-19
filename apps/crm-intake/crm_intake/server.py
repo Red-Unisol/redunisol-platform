@@ -28,6 +28,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "mode": "inactive",
             "capture_enabled": False,
             "normalization_worker_enabled": False,
+            "prequalification_enabled": False,
             "normalizer_version": VERSION,
             "supported_forms": sorted(form for _, form in SUPPORTED),
         })

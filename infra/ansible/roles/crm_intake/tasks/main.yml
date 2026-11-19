@@ -29,7 +29,30 @@
         - {source: crm_intake/, destination: crm_intake/}
         - {source: schema.sql, destination: schema.sql}
 
-    - name: Check normalization with synthetic examples before switching releases
+    - name: Create the directory for the shared Kestra policy
+      ansible.builtin.file:
+        path: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/kestra_policy"
+        owner: root
+        group: root
+        mode: "0755"
+        state: directory
+
+    - name: Install only the pure Kestra policy from the same Git commit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../kestra/automations/marketing-crm/files/bitrix24_form_flow/form_processor/{{ item }}"
+        dest: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/kestra_policy/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - attribution.py
+        - catalogs.py
+        - commercial_prequalification.py
+        - input_parser.py
+        - normalization.py
+        - qualification.py
+
+    - name: Check normalization and prequalification with synthetic examples
       ansible.builtin.command:
         argv: [/usr/bin/python3, -B, -m, crm_intake.sample]
         chdir: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}"

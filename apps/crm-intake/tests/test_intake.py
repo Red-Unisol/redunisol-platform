@@ -135,6 +135,7 @@ class StatusTest(unittest.TestCase):
                     self.assertIn("200", status)
                     self.assertFalse(body["capture_enabled"])
                     self.assertFalse(body["normalization_worker_enabled"])
+                    self.assertFalse(body["prequalification_enabled"])
                     self.assertEqual(body["revision"], "synthetic")
                     status, body = self.request(endpoint, b"POST /v1/submissions HTTP/1.0\r\n\r\n")
                     self.assertIn("503", status)

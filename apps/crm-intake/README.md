@@ -24,9 +24,21 @@ El borrador registra la declaración y su contexto. La vinculación con una pers
 | Descartar el banco porque Bitrix lo devuelve como lista, incluso si tenía una sola opción. | Normalizar una opción inequívoca. Mantener alternativas cuando haya varios bancos posibles. |
 | Tomar el responsable inicial de la ficha como prueba de atención humana. | Mantener identidad, atención humana, reparto y hechos declarados como comprobaciones independientes. |
 
-Antes del primer ingreso real hay que definir cómo obtiene cada adaptador autenticado la definición publicada de su formulario y quién puede acceder a los originales sensibles y por cuánto tiempo. También queda por incorporar la comparación de perfiles en el tiempo, la selección de la prestación específica y las aclaraciones por campo. El primer catálogo cubre los valores conocidos de estos formularios. Los nuevos códigos quedan visibles como sin equivalencia hasta que se versionen sus reglas.
+Antes del primer ingreso real hay que definir cómo obtiene cada adaptador autenticado la definición publicada de su formulario y quién puede acceder a los originales sensibles y por cuánto tiempo. También queda por incorporar la comparación de perfiles en el tiempo, la selección de la prestación específica y las aclaraciones por campo. La versión intake-3 amplía la interpretación web con las opciones verificadas del catálogo de Kestra. Los datos históricos siguen referenciando su versión. Se programa expresamente una nueva interpretación si se necesita actualizar un caso. Los códigos ajenos al catálogo quedan visibles como sin equivalencia.
 
 Se eligió Python para este borrador aislado porque ya es el lenguaje del procesamiento de formularios en Kestra. El contrato PostgreSQL mantiene el diseño de datos previsto. La integración de la coordinación con Laravel se puede decidir delante de este contrato, una vez comparados resultados y reutilización real.
+
+## Precalificación comercial en observación
+
+El evaluador recibe una interpretación versionada, su referencia estable y un instante con zona horaria. El resultado identifica la versión exacta del normalizador, el adaptador y el SHA-256 de las reglas. Usa el código de Kestra incluido desde el mismo commit, con sus vigencias en hora argentina. Distingue calificación comercial, medición web y autorización para ofrecer WhatsApp.
+
+La evaluación de alcance web aplica la política del webhook. Para prospectos CRM hace falta evidencia separada de Haberes CUAD. Una coincidencia tiene prioridad. Una consulta sin evidencia o no disponible queda pendiente. El evaluador recibe la referencia técnica y deja la consulta y el CUIL fuera de su contrato. La variante asistida de Caja Córdoba sin banco y los valores que el normalizador todavía no interpreta requieren completar el contrato antes de la activación.
+
+El observador web corre sin conexiones ni acciones. Consume un JSON minimizado con ventana, fuentes y registros de entrada emparejados con sus resultados históricos.
+
+    python -B -m crm_intake.observe_prequalification /path/to/minimized-observations.json
+
+La comparación distingue cobertura, versiones y diferencias. Las transferencias, cambios de ficha y decisiones de desembolso corresponden a otros módulos.
 
 ## Verificación
 
@@ -39,6 +51,6 @@ La prueba PostgreSQL exige CRM_INTAKE_TEST_DSN apuntando a una base descartable 
 
 ## Instalación inactiva
 
-Desde un controlador Ansible conforme a infra/ansible/README.md, usar el inventario de producción, limitar a dedicated_prod_01 y pasar crm_intake_revision con el SHA completo de main. El playbook crm-intake-prepare.yml instala el código versionado en /opt/redunisol-crm-intake y ejecuta una normalización sintética antes de arrancar el proceso de estado. crm-intake-verify.yml comprueba la revisión y que una captura de prueba se rechace con 503.
+Desde un controlador Ansible conforme a infra/ansible/README.md, usar el inventario de producción, limitar a dedicated_prod_01 y pasar crm_intake_revision con el SHA completo de main. El playbook crm-intake-prepare.yml instala el código versionado en /opt/redunisol-crm-intake y ejecuta una normalización y una precalificación sintéticas antes de arrancar el proceso de estado. Los empaquetados Git para el controlador incluyen apps/crm-intake, infra/ansible y los seis archivos de política enumerados por el rol crm_intake. crm-intake-verify.yml comprueba la revisión y que una captura de prueba se rechace con 503.
 
 El servicio redunisol-crm-intake está aislado de la red y el socket /run/redunisol-crm-intake/status.sock es privado. El estado verifica que tanto la captura como el worker estén inactivos. PostgreSQL se prepara en otro paso. Para un ensayo local puede aplicarse schema.sql a una base descartable e iniciar python -m crm_intake.worker con CRM_INTAKE_WORKER_ENABLED=1 y CRM_INTAKE_DATABASE_URL. La unidad del dedicado sólo ejecuta el proceso de estado. Git y Ansible conservan el estado deseado.

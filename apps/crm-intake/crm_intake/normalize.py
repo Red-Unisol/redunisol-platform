@@ -5,6 +5,7 @@ import unicodedata
 
 from .capture import decode_json
 from .contract import NORMALIZER_VERSION as VERSION
+from .kestra_policy import catalogs
 
 SUPPORTED = {("web", "web-loan-v1"), ("whatsapp", "whatsapp-intake-v3"), ("whatsapp", "whatsapp-grouped-v1")}
 
@@ -54,14 +55,41 @@ def choice(payload, field, options):
     return fact("declared", field, value=value) if value is not None else fact("unmapped", field)
 
 
+def catalog_choice(payload, field, aliases, catalog, *, key_aliases=None):
+    """Interpret known aliases and exact catalog options without guessing."""
+    result = choice(payload, field, aliases)
+    if result["status"] != "unmapped":
+        return result
+    raw = payload[field]
+    if not isinstance(raw, str):
+        return result
+    try:
+        key = catalog.resolve(raw, field).key
+    except ValueError:
+        return result
+    return fact("declared", field, value=(key_aliases or {}).get(key, key))
+
+
+def bank_choice(raw, field):
+    return catalog_choice(
+        {field: raw}, field, BANKS, catalogs.BANCOS,
+        key_aliases={
+            "banco_de_la_provincia_de_cordoba_s_a": "bancor", "banco_de_la_nacion_argentina": "nacion",
+            "banco_de_la_provincia_de_buenos_aires": "provincia_bsas",
+            "nuevo_banco_de_santa_fe_sociedad_anonima": "santa_fe",
+            "banco_provincia_del_neuquen_sociedad_anonima": "bpn", "otros": "other",
+        },
+    )
+
+
 def bank(payload, field):
     # CRM catalog fields sometimes serialize a single chosen bank as a list.
     raw = payload.get(field)
     if not isinstance(raw, list):
-        return choice(payload, field, BANKS)
+        return bank_choice(raw, field)
     if not raw:
         return fact("missing", field)
-    mapped = {BANKS.get(token(item)) for item in raw}
+    mapped = {bank_choice(item, field).get("value") for item in raw}
     if None in mapped:
         return fact("unmapped", field)
     if len(mapped) == 1:
@@ -114,8 +142,16 @@ def municipal_benefit(field):
 def web_fields(payload):
     situation = "employment_status"
     kind = token(payload.get(situation))
+    if kind:
+        try:
+            kind = catalogs.SITUACIONES_LABORALES.resolve(payload[situation], situation).key.replace("_", " ")
+        except ValueError:
+            pass
     fields = {
-        "province": choice(payload, "province", PROVINCES),
+        "province": catalog_choice(
+            payload, "province", PROVINCES, catalogs.PROVINCIAS,
+            key_aliases={"ciudad_autonoma_de_buenos_aires": "caba", "otros": "other"},
+        ),
         "payment_bank": bank(payload, "payment_bank"),
         "employment_kind": fact("not_applicable", situation),
         "benefit_kind": fact("not_applicable", situation),
@@ -136,7 +172,23 @@ def web_fields(payload):
             fact("inferred", situation, value=organization) if organization else fact("missing", situation)
         )
     else:
-        employment = choice(payload, situation, EMPLOYMENT)
+        employment = catalog_choice(
+            payload, situation, EMPLOYMENT, catalogs.SITUACIONES_LABORALES,
+            key_aliases={
+                "empleado_publico_provincial": "public_employee_provincial",
+                "empleado_publico_municipal": "public_employee_municipal",
+                "empleado_publico_nacional": "public_employee_national",
+                "empleado_privado": "private_employee",
+                "autonomo_independiente": "self_employed",
+                "monotributista": "monotax",
+                "beneficiario_de_plan_social": "social_plan_beneficiary",
+                "policia": "police",
+                "policia_federal": "federal_police",
+                "docente": "teacher",
+                "personal_de_salud": "health_worker",
+                "empleado_de_la_unc": "unc",
+            },
+        )
         fields["employment_kind"] = employment
         if employment["status"] in {"missing", "unmapped"}:
             fields["benefit_kind"] = fact("undetermined", situation)

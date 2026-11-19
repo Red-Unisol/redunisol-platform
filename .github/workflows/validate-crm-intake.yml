@@ -6,12 +6,14 @@ name: Validate CRM intake
       - 'apps/crm-intake/**'
       - '.github/workflows/validate-crm-intake.yml'
       - 'infra/ansible/roles/crm_intake/**'
+      - 'kestra/automations/marketing-crm/files/bitrix24_form_flow/form_processor/*.py'
   push:
     branches: [main]
     paths:
       - 'apps/crm-intake/**'
       - '.github/workflows/validate-crm-intake.yml'
       - 'infra/ansible/roles/crm_intake/**'
+      - 'kestra/automations/marketing-crm/files/bitrix24_form_flow/form_processor/*.py'
 
 permissions:
   contents: read
