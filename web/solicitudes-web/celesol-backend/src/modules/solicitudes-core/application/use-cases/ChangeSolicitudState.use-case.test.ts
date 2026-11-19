@@ -16,6 +16,20 @@ import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflow
 import { ChangeSolicitudStateUseCase } from "./ChangeSolicitudState.use-case";
 
 describe("ChangeSolicitudStateUseCase", () => {
+  it("requires a current matching loan before handing Confirmada to the seller", async () => {
+    const unavailable = new Error("El préstamo no coincide");
+    const useCase = new ChangeSolicitudStateUseCase({
+      authorizeFinancialOperation: async () => { throw unavailable; },
+      adjuntoRepository: adjuntoRepository(),
+      engine: { execute: async () => assert.fail("La solicitud debe seguir en Confirmada") } as unknown as SolicitudWorkflowEngine,
+      now: () => new Date(),
+      sociosRepository: socioRepository(),
+      solicitudesRepository: solicitudesRepository(),
+    });
+    await assert.rejects(useCase.execute({
+      actionCode: "enviar_a_liquidada", currentUser: { id: "analista", workflowOwnerId: "riesgo" }, solicitudId: "sol-1",
+    }), unavailable);
+  });
   it("delegates action, user identity, owner and clock to SolicitudWorkflowEngine", async () => {
     const now = new Date("2026-05-18T12:00:00.000Z");
     let received: Parameters<SolicitudWorkflowEngine["execute"]>[0] | null = null;

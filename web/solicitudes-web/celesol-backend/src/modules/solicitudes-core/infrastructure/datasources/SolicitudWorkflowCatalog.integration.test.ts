@@ -41,7 +41,9 @@ describe("Canonical workflow transition catalog", () => {
     );
     // "paso_por_vimarx" lleva a Desestimada igual que "desestimar"; es a
     // proposito: la accion es la que distingue a las que se siguieron en Vimarx.
-    const pairKeys = transitions.filter((transition) => transition.actionCode !== "paso_por_vimarx").map(
+    // Legacy Liquidada and the new explicit seller review also share the verification destination.
+    const pairKeys = transitions.filter((transition) =>
+      !["paso_por_vimarx", "finalizar_revision_datos"].includes(transition.actionCode)).map(
       (transition) => `${transition.fromState.code}|${transition.toState.code}`,
     );
 

@@ -255,15 +255,17 @@ export function SolicitudDetailToolbar({
               >
                 Cancelar
               </Button>
-              <Button
-                disabled={isSaveDisabled}
-                onClick={onSave}
-                size="sm"
-                type="button"
-              >
-                <Save className="size-4" />
-                {isSaving ? "Guardando..." : "Guardar cambios"}
-              </Button>
+              {onSave ? (
+                <Button
+                  disabled={isSaveDisabled}
+                  onClick={onSave}
+                  size="sm"
+                  type="button"
+                >
+                  <Save className="size-4" />
+                  {isSaving ? "Guardando..." : "Guardar cambios"}
+                </Button>
+              ) : null}
             </>
           ) : isEditing ? (
             <Button

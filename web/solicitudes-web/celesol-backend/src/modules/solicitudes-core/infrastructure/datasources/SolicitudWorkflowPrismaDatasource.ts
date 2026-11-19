@@ -1,3 +1,4 @@
+import { readSellerReviewChanges, sellerReviewHandoff } from "../../application/services/SellerReviewChanges";
 import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
 import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
 import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
@@ -5,7 +6,10 @@ import { actingHistoryFields, actingContext } from "../../../auth/impersonation/
 import { randomUUID } from "node:crypto";
 import { REVERSE_DISMISSAL_ACTION } from "../../domain/workflow/Dismissal";
 import { applyDismissalReversal, dismissalReversalTransition, prepareDismissal, type DismissalLifecycle } from "../services/SolicitudDismissal";
-import { getSignatureApproval } from "../../../document-review/signature-workflow";
+import { sellerReviewAllowsAction } from "../../domain/workflow/SellerReview";
+import { assertSignatureLinkFinancialReady } from "../services/WorkflowFinancialGuard";
+import { notifySignatureEvent } from "../../../notifications/SignatureNotifications";
+import { getSignatureApproval, signatureCycleAfterContractChange } from "../../../document-review/signature-workflow";
 import { assertSignatureTransferReady, finalizationAction } from "../../../document-review/signature-transfer-guard";
 import type { Prisma } from "@prisma/client";
 
@@ -107,6 +111,7 @@ export class SolicitudWorkflowPrismaDatasource {
     prisma: DbClient,
     private readonly transaction?: Prisma.TransactionClient,
     private readonly dismissalLifecycle?: DismissalLifecycle,
+    private readonly verifySignatureLoan = assertSignatureLinkFinancialReady,
   ) {
     this.prisma = prisma;
   }
@@ -178,6 +183,7 @@ export class SolicitudWorkflowPrismaDatasource {
         ownerId: solicitud.estadoActual.ownerId,
       },
       transition: transition && solicitud.estadoActual.code !== "Desestimada"
+        && sellerReviewAllowsAction(solicitud.estadoActual.code, solicitud.sellerReviewStartedAt, input.actionCode)
         ? {
             isActive: transition.isActive,
             requiresComment: transition.requiresComment,
@@ -204,7 +210,7 @@ export class SolicitudWorkflowPrismaDatasource {
         await applyAdministrativeCorrection(tx, input.plan.command);
         const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
         return { solicitud: SolicitudCoreMapper.toDomain(s),
-          transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
+          transitions: await this.loadActiveTransitions(tx, s) };
       });
     }
     if (input.plan.command.actionCode === REVERSE_DISMISSAL_ACTION) {
@@ -212,7 +218,7 @@ export class SolicitudWorkflowPrismaDatasource {
         await applyDismissalReversal(tx, input.plan.command);
         const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
         return { solicitud: SolicitudCoreMapper.toDomain(s),
-          transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
+          transitions: await this.loadActiveTransitions(tx, s) };
       });
     }
 
@@ -256,7 +262,6 @@ export class SolicitudWorkflowPrismaDatasource {
           executor,
           solicitud.id,
         );
-        let finalStateId = solicitud.estadoActualId;
         if (solicitud.estadoActual.code === "Desestimada")
           throw new SolicitudWorkflowTransitionNotAllowedError();
 
@@ -318,6 +323,19 @@ export class SolicitudWorkflowPrismaDatasource {
             throw new WorkflowExecutionPlanStateConflictError();
           }
 
+          if (!sellerReviewAllowsAction(solicitud.estadoActual.code, solicitud.sellerReviewStartedAt, step.actionCode))
+            throw new SolicitudWorkflowTransitionNotAllowedError();
+          if (step.actionCode === "enviar_a_liquidada" || step.actionCode === "finalizar_revision_datos") {
+            const actor = await tx.user.findFirst({
+              where: { id: input.plan.command.changedBy, state: 1, deletedAt: null },
+              select: { workflowOwnerId: true, isSystemAdmin: true },
+            });
+            if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== solicitud.estadoActual.ownerId))
+              throw new ForbiddenSolicitudAccessError();
+            const source = await administrativeSource(tx, solicitud.id);
+            if (source.archivedAt || source.pagoExterno || source.desembolso)
+              throw new SolicitudWorkflowTransitionNotAllowedError();
+          }
           assertCoreReconciled(solicitud, step.actionCode);
           let transition = await executor.workflowTransition.findFirst({
             where: {
@@ -342,6 +360,22 @@ export class SolicitudWorkflowPrismaDatasource {
 
           if (!transition.toState.isActive) {
             throw new SolicitudWorkflowDestinationInactiveError();
+          }
+
+          let sellerApprovalId: string | null = null;
+          if (step.actionCode === "finalizar_revision_datos") {
+            if (readSellerReviewChanges(solicitud.sellerReviewChanges).length > 0) {
+              transition = await this.requireActiveTransition(executor, solicitud.estadoActualId, "devolver_revision_datos");
+            } else {
+              assertCoreReconciled(solicitud, "verificar_firma");
+              const approval = await getSignatureApproval(tx, solicitud.id);
+              if (approval.approved) {
+                // Historical loans can lack a reconciliation control. Verify the
+                // full contract before either handoff, under the same row lock.
+                await this.verifySignatureLoan(tx, solicitud.id);
+                sellerApprovalId = approval.decisionId;
+              }
+            }
           }
 
           // Both routes are real catalog transitions. Resolve under the source
@@ -389,6 +423,23 @@ export class SolicitudWorkflowPrismaDatasource {
             });
           }
 
+          // An already approved signature advances only after the seller's explicit
+          // confirmation. Record both handoffs under the same lock and transaction.
+          if (sellerApprovalId) {
+            const verification = await this.loadSolicitudForWorkflow(executor, solicitud.id);
+            const transfer = await this.requireActiveTransition(executor, verification.estadoActualId, "transferir");
+            await assertSignatureTransferReady(tx, solicitud.id);
+            updatedSolicitud = await this.applyTransition({
+              changedBy: input.plan.command.changedBy,
+              comentario: `Avance automático con firma aprobada por Legajos Digitales (decisión ${sellerApprovalId}).`,
+              executor,
+              motivo: null,
+              now: new Date(Math.max(Date.now(), input.plan.command.now.getTime() + 1)),
+              solicitud: verification,
+              transition: transfer,
+            });
+          }
+
           // La solicitud termino mal: se borra su informe de CredixSA en la
           // misma transaccion, asi el borrado nunca queda a medias respecto
           // del cambio de estado.
@@ -400,7 +451,6 @@ export class SolicitudWorkflowPrismaDatasource {
             });
           }
 
-          finalStateId = transition.toStateId;
           this.logWorkflowEvent("workflow_plan_step_completed", {
             persistedToStateId: transition.toStateId,
             stepActionCode: step.actionCode,
@@ -425,7 +475,7 @@ export class SolicitudWorkflowPrismaDatasource {
         const restore = updatedSolicitud.estadoActual.code === "Desestimada" && input.plan.command.isSystemAdmin && !actingContext.getStore()
           ? await dismissalReversalTransition(tx, await administrativeSource(tx, updatedSolicitud.id)) : null;
         const transitions = updatedSolicitud.estadoActual.code === "Desestimada"
-          ? (restore ? [restore] : []) : await this.loadActiveTransitions(executor, finalStateId);
+          ? (restore ? [restore] : []) : await this.loadActiveTransitions(executor, updatedSolicitud);
 
         return {
           solicitud: SolicitudCoreMapper.toDomain(updatedSolicitud),
@@ -645,7 +695,19 @@ export class SolicitudWorkflowPrismaDatasource {
         solicitudId: input.solicitud.id, changedBy: input.changedBy, comment: input.comentario,
         now: input.now, expectedUpdatedAt: input.solicitud.updatedAt,
       }) : null;
+    const handoff = sellerReviewHandoff(
+      input.solicitud.estadoActual.owner.code, input.transition.toState.owner.code, input.solicitud.sellerReviewChanges,
+    );
+    const contractChanged = input.transition.actionCode === "devolver_revision_datos"
+      && handoff.metadata?.sellerReviewChanges.some(change =>
+        change.field === "solicitud.fechaPrimerVencimiento" || change.field === "solicitud.lineaPrestamoLegacyOid");
+    const signatureCycle = contractChanged ? await signatureCycleAfterContractChange(input.executor as Prisma.TransactionClient,
+      input.solicitud.id, input.solicitud.signatureExcludedVerificationIds) : null;
     const updateData: Prisma.SolicitudUpdateInput = {
+      ...signatureCycle,
+      // Reversing a dismissal restores the exact pending review, including its differences.
+      ...(handoff.reset && !(input.dismissalAudit && input.solicitud.sellerReviewStartedAt)
+        ? { sellerReviewChanges: [] } : {}),
       ...(confirmedReturn?.control ? { administrativeCoreControl: confirmedReturn.control } : {}),
       estadoActual: {
         connect: {
@@ -655,7 +717,16 @@ export class SolicitudWorkflowPrismaDatasource {
     };
     const dismissalHistoryId = input.dismissalAudit ? randomUUID() : undefined;
     if (dismissalHistoryId) updateData.desestimacionHistorialId = dismissalHistoryId;
-    if (["liquidar", "liquidar_con_firma"].includes(input.transition.actionCode)) {
+    if (input.transition.actionCode === "enviar_a_liquidada") {
+      updateData.sellerReviewStartedAt = input.now;
+      updateData.analisisFinalizadoAt = null;
+      updateData.analisisFinalizadoBy = null;
+    }
+    // Keep the pending marker when corrections return to Riesgo: after
+    // reanalysis the seller must see the new version once more.
+    if (input.transition.actionCode === "finalizar_revision_datos")
+      updateData.sellerReviewStartedAt = null;
+    if (["liquidar", "liquidar_con_firma", "finalizar_revision_datos"].includes(input.transition.actionCode)) {
       updateData.analisisFinalizadoAt = input.now;
       updateData.analisisFinalizadoBy = input.changedBy;
     } else if (["Revisar", "RevisionRiesgo", "PreAprobada", "Confirmada"].includes(input.transition.toState.code)) {
@@ -665,7 +736,8 @@ export class SolicitudWorkflowPrismaDatasource {
 
     // Riesgo se la devuelve al vendedor: el monto de este momento queda como
     // tope. Si vuelve a pasar por Riesgo, se pisa con el nuevo.
-    if (ESTADOS_CON_TOPE_DE_RIESGO.includes(input.transition.toState.code)) {
+    if (ESTADOS_CON_TOPE_DE_RIESGO.includes(input.transition.toState.code)
+      || input.transition.actionCode === "enviar_a_liquidada") {
       updateData.montoAprobadoRiesgo = input.solicitud.montoAFinanciar;
     }
 
@@ -685,6 +757,14 @@ export class SolicitudWorkflowPrismaDatasource {
         ...(dismissalHistoryId ? { realActorUserId: input.changedBy } : {}),
         ...actingHistoryFields(),
         ...(confirmedReturn?.audit ?? {}),
+        ...(handoff.metadata ? { metadata: {
+          ...handoff.metadata,
+          ...(signatureCycle ? {
+            signatureCycleId: signatureCycle.signatureCycleId,
+            signatureRequestedAt: signatureCycle.signatureRequestedAt.toISOString(),
+            signatureRequestReason: signatureCycle.signatureRequestReason,
+          } : {}),
+        } } : {}),
         actionCode: input.transition.actionCode,
         actionLabel: input.transition.actionLabel,
         changedAt: input.now,
@@ -713,6 +793,12 @@ export class SolicitudWorkflowPrismaDatasource {
       },
     });
 
+    if (signatureCycle && input.solicitud.legacyOid) {
+      await notifySignatureEvent(input.executor as Prisma.TransactionClient, {
+        type: "signature_requested", contractChanged: true, solicitudId: input.solicitud.id, loanId: input.solicitud.legacyOid,
+        cycleId: signatureCycle.signatureCycleId, reason: signatureCycle.signatureRequestReason,
+      });
+    }
     return updatedSolicitud;
   }
 
@@ -744,7 +830,7 @@ export class SolicitudWorkflowPrismaDatasource {
     }
 
     if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
-    const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
+    const transitions = await this.loadActiveTransitions(this.db, solicitud);
     const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
       ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
     return transitions.filter(t => t.actionCode !== "liquidar_con_firma").map(t => {
@@ -781,13 +867,22 @@ export class SolicitudWorkflowPrismaDatasource {
     return history.map(SolicitudWorkflowPrismaDatasource.mapHistory);
   }
 
+  private async requireActiveTransition(executor: WorkflowExecutor, fromStateId: string, actionCode: string) {
+    const transition = await executor.workflowTransition.findFirst({
+      where: { fromStateId, actionCode, isActive: true },
+      include: transitionInclude,
+    });
+    if (!transition || !transition.toState.isActive) throw new SolicitudWorkflowTransitionNotAllowedError();
+    return transition;
+  }
+
   private async loadActiveTransitions(
     executor: WorkflowExecutor,
-    fromStateId: string,
+    solicitud: Pick<SolicitudWithOwner, "estadoActualId" | "sellerReviewStartedAt"> & { estadoActual: { code: string } },
   ) {
     const transitions = await executor.workflowTransition.findMany({
       where: {
-        fromStateId,
+        fromStateId: solicitud.estadoActualId,
         isActive: true,
       },
       include: transitionInclude,
@@ -796,7 +891,9 @@ export class SolicitudWorkflowPrismaDatasource {
       },
     });
 
-    return transitions.map(SolicitudWorkflowPrismaDatasource.mapTransition);
+    return transitions
+      .filter(t => sellerReviewAllowsAction(solicitud.estadoActual.code, solicitud.sellerReviewStartedAt, t.actionCode))
+      .map(SolicitudWorkflowPrismaDatasource.mapTransition);
   }
 
   private async loadSolicitudForWorkflow(

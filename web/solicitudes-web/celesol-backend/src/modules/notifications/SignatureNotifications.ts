@@ -52,7 +52,7 @@ export async function notifySignatureEvent(db: NotificationDb, event: SignatureN
     const recipient = await seller(db, s.vendedorId, s.createdBy);
     await insert(db, {
       recipients: recipient ? [recipient.id] : [], solicitudId: event.solicitudId, loanId: event.loanId,
-      eventKey: key, kind: event.type, title: "Legajos solicitó una nueva firma",
+      eventKey: key, kind: event.type, title: event.contractChanged ? "Las condiciones corregidas requieren nueva firma" : "Legajos solicitó una nueva firma",
       body: `Solicitud ${s.nroSolicitud ?? ""}, préstamo ${event.loanId}: ${event.reason ?? "Revisá la observación de Legajos."}`,
     });
     return;

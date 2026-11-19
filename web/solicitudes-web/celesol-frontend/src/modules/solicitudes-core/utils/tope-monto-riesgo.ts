@@ -10,13 +10,15 @@ export function getTopeMontoRiesgo(
   solicitud: {
     estadoActual: { code: string };
     montoAprobadoRiesgo?: number | null;
+    sellerReviewStartedAt?: string | null;
   },
 ) {
   if (!user || user.isSystemAdmin || user.workflowOwner?.code === "RIESGO") {
     return null;
   }
 
-  if (!ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code)) {
+  const revisionVendedor = solicitud.estadoActual.code === "Liquidada" && solicitud.sellerReviewStartedAt;
+  if (!revisionVendedor && !ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code)) {
     return null;
   }
 

@@ -59,6 +59,11 @@ export class UpdateSolicitudUseCase {
   }
 
   async execute(input: UpdateSolicitudInput) {
+    const { patch, guard } = await this.prepare(input);
+    return this.repository.update(input.id, patch, guard);
+  }
+
+  async prepare(input: Omit<UpdateSolicitudInput, "createdBy" | "createdByLegacyUser">, expectedUpdatedAt?: string) {
     if (input.solicitud?.cuotaResultante !== undefined)
       throw new SolicitudFieldNotEditableInCurrentStateError(
         "solicitud.cuotaResultante",
@@ -68,6 +73,8 @@ export class UpdateSolicitudUseCase {
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
     }
+    if (expectedUpdatedAt && solicitud.updatedAt.getTime() !== Date.parse(expectedUpdatedAt))
+      throw new AdministrativeCorrectionError("La solicitud cambió. Actualizá la ficha antes de finalizar la revisión.");
 
     const workflowOwnerCode =
       !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
@@ -92,6 +99,7 @@ export class UpdateSolicitudUseCase {
     const fieldAccessRule =
       await this.fieldAccessRulesRepository.findByWorkflowStateId(
         solicitud.estadoActual.id,
+        solicitud.estadoActual.code === "Liquidada" && Boolean(solicitud.sellerReviewStartedAt),
       );
     const fieldAccess = buildSolicitudFieldAccess(
       solicitud,
@@ -238,11 +246,16 @@ export class UpdateSolicitudUseCase {
 
     // La simulacion queda fuera del bloqueo. El repositorio vuelve a validar
     // el estado y el tope vigentes dentro de la transaccion que guarda el patch.
-    return this.repository.update(input.id, patch, {
+    const guard = {
       expectedEstadoActualId: solicitud.estadoActual.id,
+      ...(solicitud.estadoActual.owner?.code === "VENDEDORES" && solicitud.estadoActual.code !== "CargaVendedor"
+        ? { sellerReviewActor: workflowOwnerCode === "VENDEDORES" && !input.currentUser.isAnalista
+            ? "seller" as const : "other" as const }
+        : {}),
       enforceMontoAprobadoRiesgo,
       ...(changesAmount ? { expectedLegacyOid: solicitud.legacyOid, cancelledLoanId } : {}),
-    });
+    };
+    return { patch, guard };
   }
 
   /**

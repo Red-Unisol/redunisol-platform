@@ -1155,6 +1155,46 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     assert.equal((prisma.historyCreateCalls[0].data as { actionCode: string }).actionCode, "liquidar_con_firma");
   });
 
+  for (const scenario of [
+    { approved: false, edited: false, state: "VerificarFirmaYDocumentacion", events: ["finalizar_revision_datos"] },
+    { approved: true, edited: false, state: "Transferir", events: ["finalizar_revision_datos", "transferir"] },
+    { approved: true, edited: true, state: "RevisionRiesgo", events: ["devolver_revision_datos"] },
+  ]) {
+    it(`finishes the seller review in ${scenario.state} (edited=${scenario.edited}, approved=${scenario.approved})`, async () => {
+      const changes = scenario.edited ? [{ field: "titular.email", before: "old@test.invalid", after: "new@test.invalid" }] : [];
+      const route = (from: string, actionCode: string, to: string) => transitionRecord({
+        actionCode, fromStateId: from, toStateId: to, toState: resolveStateById(to),
+      });
+      const prisma = new FakeWorkflowPrisma({
+        signatureApproved: scenario.approved,
+        currentSolicitud: solicitudRecord({
+          estadoActual: resolveStateById("state-liquidada"), sellerReviewStartedAt: new Date(),
+          sellerReviewChanges: changes, legacyOid: "101", cuotas: 6, cuotaResultante: "200,00",
+          titular: { nombre: "Persona", apellidoDenominacion: "de Prueba", nroDocumento: "30123456" },
+        }),
+        activeTransition: route("state-liquidada", "finalizar_revision_datos", "state-verificacion"),
+        alternateTransitions: [
+          route("state-liquidada", "devolver_revision_datos", "state-riesgo"),
+          route("state-verificacion", "transferir", "state-transferir"),
+        ],
+      });
+      let verifiedLoan = false;
+      const datasource = new SolicitudWorkflowPrismaDatasource(prisma.client(), undefined, undefined, async () => {
+        verifiedLoan = true;
+        return { loanId: "101", conditionsFingerprint: "current-contract" };
+      });
+      const result = await executeDomainStepPlan(datasource, {
+        actionCode: "finalizar_revision_datos", changedBy: "user-1", expectedFromStateId: "state-liquidada",
+        expectedToStateId: "state-verificacion", now: new Date(), solicitudId: "sol-1", workflowOwnerId: "owner-vendedor",
+      });
+      assert.equal(result.solicitud.estadoActual.code, scenario.state);
+      assert.equal(verifiedLoan, scenario.state === "Transferir");
+      assert.equal(Boolean(result.solicitud.sellerReviewStartedAt), scenario.edited);
+      assert.deepEqual(prisma.historyCreateCalls.map(call => (call.data as { actionCode: string }).actionCode), scenario.events);
+      assert.equal(prisma.lockCount, 1);
+    });
+  }
+
   it("blocks a direct transfer plan without an approved current signature and preserves the state", async () => {
     const prisma = new FakeWorkflowPrisma({ currentSolicitud: solicitudRecord({ estadoActual: resolveStateById("state-verificacion"), legacyOid: "101" }), activeTransition: transitionRecord({ actionCode: "transferir", fromStateId: "state-verificacion", toState: resolveStateById("state-transferir"), toStateId: "state-transferir" }) });
     await assert.rejects(() => executeDomainStepPlan(new SolicitudWorkflowPrismaDatasource(prisma.client()), {
@@ -1319,6 +1359,7 @@ class FakeWorkflowPrisma {
             assignedToUser?: { disconnect?: boolean };
             analisisFinalizadoAt?: Date | null;
             analisisFinalizadoBy?: string | null;
+            sellerReviewStartedAt?: Date | null;
             estadoActual: { connect: { id: string } };
           };
           const toStateId = data.estadoActual.connect.id;
@@ -1327,6 +1368,7 @@ class FakeWorkflowPrisma {
           this.currentSolicitud = this.currentSolicitud
             ? {
                 ...this.currentSolicitud,
+                ...("sellerReviewStartedAt" in data ? { sellerReviewStartedAt: data.sellerReviewStartedAt } : {}),
                 ...("analisisFinalizadoAt" in data ? { analisisFinalizadoAt: data.analisisFinalizadoAt } : {}),
                 ...("analisisFinalizadoBy" in data ? { analisisFinalizadoBy: data.analisisFinalizadoBy } : {}),
                 assignedToUserId:
@@ -1671,6 +1713,8 @@ function resolveStateById(stateId: string) {
           name: "Vendedores",
         }),
       });
+    case "state-liquidada":
+      return stateRecord({ code: "Liquidada", id: stateId, isInitial: false, name: "Liquidada" });
     case "state-verificacion":
       return stateRecord({ code: "VerificarFirmaYDocumentacion", id: stateId, owner: ownerRecord({ code: "LEGAJOS_DIGITALES", id: "owner-legajos", name: "Legajos Digitales" }) });
     case "state-transferir":

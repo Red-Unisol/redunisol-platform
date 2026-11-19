@@ -23,8 +23,8 @@ export class SolicitudesCoreRepositoryImpl implements SolicitudesCoreRepository 
     return this.datasource.create(input);
   }
 
-  findById(id: string) {
-    return this.datasource.findById(id);
+  findById(id: string, options?: { withSellerReviewChanges: boolean }) {
+    return this.datasource.findById(id, options);
   }
 
   findByLegacyOid(legacyOid: string) {

@@ -320,6 +320,7 @@ export type AnalistaDashboardStatsV2Result = {
 };
 
 export type UpdateSolicitudCoreGuard = {
+  sellerReviewActor?: "seller" | "other";
   expectedEstadoActualId: string;
   enforceMontoAprobadoRiesgo: boolean;
   expectedLegacyOid?: string | null;
@@ -334,7 +335,7 @@ export type SolicitudesCoreRepository = {
     assignedToUserId: string;
   }): Promise<SolicitudCore | null>;
   create(input: CreateSolicitudCoreRecord): Promise<SolicitudCore>;
-  findById(id: string): Promise<SolicitudCore | null>;
+  findById(id: string, options?: { withSellerReviewChanges: boolean }): Promise<SolicitudCore | null>;
   findByLegacyOid?(legacyOid: string): Promise<SolicitudCore | null>;
   /** La solicitud que creo este usuario con esta clave de alta, o null. */
   findByIdempotencyKey?(

@@ -4,6 +4,8 @@ import { cn } from "@/shared/utils/cn";
 import { esCbuValido } from "@/shared/utils/cbu";
 import { datosRapidosApi } from "../services/datos-rapidos-api";
 import { compareCbu, normalizeCbu } from "../utils/cbu-comparison";
+import type { SellerReviewChange } from "@/modules/solicitudes/types/solicitudes-core";
+import { CampoRevisado } from "./campo-revisado";
 
 const comparisonLabels = {
   empty: "Sin cargar en la solicitud",
@@ -17,14 +19,16 @@ function SolicitudCbu({
   label,
   value,
   habitual,
+  changes,
 }: {
   label: string;
   value: string | null;
   habitual: string | null;
+  changes?: SellerReviewChange[];
 }) {
   const comparison = habitual ? compareCbu(value, habitual) : null;
   return (
-    <div className="min-w-0">
+    <CampoRevisado changes={changes}>
       <dt className="text-xs text-foreground-secondary">{label}</dt>
       <dd className="mt-1 break-all font-mono text-sm">
         {value?.trim() || "Sin cargar"}
@@ -43,7 +47,7 @@ function SolicitudCbu({
           {comparisonLabels[comparison]}
         </dd>
       ) : null}
-    </div>
+    </CampoRevisado>
   );
 }
 
@@ -53,6 +57,7 @@ export function CbuHabitualVimarx({
   tipoDocumento,
   cbuSolicitud,
   cbuNoHabitual,
+  sellerReviewChanges,
   identityChanged = false,
 }: {
   solicitudId: string;
@@ -60,6 +65,7 @@ export function CbuHabitualVimarx({
   tipoDocumento: string | null;
   cbuSolicitud: string | null;
   cbuNoHabitual: string | null;
+  sellerReviewChanges?: SellerReviewChange[];
   identityChanged?: boolean;
 }) {
   const query = useQuery({
@@ -82,6 +88,7 @@ export function CbuHabitualVimarx({
       ? query.data
       : undefined;
   const habitual = data?.status === "available" ? data.cbu : null;
+  const nonStandardChanges = sellerReviewChanges?.filter(change => change.field === "titular.cbuNoHabitual");
   const message = identityChanged
     ? "Guardá el documento para consultar el CBU habitual del titular actualizado."
     : query.isFetching || query.isPending
@@ -130,11 +137,13 @@ export function CbuHabitualVimarx({
         </div>
         <SolicitudCbu
           label="CBU de la solicitud"
+          changes={sellerReviewChanges?.filter(change => change.field === "titular.cbu")}
           value={cbuSolicitud}
           habitual={habitual}
         />
-        {cbuNoHabitual?.trim() ? (
+        {cbuNoHabitual?.trim() || nonStandardChanges?.length ? (
           <SolicitudCbu
+            changes={nonStandardChanges}
             label="CBU no habitual de la solicitud"
             value={cbuNoHabitual}
             habitual={habitual}

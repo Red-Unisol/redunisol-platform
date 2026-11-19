@@ -9,6 +9,8 @@ import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflow
 import type { SolicitudAdjuntoRepository } from "../../adjuntos/domain/repositories/SolicitudAdjuntoRepository";
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
+import type { WorkflowCommand, WorkflowExecutionResult } from "../../domain/workflow/types";
+import { SolicitudWorkflowTransitionNotAllowedError } from "../../domain/solicitudes-core-errors";
 
 type Dependencies = {
   archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
@@ -19,6 +21,7 @@ type Dependencies = {
   solicitudesRepository: SolicitudesCoreRepository;
   authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
   authorizeFinancialOperation?: (input: ChangeSolicitudStateInput) => Promise<void>;
+  completeSellerReview?: (input: ChangeSolicitudStateInput, command: WorkflowCommand) => Promise<WorkflowExecutionResult>;
 };
 
 // La transicion "pagar" (Transferir -> Pagada) puede ejecutarla, ademas del
@@ -34,6 +37,7 @@ export class ChangeSolicitudStateUseCase {
   private readonly ensureSolicitudTitularHasRequiredDataForConfirmar: EnsureSolicitudTitularHasRequiredDataForConfirmar;
   private readonly ensureSolicitudTitularSocioExists: EnsureSolicitudTitularSocioExists;
   private readonly engine: SolicitudWorkflowEngine;
+  private readonly completeSellerReview: Dependencies["completeSellerReview"];
   private readonly now: () => Date;
   private readonly solicitudesRepository: SolicitudesCoreRepository;
   private readonly authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
@@ -64,11 +68,12 @@ export class ChangeSolicitudStateUseCase {
       solicitudesRepository: dependencies.solicitudesRepository,
     });
     this.engine = dependencies.engine;
+    this.completeSellerReview = dependencies.completeSellerReview;
     this.now = dependencies.now;
   }
 
   async execute(input: ChangeSolicitudStateInput) {
-    if (["liquidar", "liquidar_con_firma", "transferir", "pagar"].includes(input.actionCode))
+    if (["liquidar", "liquidar_con_firma", "enviar_a_liquidada", "transferir", "pagar"].includes(input.actionCode))
       await this.authorizeFinancialOperation?.(input);
     if (["transferir", "devolver_a_liquidada"].includes(input.actionCode)) {
       await this.authorizeDocumentReview?.(input);
@@ -79,11 +84,8 @@ export class ChangeSolicitudStateUseCase {
     // New productive flows should not bypass this by calling repository/datasource
     // methods directly.
     //
-    // The titular-socio guard only applies to the "liquidar" action: that is the
-    // single actionCode that moves a solicitud out of Confirmada into Liquidada.
-    // A solicitud can reach and stay in Confirmada without a socio; it just can't
-    // advance to Liquidada until one exists. "confirmar" never requires a socio.
-    if (["liquidar", "liquidar_con_firma"].includes(input.actionCode)) {
+    // Both handoffs from Confirmada require the member and linked loan.
+    if (["liquidar", "liquidar_con_firma", "enviar_a_liquidada"].includes(input.actionCode)) {
       await this.ensureSolicitudTitularSocioExists.execute(input.solicitudId);
       await this.ensureSolicitudHasPrestamoLegacy.execute(input.solicitudId);
     }
@@ -113,7 +115,7 @@ export class ChangeSolicitudStateUseCase {
           )
         : null;
 
-    const result = await this.engine.execute({
+    const command: WorkflowCommand = {
       ...(input.administrativeCorrection ? { administrativeCorrection: input.administrativeCorrection } : {}),
       actionCode: input.actionCode,
       changedBy: input.currentUser.id,
@@ -124,9 +126,16 @@ export class ChangeSolicitudStateUseCase {
       workflowOwnerId: input.currentUser.workflowOwnerId,
       ...(workflowOwnerCode ? { workflowOwnerCode } : {}),
       ...(input.currentUser.isSystemAdmin ? { isSystemAdmin: true } : {}),
-    }, input.actionCode === "liquidar" && this.archivarEvaluacion
-      ? () => this.archivarEvaluacion!.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "liquidacion"})
-      : undefined);
+    };
+    let result: WorkflowExecutionResult;
+    if (input.actionCode === "finalizar_revision_datos") {
+      if (!this.completeSellerReview) throw new SolicitudWorkflowTransitionNotAllowedError();
+      result = await this.completeSellerReview(input, command);
+    } else {
+      result = await this.engine.execute(command, ["liquidar", "enviar_a_liquidada"].includes(input.actionCode) && this.archivarEvaluacion
+        ? () => this.archivarEvaluacion!.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "liquidacion"})
+        : undefined);
+    }
 
     return {
       ...result,

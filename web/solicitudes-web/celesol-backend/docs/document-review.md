@@ -72,11 +72,24 @@ del owner actual de la solicitud:
   ciclo nuevo. Los intentos ya existentes y los envíos anteriores al pedido no
   satisfacen ese ciclo. No devuelve la solicitud al análisis ni altera su avance.
 
-Finalizar el análisis ofrece `Mandar a revisar firma` cuando falta una aprobación
-o `Mandar a transferir` cuando ya existe. Liquidada histórica se reconoce como un
-análisis ya entregado. La transferencia requiere ambos controles y mantiene sus
-guardas financieras. Una reserva o pago ya iniciado impide modificar la gestión
-de firma. Aprobar habilita la instancia de transferencia, sin ejecutar el pago.
+En **Confirmada**, Riesgo puede elegir **Enviar a liquidada** como acción
+principal. En **Más acciones** conserva el cierre directo mediante **Enviar a
+firmar** o **Mandar a transferir**, según la aprobación vigente. Una Liquidada
+histórica conserva su cierre de análisis.
+
+Cuando Riesgo elige la revisión del vendedor, el análisis sigue abierto y una
+aprobación de Legajos queda a la espera. En **Liquidada** el vendedor pulsa
+**Finalizar revisión de datos**. Si corrigió datos, Beex los guarda y devuelve
+la solicitud a **Revisión de Riesgo** en la misma transacción. Tras el reanálisis
+se repite el control del vendedor. Si confirma los datos vigentes, Beex registra
+el cierre y el pase a **Verificar firma y documentación**. Si la firma ya está
+aprobada para esa operación, registra también el pase a **Transferir**.
+La transferencia conserva sus controles financieros.
+
+Al recibir una devolución desde Vendedores, Riesgo ve los campos corregidos y
+su valor anterior. Se muestran las diferencias efectivas de la última vuelta,
+incluido el pase desde Preaprobada a Confirmada. La primera carga llega a Riesgo
+sin marcas. El registro por campo comienza al desplegar esta versión.
 
 Diferir de la propuesta o aprobar un intento individual no conforme exige motivo.
 Se registran por separado la disparidad global y la excepción sobre el intento.

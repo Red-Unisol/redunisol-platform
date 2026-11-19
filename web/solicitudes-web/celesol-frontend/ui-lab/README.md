@@ -199,3 +199,15 @@ de fondo lentas o fallidas. Los errores permanecen visibles después de cerrar e
 campo de comentario manual. `?scenario=required` conserva un comentario
 obligatorio para Devolver a Revisar y `?scenario=transfer` conserva el campo
 opcional de Mandar a transferir. La confirmación sólo registra un resultado ficticio.
+
+## Revisión de datos del vendedor
+
+`/production?state=confirmada` muestra la ficha de Riesgo y sus acciones. El parámetro
+`signature=approved` permite probar la variante con firma aprobada. En
+`/production?state=liquidada&role=vendedor` se puede terminar la revisión o editar
+Observaciones antes de finalizar. En `/production?state=revision-riesgo&sellerChanges=1`
+Riesgo ve el valor anterior y actual del celular y de las observaciones. Cada recarga
+restaura los datos ficticios.
+
+`node ui-lab/seller-review.browser-test.mjs` recorre las acciones y comprueba los
+destinos en escritorio y móvil. `UI_LAB_OUTPUT_DIR` permite guardar capturas.

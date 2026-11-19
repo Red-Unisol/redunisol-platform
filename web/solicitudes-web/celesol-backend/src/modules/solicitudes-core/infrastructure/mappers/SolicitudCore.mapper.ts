@@ -208,6 +208,7 @@ export class SolicitudCoreMapper {
         telefonoFijo: record.titular?.telefonoFijo ?? null,
         tipoDocumento: record.titular?.tipoDocumento ?? null,
       },
+      sellerReviewStartedAt: record.sellerReviewStartedAt,
       updatedAt: record.updatedAt,
       vendedorSolicitud: record.vendedorSolicitud,
     };

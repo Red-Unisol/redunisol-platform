@@ -31,7 +31,7 @@ export type SolicitudCapabilities = {
   canViewHistory: boolean;
 };
 
-type SolicitudPermissionTarget = Pick<SolicitudCore, "estadoActual" | "loanReplacementPending">;
+type SolicitudPermissionTarget = Pick<SolicitudCore, "estadoActual" | "loanReplacementPending" | "sellerReviewStartedAt">;
 
 export function canViewSolicitud(
   _user: SolicitudPermissionUser,
@@ -89,6 +89,9 @@ export function canEditSolicitud(
       user,
     });
   }
+
+  if (action === "EDIT_DATA" && solicitud.estadoActual.code === "Liquidada" && solicitud.sellerReviewStartedAt)
+    return isCurrentOwnerUser(user, solicitud);
 
   if (action === "EDIT_DATA" && user.isAnalista) {
     return true;

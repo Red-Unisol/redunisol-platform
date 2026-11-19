@@ -1,4 +1,5 @@
 import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
+import { createSellerReviewFixture } from "./seller-review-fixtures.ts";
 import { SCENARIOS } from "./scenarios.ts";
 import { externalLegajoFixture } from "./external-legajo-fixtures.ts";
 import { habitualCbuFixture } from "./cbu-fixtures.ts";
@@ -66,6 +67,9 @@ export function createUiLabFetch(
 ): typeof fetch {
   let externalApproved = options.externalLegajo === "approved";
   let cbuAttempts = 0;
+  const sellerReview = options.production?.sellerReviewState
+    ? createSellerReviewFixture(options.production.sellerReviewState, options.production.role ?? "riesgo", Boolean(options.production.signatureApproved))
+    : null;
   const reliquidation = options.reliquidation ? createReliquidationFixture(options.reliquidation, UI_LAB_SOLICITUD_ID) : null;
   const generation = options.loanGeneration ? createGenerationFixture(options.loanGeneration, UI_LAB_SOLICITUD_ID) : null;
   return async (input, init) => {
@@ -74,6 +78,10 @@ export function createUiLabFetch(
     const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
     const signal = init?.signal ?? request?.signal;
     signal?.throwIfAborted();
+    if (sellerReview && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {
+      const result = sellerReview(method, url.pathname, init?.body);
+      if (result) return result;
+    }
     if (generation && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {
       const result = await generation(method, url.pathname, init?.body);
       if (result) return result;

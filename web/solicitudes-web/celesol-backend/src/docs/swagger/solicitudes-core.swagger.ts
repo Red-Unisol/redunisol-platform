@@ -1067,7 +1067,11 @@
  * /solicitudes/{id}:
  *   get:
  *     summary: Get solicitud by id
- *     description: Devuelve el detalle completo para usuarios autenticados activos.
+ *     description: |
+ *       Devuelve el detalle completo para usuarios autenticados activos. En estados de Riesgo,
+ *       Riesgo y administración reciben `sellerReviewChanges` cuando Vendedores entregó
+ *       correcciones en el último pase. Cada entrada contiene `field` (ruta del campo),
+ *       `before` y `after` (texto o null). La primera carga no cuenta como corrección.
  *     tags:
  *       - Solicitudes Core
  *     security:
@@ -1094,6 +1098,8 @@
  *       Si un campo opcional se envia como `null`, se limpia.
  *       Si `conyuge` se envia como `null`, se elimina el bloque completo.
  *       Si `garantias` viene informado, reemplaza la coleccion completa.
+ *       Durante el control final en Liquidada, los cambios se guardan al ejecutar
+ *       la acción `finalizar_revision_datos` en la barra de estados.
  *     tags:
  *       - Solicitudes Core
  *     security:
@@ -1474,9 +1480,10 @@
  *     summary: Execute a workflow action for a solicitud
  *     description: |
  *       Ejecuta una accion catalogada de cambio de estado.
- *       El backend resuelve el estado destino desde `from_state_id + actionCode`.
+ *       El backend resuelve el destino según el estado, la acción y las condiciones de la solicitud.
+ *       En Liquidada, `finalizar_revision_datos` guarda los cambios y resuelve el pase en la misma transacción.
  *       No se aceptan `toStateId`, `toStateCode` ni campos libres de estado destino.
- *       No ejecuta integraciones con Tesoreria ni sistemas legacy.
+ *       Las acciones financieras pueden consultar el préstamo en Vimarx.
  *     tags:
  *       - Solicitudes Core
  *     security:
@@ -1500,6 +1507,14 @@
  *             properties:
  *               actionCode:
  *                 type: string
+ *               expectedUpdatedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Versión updatedAt de la ficha. Obligatoria y exclusiva de finalizar_revision_datos.
+ *               changes:
+ *                 description: Campos editados al finalizar_revision_datos. Se omite al confirmar en lectura.
+ *                 allOf:
+ *                   - $ref: '#/paths/~1solicitudes~1{id}/patch/requestBody/content/application~1json/schema'
  *               comment:
  *                 type: string
  *               reason:
@@ -1529,7 +1544,7 @@
  *       404:
  *         description: Solicitud not found.
  *       409:
- *         description: Transition not allowed or destination state inactive.
+ *         description: Transición no disponible, estado inactivo o ficha modificada desde la lectura.
  */
 
 /**
