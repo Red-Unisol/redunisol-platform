@@ -67,11 +67,13 @@ export default function NavTabs({
     activeId = null,
     onNavigate,
     reserveMobileSpace = false,
+    showDesktopFormLink = false,
 }: {
     sections?: { id: string; type: string; data?: Record<string, unknown> }[];
     activeId?: string | null;
     onNavigate?: (id: string) => void;
     reserveMobileSpace?: boolean;
+    showDesktopFormLink?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const navigationSections = sections.filter((section) =>
@@ -113,7 +115,7 @@ export default function NavTabs({
                                     isActive
                                         ? 'bg-[#cbd5e1] text-[#1F2A37]'
                                         : 'bg-transparent text-[#1F2A37] opacity-70 hover:opacity-100'
-                                } ${s.type == 'form' ? 'md:hidden' : ''} `}
+                                } ${s.type === 'form' && !showDesktopFormLink ? 'md:hidden' : ''} `}
                             >
                                 <SectionIcon type={s.type} />
                                 <span>{label}</span>

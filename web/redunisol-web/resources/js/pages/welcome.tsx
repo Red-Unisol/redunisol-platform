@@ -37,6 +37,7 @@ interface PageSection {
 
 interface HomePageProps {
     landingSlug: string;
+    formAtBottom?: boolean;
     sections: PageSection[];
     title: string;
     meta_title?: string;
@@ -82,11 +83,6 @@ const TAB_HIDDEN_MAP: Record<string, string> = {
     about: 'about',
 };
 
-// Helper to find a section by type
-function useSection<T>(sections: PageSection[], type: string): T | undefined {
-    return sections?.find((s) => s.type === type)?.data as T | undefined;
-}
-
 // ─────────────────────────────────────────────────────────────
 // Page component
 // ─────────────────────────────────────────────────────────────
@@ -94,6 +90,7 @@ function useSection<T>(sections: PageSection[], type: string): T | undefined {
 export default function Page() {
     const {
         landingSlug,
+        formAtBottom = false,
         sections = [],
         title,
         meta_title,
@@ -107,11 +104,11 @@ export default function Page() {
 
     useTracking();
 
-    // ── Form section is special: used to decide split layout ──
-    const formSection = sections.find((s) => s.type === 'form');
-    const formConfig = formSection?.data as FormSectionConfig | undefined;
-
-    const formSectionData = useSection<FormSectionConfig>(sections, 'form');
+    const formSectionData = sections.find((s) => s.type === 'form')?.data as
+        | FormSectionConfig
+        | undefined;
+    const hasForm = !!formSectionData;
+    const splitLayout = hasForm && !formAtBottom;
 
     const sectionDescriptors = sections
         .filter((s) => s.type === 'form' || s.type in SECTION_COMPONENTS)
@@ -121,12 +118,14 @@ export default function Page() {
             data: s.data,
         }));
 
-    const firstHeroId = sectionDescriptors.find((s) => s.type === 'hero')?.id;
+    const orderedSections = formAtBottom
+        ? [
+              ...sectionDescriptors.filter((s) => s.type !== 'form'),
+              ...sectionDescriptors.filter((s) => s.type === 'form'),
+          ]
+        : sectionDescriptors;
 
-    const hasForm = !!formSectionData;
-    const leftSections = /*hasForm
-        ? sectionDescriptors.filter((s) => s.type !== 'form')
-        : */ sectionDescriptors;
+    const firstHeroId = orderedSections.find((s) => s.type === 'hero')?.id;
 
     const leftRef = useRef<HTMLDivElement | null>(null);
 
@@ -139,7 +138,7 @@ export default function Page() {
     // completely and keeps the footer reachable.
     useEffect(() => {
         const el = leftRef.current;
-        if (typeof window === 'undefined' || !el) return;
+        if (typeof window === 'undefined' || !el || !splitLayout) return;
 
         const mql = window.matchMedia('(min-width: 768px)');
         if (!mql.matches) return; // only on desktop
@@ -147,7 +146,6 @@ export default function Page() {
         let touchStartY = 0;
 
         const onWheel = (e: WheelEvent) => {
-            if (!hasForm) return;
             const delta = e.deltaY;
             const scrollTop = el.scrollTop;
             const maxScroll = el.scrollHeight - el.clientHeight;
@@ -176,7 +174,6 @@ export default function Page() {
         };
 
         const onTouchMove = (e: TouchEvent) => {
-            if (!hasForm) return;
             const currentY = e.touches[0]?.clientY ?? 0;
             let delta = touchStartY - currentY; // positive -> scroll down
             // small threshold to avoid jitter
@@ -215,10 +212,7 @@ export default function Page() {
             el.removeEventListener('touchstart', onTouchStart as EventListener);
             el.removeEventListener('touchmove', onTouchMove as EventListener);
         };
-    }, [hasForm, leftRef]);
-
-    // All non-form sections rendered in order (for JSON-LD etc.)
-    const mainSections = sections.filter((s) => s.type !== 'form');
+    }, [splitLayout]);
 
     // ── JSON-LD schemas ──
     const schemas = useMemo(() => {
@@ -264,7 +258,8 @@ export default function Page() {
 
             <Navbar
                 reserveMobileSpace={hasForm}
-                sections={sectionDescriptors}
+                showDesktopFormLink={formAtBottom}
+                sections={orderedSections}
                 activeId={activeId}
                 onNavigate={(id: string) => {
                     scrollToSection(id);
@@ -273,13 +268,13 @@ export default function Page() {
 
             <div className="bg-gradient-custom w-full">
                 <div
-                    className={`mx-auto max-w-[1350px] px-2 md:px-6 ${hasForm ? 'md:grid md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
+                    className={`mx-auto max-w-[1350px] px-2 md:px-6 ${splitLayout ? 'md:grid md:grid-cols-[1fr_420px] md:gap-8' : hasForm ? 'pb-8 md:pt-18' : 'pt-18'}`}
                 >
                     <div
                         ref={leftRef}
-                        className={`${hasForm ? 'rounded-2xl bg-white md:mt-27 md:max-h-[39.3rem] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
+                        className={`rounded-2xl bg-white ${splitLayout ? 'md:mt-27 md:max-h-[39.3rem] md:overflow-y-auto' : ''}`}
                     >
-                        {leftSections.map((s) => {
+                        {orderedSections.map((s) => {
                             const id = s.id;
                             const key = `${id}`;
 
@@ -381,7 +376,11 @@ export default function Page() {
                                             id={id}
                                             data-section-id={id}
                                             key={key}
-                                            className="block bg-[#1c273b] md:hidden"
+                                            className={
+                                                formAtBottom
+                                                    ? 'scroll-mt-18 rounded-b-2xl bg-[#1c273b] md:scroll-mt-0'
+                                                    : 'block bg-[#1c273b] md:hidden'
+                                            }
                                         >
                                             <FormSection
                                                 config={s.data as any}
@@ -413,7 +412,7 @@ export default function Page() {
                         })}
                     </div>
 
-                    {hasForm && (
+                    {splitLayout && formSectionData && (
                         <aside className="mt-25 hidden items-center md:flex">
                             <div className="relative">
                                 <FormSection
@@ -425,12 +424,14 @@ export default function Page() {
                         </aside>
                     )}
                 </div>
-                <div className="mt-8 flex items-center justify-center gap-3 pb-8">
-                    <MouseScrollIcon size={24} className="text-[#8a9bb5]" />
-                    <span className="text-normal font-bold text-[#8a9bb5]">
-                        Scroll para seguir viendo
-                    </span>
-                </div>
+                {!formAtBottom && (
+                    <div className="mt-8 flex items-center justify-center gap-3 pb-8">
+                        <MouseScrollIcon size={24} className="text-[#8a9bb5]" />
+                        <span className="text-normal font-bold text-[#8a9bb5]">
+                            Scroll para seguir viendo
+                        </span>
+                    </div>
+                )}
 
                 <Footer />
             </div>
