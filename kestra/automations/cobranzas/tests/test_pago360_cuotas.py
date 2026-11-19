@@ -12,8 +12,8 @@ from unittest.mock import Mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "files"))
 from pago360_cuotas.domain import (Attempt, AttemptStatus, ContractError, Debt,
     Installment, Operation, Receipt, Status, VerifiedPayment, cents, resolve_currency)
-from pago360_cuotas.processor import (Claim, ClaimConflict, DefiniteRejection,
-    OperationNotFound, Processor)
+from pago360_cuotas.processor import (PILOT_LIMIT_CENTS, Claim, ClaimConflict,
+    CumulativeCapExceeded, DefiniteRejection, OperationNotFound, Processor)
 
 
 I1 = Installment("101", "9001", 1, date(2026, 9, 1), 123456)
@@ -67,7 +67,12 @@ class MemoryRepository:
             key = "attempt-" + str(len(self.attempts) + 1)
             self.attempts[key] = Attempt(key, installment, AttemptStatus.WRITING)
             self.trace.append(("intent", installment.installment_id))
-            return key
+            return {
+                "attempt_id": key,
+                "cupo": {"operacion_id": self.operation.operation_id,
+                         "reservado_centavos": self.operation.total_cents,
+                         "limite_centavos": PILOT_LIMIT_CENTS},
+            }
 
     def received(self, token, attempt_id, receipt):
         if self.receive_fail:
@@ -256,6 +261,76 @@ class Pago360Tests(unittest.TestCase):
         repo, provider, legacy, worker = self.fixture((I1,I2))
         legacy.reads[I2.key] = Debt('9002','101',2,I2.due_on,1,False)
         self.assertEqual(worker.run("operation-test", "execution-test").reason, 'DEBT_CHANGED')
+        self.assertFalse(legacy.calls)
+
+    def test_full_coupon_at_exact_cap_or_one_cent_above(self):
+        first = replace(I1, amount_cents=2_000_000)
+        second = replace(I2, amount_cents=3_000_000)
+        repo, _, legacy, worker = self.fixture((first, second))
+        self.assertEqual(worker.run(repo.operation.operation_id, "webhook").status, "APPLIED")
+        self.assertEqual(legacy.calls, [first.installment_id, second.installment_id])
+
+        repo, _, legacy, worker = self.fixture((first, replace(second, amount_cents=3_000_001)))
+        result = worker.run(repo.operation.operation_id, "recovery")
+        self.assertEqual(result.reason, "CUMULATIVE_CAP_EXCEEDED")
+        self.assertFalse(repo.attempts)
+        self.assertFalse(legacy.calls)
+
+    def test_insufficient_shared_cap_blocks_entire_coupon_and_later_delivery(self):
+        repo, _, legacy, worker = self.fixture((I1, I2))
+        # Cada cuota cabe en el piloto. El portal devuelve que otras operaciones
+        # ya consumieron suficiente cupo para impedir la reserva del cupón.
+        repo.begin = Mock(side_effect=CumulativeCapExceeded())
+        for execution in ("webhook", "recovery"):
+            result = worker.run(repo.operation.operation_id, execution)
+            self.assertEqual(result.status, "RECONCILIATION")
+            self.assertEqual(result.reason, "CUMULATIVE_CAP_EXCEEDED")
+        repo.begin.assert_called_once()
+        self.assertFalse(repo.attempts)
+        self.assertFalse(legacy.calls)
+
+    def test_missing_or_mismatched_reservation_never_reaches_vimarx(self):
+        valid = {"operacion_id": "operation-test", "reservado_centavos": I1.amount_cents,
+                 "limite_centavos": PILOT_LIMIT_CENTS}
+        invalid = [
+            "legacy-attempt-id", {}, {"attempt_id": "legacy-attempt-id"},
+            {"attempt_id": "", "cupo": valid},
+            {"attempt_id": "a", "cupo": {**valid, "operacion_id": "other"}},
+            {"attempt_id": "a", "cupo": {**valid, "reservado_centavos": I1.amount_cents - 1}},
+            {"attempt_id": "a", "cupo": {**valid, "reservado_centavos": float(I1.amount_cents)}},
+            {"attempt_id": "a", "cupo": {**valid, "limite_centavos": PILOT_LIMIT_CENTS + 1}},
+        ]
+        for response in invalid:
+            with self.subTest(response=response):
+                repo, _, legacy, worker = self.fixture()
+                begin = repo.begin
+
+                def incompatible_begin(token, installment):
+                    begin(token, installment)
+                    return response
+
+                repo.begin = Mock(side_effect=incompatible_begin)
+                for execution in ("webhook", "recovery"):
+                    result = worker.run(repo.operation.operation_id, execution)
+                    self.assertEqual(result.reason, "CAP_RESERVATION_UNPROVEN")
+                repo.begin.assert_called_once()
+                self.assertFalse(legacy.calls)
+
+    def test_lost_begin_after_commit_keeps_intent_and_recovery_does_not_charge(self):
+        repo, _, legacy, worker = self.fixture()
+        begin = repo.begin
+
+        def lost_reply(token, installment):
+            begin(token, installment)
+            raise TimeoutError("Commit de begin confirmado, respuesta perdida")
+
+        repo.begin = Mock(side_effect=lost_reply)
+        with self.assertRaises(TimeoutError):
+            worker.run(repo.operation.operation_id, "webhook")
+        repo.simulate_executor_restart()
+        result = worker.run(repo.operation.operation_id, "recovery")
+        self.assertEqual(result.reason, "WRITE_UNCERTAIN")
+        repo.begin.assert_called_once()
         self.assertFalse(legacy.calls)
 
     def test_older_installments_first_without_relying_on_portal_order(self):

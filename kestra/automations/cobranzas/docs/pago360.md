@@ -19,6 +19,14 @@ El recuperador consulta la API v1 propuesta en Etapa 2 del portal. Usa `GET /tra
 
 Las variables de entorno se preparan por ambiente con el mecanismo cifrado del repositorio. Las credenciales de lectura del portal solo las consume el recuperador. En desarrollo, el despliegue omite los disparadores con `schedule_scope: prod_only`. [Configuración de Kestra](../../../../docs/kestra-configuration.md)
 
+## Cupo acumulado del piloto
+
+Los dos flujos comparten un máximo total de **ARS 50.000,00** para imputaciones automáticas en Vimarx. Los socios pueden seguir pagando sus cupones en Pago360. Un cupón confirmado que excede el saldo del piloto queda para conciliación, con el pago del socio ya registrado.
+
+Antes de la primera imputación, el portal debe reservar los centavos de **toda la operación** en la misma transacción que registra el primer intento. Cada intento debe devolver al motor el identificador de la operación, el importe reservado y el límite del piloto. Si falta esa evidencia, el motor detiene la escritura. Una repetición del webhook o del recuperador usa la misma reserva.
+
+Por ejemplo, con ARS 42.000 ya reservados cabe un cupón de ARS 8.000. Un cupón de ARS 8.000,01 pasa completo a revisión. El cupo es persistente y acumulativo, incluso entre días y reinicios. Las operaciones parciales y los intentos con respuesta incierta conservan la reserva completa para evitar que otra ejecución use esos fondos.
+
 ## Pendiente antes de habilitar cobros
 
 1. Integrar la migración y la API v1 del portal, la recepción verificada del evento y el aviso posterior a la confirmación en base. Conservar desde la emisión del cupón el ID real de cada cuota.

@@ -6,12 +6,15 @@ Su implementación y la del legado se integrarán al inspeccionar el portal.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TypedDict
 from zoneinfo import ZoneInfo
 
 from .domain import (Attempt, AttemptStatus, ContractError, Debt, Installment,
                      Operation, Receipt, Status, VerifiedPayment, identifier,
-                     validate_debt, validate_payment)
+                     positive_cents, validate_debt, validate_payment)
+
+
+PILOT_LIMIT_CENTS = 5_000_000  # ARS 50.000 para todo el piloto, compartido por los dos flows.
 
 
 class DefiniteRejection(Exception):
@@ -24,6 +27,34 @@ class OperationNotFound(Exception):
 
 class ClaimConflict(Exception):
     """Lease/fencing inválido o cuota reservada por otra operación."""
+
+
+class CumulativeCapExceeded(Exception):
+    """El portal rechazó la reserva íntegra del cupón por falta de cupo."""
+
+
+class PilotReservation(TypedDict):
+    operacion_id: str
+    reservado_centavos: int
+    limite_centavos: int
+
+
+class WriteIntent(TypedDict):
+    attempt_id: str
+    cupo: PilotReservation
+
+
+def reserved_attempt_id(intent: object, operation: Operation) -> str:
+    """Exige la respuesta del COMMIT de imp_begin antes de autorizar Vimarx."""
+    if not isinstance(intent, dict) or not isinstance(intent.get("cupo"), dict):
+        raise ContractError("Falta el comprobante de reserva del piloto")
+    reservation = intent["cupo"]
+    reserved = positive_cents(reservation.get("reservado_centavos"))
+    limit = positive_cents(reservation.get("limite_centavos"))
+    if (reservation.get("operacion_id") != operation.operation_id
+            or reserved != operation.total_cents or limit != PILOT_LIMIT_CENTS or reserved > limit):
+        raise ContractError("La reserva del piloto no corresponde a la operación")
+    return identifier(intent.get("attempt_id"))
 
 
 @dataclass(frozen=True)
@@ -49,8 +80,12 @@ class Repository(Protocol):
         """
         ...
 
-    def begin(self, token: str, installment: Installment) -> str:
-        """Confirma fencing, reserva cuota global y COMMIT de WRITING antes de devolver ID."""
+    def begin(self, token: str, installment: Installment) -> WriteIntent:
+        """En un COMMIT valida fencing, reserva el total del cupón una sola vez y registra WRITING.
+
+        El cupo es acumulativo y global. Si no alcanza, el adaptador traduce
+        el rechazo del portal en CumulativeCapExceeded antes del POST a Vimarx.
+        """
         ...
 
     def received(self, token: str, attempt_id: str, receipt: Receipt) -> None: ...
@@ -198,6 +233,8 @@ class Processor:
             (i for i in operation.installments if i.key not in attempts),
             key=lambda i: (int(i.loan_id), i.due_on, i.number),
         )
+        if remaining and operation.total_cents > PILOT_LIMIT_CENTS:
+            return self._finish(claim, Status.RECONCILIATION, "CUMULATIVE_CAP_EXCEEDED")
         # Validar TODAS las cuotas pendientes antes de la primera escritura.
         for installment in remaining:
             try:
@@ -218,9 +255,14 @@ class Processor:
             if reason:
                 return self._finish(claim, Status.RECONCILIATION, reason)
             try:
-                attempt_id = self.repo.begin(claim.token, installment)
+                intent = self.repo.begin(claim.token, installment)
+                attempt_id = reserved_attempt_id(intent, operation)
+            except CumulativeCapExceeded:
+                return self._finish(claim, Status.RECONCILIATION, "CUMULATIVE_CAP_EXCEEDED")
             except ClaimConflict:
                 return self._finish(claim, Status.RECONCILIATION, "RESERVATION_CONFLICT")
+            except ContractError:
+                return self._finish(claim, Status.RECONCILIATION, "CAP_RESERVATION_UNPROVEN")
             try:
                 receipt = self.legacy.charge(operation, payment, installment, attempt_id)
                 if not isinstance(receipt, Receipt) or not receipt.matches(installment):
