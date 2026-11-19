@@ -12,14 +12,14 @@ El registro de una declaración diferencia campos respondidos de datos como el t
 
 ## Decisiones para la siguiente etapa
 
-| Decisión actual que conviene revisar | Qué proponemos hacer |
+| Decisión o atajo que conviene revisar | Qué proponemos hacer |
 |---|---|
 | Reutilizar respuestas de WhatsApp sólo cuando el reparto terminó de sincronizarse. Esto obliga a repetir formularios válidos. | Validar y conservar la declaración en el momento en que se comprueban origen e identidad. El estado comercial se registra por su cuenta. |
-| Inferir la fecha de los datos a partir de la última edición en Bitrix. Una conversión o asignación puede cambiarla. | Usar la fecha del envío original. Para históricos, acreditar formulario, fecha y vínculo antes de incorporarlos por lote. |
+| Usar la última edición de Bitrix al recuperar formularios históricos. Una conversión o asignación podría cambiar esa fecha. | Usar la fecha del envío original. Para históricos, acreditar formulario, fecha y vínculo antes de incorporarlos por lote. |
 | Usar una categoría laboral como si resumiera todas las prestaciones de la persona. | Mantener tipo de prestación, organismo y banco separados. Conservar las posibilidades de categorías agrupadas y pedir aclaración cuando cambie la decisión. |
-| Interpretar todo lo que llega en un callback, incluidos campos ocultos. | Preservar la evidencia original y seleccionar sólo los campos de la versión y rama que respondió la persona. |
-| Tratar un banco en una lista de Bitrix como inválido o elegir la primera opción. | Normalizar una opción inequívoca. Mantener alternativas cuando haya varios bancos posibles. |
-| Deducir identidad o próxima acción por el responsable de la ficha. | Mantener identidad, atención humana, reparto y hechos declarados como comprobaciones independientes. |
+| Interpretar todos los campos del callback. WhatsApp también incluye campos de ramas que la persona no vio. | Preservar la evidencia original y seleccionar sólo los campos de la versión y rama que respondió la persona. |
+| Descartar el banco porque Bitrix lo devuelve como lista, incluso si tenía una sola opción. | Normalizar una opción inequívoca. Mantener alternativas cuando haya varios bancos posibles. |
+| Tomar el responsable inicial de la ficha como prueba de atención humana. | Mantener identidad, atención humana, reparto y hechos declarados como comprobaciones independientes. |
 
 Antes del primer ingreso real hay que fijar el registro de versiones de formulario por cuenta, la autenticación de cada adaptador y el acceso y la retención de originales sensibles. También queda por incorporar la comparación de perfiles en el tiempo, la selección de la prestación específica y las aclaraciones por campo. El primer catálogo cubre los valores conocidos de estos formularios. Los nuevos códigos quedan visibles como sin equivalencia hasta que se versionen sus reglas.
 
