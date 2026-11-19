@@ -309,6 +309,20 @@ class AlertFlowWiringTests(unittest.TestCase):
 
 
 class CredixsaFlowContractsTests(unittest.TestCase):
+    def test_all_bcra_consumers_have_private_network_and_credentials(self):
+        flows = ROOT / "kestra/automations/analisis-credito/flows"
+        for flow_id, task_id in [
+            ("consulta_quiebra_credix", "consultar_quiebra"),
+            ("precalentar_cache_credixsa_v2_sondeo", "precalentar_cache"),
+            ("recuperar_bcra_cache", "recuperar"),
+        ]:
+            with self.subTest(flow_id=flow_id):
+                flow = yaml.safe_load((flows / f"{flow_id}.yaml").read_text(encoding="utf-8"))
+                task = next(item for item in flow["tasks"] if item["id"] == task_id)
+                self.assertEqual(task["taskRunner"]["networkMode"], "kestra_net")
+                self.assertEqual(task["env"]["BCRA_FILE_BASE_URL"], "{{ envs.bcra_file_poc_url }}")
+                self.assertEqual(task["env"]["BCRA_FILE_TOKEN"], "{{ secret('BCRA_FILE_POC_TOKEN') }}")
+
     def test_employer_backfill_guards_skipped_task_results(self):
         flow = yaml.safe_load((ROOT / "kestra/automations/marketing-crm/flows/bitrix24_credixsa_employer_backfill.yaml").read_text(encoding="utf-8"))
         tasks = {task["id"]: task for task in flow["tasks"]}

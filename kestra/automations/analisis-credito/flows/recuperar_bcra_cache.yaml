@@ -24,11 +24,14 @@ tasks:
         - consulta_quiebra_credix/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: kestra_net
       pullPolicy: IF_NOT_PRESENT
       volumes:
         - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
+      BCRA_FILE_BASE_URL: "{{ envs.bcra_file_poc_url }}"
+      BCRA_FILE_TOKEN: "{{ secret('BCRA_FILE_POC_TOKEN') }}"
       CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
       BCRA_RECOVERY_MAX_PER_RUN: "{{ envs.bcra_recovery_max_per_run ?? '5' }}"
       KESTRA_URL: "{{ envs.reports_kestra_url }}"
