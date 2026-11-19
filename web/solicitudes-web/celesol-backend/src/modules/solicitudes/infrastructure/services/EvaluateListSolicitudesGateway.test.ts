@@ -111,6 +111,42 @@ describe("Consulta acotada del CBU habitual", () => {
   });
 });
 
+describe("Resolución de la ficha de vendedor", () => {
+  it("usa la ficha activa única de patobarboza sin consultar solicitudes", async () => {
+    const { gateway, requests } = createGateway([["390"]]);
+    assert.equal(await gateway.getVendedorLegacyId("patobarboza"), 390);
+    assert.deepEqual(requests.map(({ body }) => body), [{
+      tipo: "PreSolicitud.Module.VendedorSolicitud",
+      cmd: "Activo = true And Usuario.UserName = 'patobarboza'",
+      campos: "ID",
+      max: 2,
+    }]);
+  });
+
+  it("devuelve null sin consultar solicitudes si no hay fichas activas", async () => {
+    const { gateway, requests } = createGateway([]);
+    assert.equal(await gateway.getVendedorLegacyId("sin-vendedor"), null);
+    assert.equal(requests.length, 1);
+  });
+
+  it("desempata entre fichas activas con el mayor Oid del historial", async () => {
+    const catalog = createFetcher([[13], [17]]);
+    const history = createFetcher([[80, 17], [90, 13], [70, 17]]);
+    const gateway = new EvaluateListSolicitudesGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
+      (input, init) => (catalog.requests.length === 0 ? catalog : history).fetcher(input, init),
+    );
+
+    assert.equal(await gateway.getVendedorLegacyId("vendedor"), 13);
+    assert.deepEqual(history.requests.map(({ body }) => body), [{
+      tipo: "PreSolicitud.Module.Solicitud",
+      cmd: "VendedorSolicitud.Activo = true And VendedorSolicitud.Usuario.UserName = 'vendedor'",
+      campos: "Oid;VendedorSolicitud.ID",
+      max: 500,
+    }]);
+  });
+});
+
 describe("EvaluateListSolicitudesGateway", () => {
   it("builds table commands with the authenticated legacy user", () => {
     const request = buildEvaluateListRequest(
