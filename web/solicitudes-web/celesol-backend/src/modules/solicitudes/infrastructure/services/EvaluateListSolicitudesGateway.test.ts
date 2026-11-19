@@ -111,6 +111,38 @@ describe("Consulta acotada del CBU habitual", () => {
   });
 });
 
+function createSellerGateway(catalogRows: number[][], historyRows: number[][]) {
+  const catalog = createFetcher(catalogRows);
+  const history = createFetcher(historyRows);
+  const gateway = new EvaluateListSolicitudesGateway(
+    { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
+    (input, init) =>
+      (catalog.requests.length === 0 ? catalog : history).fetcher(input, init),
+  );
+
+  return { gateway, historyRequests: history.requests };
+}
+
+describe("Resolución de la ficha de vendedor", () => {
+  it("usa la ficha activa única de patobarboza sin consultar solicitudes", async () => {
+    const { gateway, requests } = createGateway([["390"]]);
+    assert.equal(await gateway.getVendedorLegacyId("patobarboza"), 390);
+    assert.deepEqual(requests.map(({ body }) => body), [{
+      tipo: "PreSolicitud.Module.VendedorSolicitud",
+      cmd: "Activo = true And Usuario.UserName = 'patobarboza'",
+      campos: "ID",
+      max: 2,
+    }]);
+  });
+
+  it("devuelve null sin consultar solicitudes si no hay fichas activas", async () => {
+    const { gateway, requests } = createGateway([]);
+    assert.equal(await gateway.getVendedorLegacyId("sin-vendedor"), null);
+    assert.equal(requests.length, 1);
+  });
+
+});
+
 describe("EvaluateListSolicitudesGateway", () => {
   it("builds table commands with the authenticated legacy user", () => {
     const request = buildEvaluateListRequest(
@@ -633,43 +665,36 @@ describe("EvaluateListSolicitudesGateway", () => {
     // Mismo patron que un caso real: el VendedorSolicitud.ID mas alto (212)
     // aparece en las solicitudes mas viejas y dejo de usarse; el vigente
     // (190) es el de la solicitud con el Oid mas alto, no el ID mas alto.
-    const { gateway, requests } = createGateway([
-      [177977, 212],
-      [185811, 190],
-      [207868, 190],
-    ]);
-
-    const id = await gateway.getVendedorLegacyId("aalvarez");
-
-    assert.equal(id, 190);
-    assert.equal(
-      (requests[0]?.body as { cmd: string }).cmd,
-      "VendedorSolicitud.Usuario.UserName = 'aalvarez'",
+    const { gateway, historyRequests } = createSellerGateway(
+      [[190], [212]],
+      [[177977, 212], [207868, 190], [185811, 190]],
     );
-    assert.equal(
-      (requests[0]?.body as { tipo: string }).tipo,
-      "PreSolicitud.Module.Solicitud",
-    );
+
+    assert.equal(await gateway.getVendedorLegacyId("aalvarez"), 190);
+    assert.deepEqual(historyRequests.map(({ body }) => body), [{
+      tipo: "PreSolicitud.Module.Solicitud",
+      cmd: "VendedorSolicitud.Activo = true And VendedorSolicitud.Usuario.UserName = 'aalvarez'",
+      campos: "Oid;VendedorSolicitud.ID",
+      max: 500,
+    }]);
   });
 
   it("ignores an isolated anomaly that is not the most recent solicitud", async () => {
-    const { gateway } = createGateway([
-      [158005, 90],
-      [220371, 200],
-      [230060, 90],
-    ]);
+    const { gateway } = createSellerGateway(
+      [[90], [200]],
+      [[158005, 90], [220371, 200], [230060, 90]],
+    );
 
     const id = await gateway.getVendedorLegacyId("mquiroga");
 
     assert.equal(id, 90);
   });
 
-  it("returns null when there is no historical solicitud for that username", async () => {
-    const { gateway } = createGateway([]);
+  it("returns null when multiple active sellers have no historical solicitud", async () => {
+    const { gateway, historyRequests } = createSellerGateway([[90], [200]], []);
 
-    const id = await gateway.getVendedorLegacyId("unknown");
-
-    assert.equal(id, null);
+    assert.equal(await gateway.getVendedorLegacyId("unknown"), null);
+    assert.equal(historyRequests.length, 1);
   });
 
   it("lee el convenio del socio por su ID interno, con los vacios en null", async () => {
