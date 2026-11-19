@@ -1,5 +1,6 @@
 """Synthetic inputs used to verify the installation without opening an intake."""
 
+import json
 from datetime import datetime, timezone
 
 from .capture import capture
@@ -7,21 +8,30 @@ from .normalize import normalize
 
 
 def sample(channel="web"):
-    meta = {
+    answers = {
+        "province": "Catamarca", "employment_status": "Jubilado Nacional", "payment_bank": "Banco Nación",
+    } if channel == "web" else {
+        "provincia": "catamarca", "situacion_catamarca": "jubilado", "organismo_catamarca": "anses",
+        "banco_catamarca": "nacion", "organismo": "caja_cordoba",
+    }
+    return {
         "channel": channel,
         "source_scope": "synthetic",
         "source_id": f"sample-{channel}",
         "form_version": "web-loan-v1" if channel == "web" else "whatsapp-intake-v3",
         "declared_at": "2026-09-14T01:04:42-03:00",
+        "original_body": json.dumps(answers, ensure_ascii=False, indent=2),
+        "source_metadata": {"example": True, "transport_extension": ["present", None]},
+        "answers_path": [],
+        "form": {
+            "id": f"sample-{channel}-form",
+            "revision": "sample-publication-1",
+            "definition": {
+                "title": "Synthetic request",
+                "options": {"provider_option": "Example label"},
+            },
+        },
     }
-    if channel == "web":
-        return meta | {"payload": {
-            "province": "Catamarca", "employment_status": "Jubilado Nacional", "payment_bank": "Banco Nación",
-        }}
-    return meta | {"payload": {
-        "provincia": "catamarca", "situacion_catamarca": "jubilado", "organismo_catamarca": "anses",
-        "banco_catamarca": "nacion", "organismo": "caja_cordoba",
-    }}
 
 
 def main():
@@ -33,7 +43,7 @@ def main():
         actual = {name: result["fields"][name].get("value") for name in expected}
         if actual != expected:
             raise SystemExit("web and WhatsApp normalization check failed")
-    print("web + WhatsApp normalization OK (synthetic)")
+    print("web + WhatsApp snapshot and normalization OK (synthetic)")
 
 
 if __name__ == "__main__":
