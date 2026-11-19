@@ -311,7 +311,7 @@ export function createSolicitudesCoreRouter(
   const sellerReview = new CompleteSellerReview(prisma, updateSolicitudUseCase, sociosRepository);
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
     completeSellerReview: (input, command) => sellerReview.execute(input, command),
-    authorizeFinancialOperation: input => assertWorkflowFinancialReady(prisma, input.solicitudId, input.currentUser.id),
+    authorizeFinancialOperation: input => assertWorkflowFinancialReady(prisma, input.solicitudId, input.currentUser.id, undefined, input.actionCode),
     archivarEvaluacion,
     adjuntoRepository: solicitudAdjuntoRepository,
     engine: workflowEngine,

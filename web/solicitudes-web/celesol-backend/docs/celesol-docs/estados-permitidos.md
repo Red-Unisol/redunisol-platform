@@ -95,8 +95,10 @@ Notas:
 Riesgo puede elegir **Enviar a liquidada** (`enviar_a_liquidada`) para solicitar el control del vendedor.
 En **Más acciones**, el cierre directo conserva las rutas `liquidar` hacia verificación y
 `liquidar_con_firma` hacia transferencia, según la aprobación vigente. Ambas opciones de entrega
-requieren socio y un préstamo vigente con monto coincidente. Tras una corrección del vendedor
-en Liquidada, Riesgo reenvía la solicitud al vendedor para completar el control pendiente.
+requieren socio y un préstamo vigente con monto coincidente. Si el préstamo vinculado carece
+de registro de conciliación en Beex, se bloquean tanto el envío a Liquidada como el cierre directo.
+Tras una corrección del vendedor en Liquidada, Riesgo reenvía la solicitud al vendedor para
+completar el control pendiente.
 
 También siguen disponibles las acciones de devolución a Revisar, desestimación y pase por Vimarx.
 
@@ -106,6 +108,10 @@ El vendedor usa **Finalizar revisión de datos** (`finalizar_revision_datos`). S
 el servidor registra `devolver_revision_datos` hacia **Revisión de Riesgo**. Si confirma los datos,
 pasa a **Verificar firma y documentación**. Una aprobación vigente permite el pase consecutivo
 a **Transferir**. **Desestimar** sigue disponible como acción separada.
+
+Si falta el registro de conciliación, se bloquea el cierre sin cambios. El vendedor puede
+guardar una corrección y devolver la solicitud a Riesgo. Si cambia la cantidad de cuotas,
+la línea, el primer vencimiento, el DNI o el CUIT del titular, se solicita una nueva firma.
 
 Los expedientes que ya estaban en Liquidada antes de introducir la revisión conservan sus salidas históricas.
 

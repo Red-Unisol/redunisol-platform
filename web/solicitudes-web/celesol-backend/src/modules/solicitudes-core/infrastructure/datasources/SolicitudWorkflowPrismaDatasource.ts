@@ -6,7 +6,7 @@ import { actingHistoryFields, actingContext } from "../../../auth/impersonation/
 import { randomUUID } from "node:crypto";
 import { REVERSE_DISMISSAL_ACTION } from "../../domain/workflow/Dismissal";
 import { applyDismissalReversal, dismissalReversalTransition, prepareDismissal, type DismissalLifecycle } from "../services/SolicitudDismissal";
-import { sellerReviewAllowsAction } from "../../domain/workflow/SellerReview";
+import { assertAnalysisControl, missingAnalysisControlReason, sellerReviewAllowsAction } from "../../domain/workflow/SellerReview";
 import { assertSignatureLinkFinancialReady } from "../services/WorkflowFinancialGuard";
 import { notifySignatureEvent } from "../../../notifications/SignatureNotifications";
 import { getSignatureApproval, signatureCycleAfterContractChange } from "../../../document-review/signature-workflow";
@@ -32,6 +32,14 @@ import {
   WorkflowExecutionPlanStateConflictError,
 } from "../../domain/solicitudes-core-errors";
 import { SolicitudCoreMapper } from "../mappers/SolicitudCore.mapper";
+
+const SELLER_FIELDS_REQUIRING_NEW_SIGNATURE = new Set([
+  "solicitud.cuotas",
+  "solicitud.fechaPrimerVencimiento",
+  "solicitud.lineaPrestamoLegacyOid",
+  "titular.nroDocumento",
+  "titular.cuit",
+]);
 
 const solicitudCoreInclude = {
   assignedToUser: {
@@ -336,6 +344,9 @@ export class SolicitudWorkflowPrismaDatasource {
             if (source.archivedAt || source.pagoExterno || source.desembolso)
               throw new SolicitudWorkflowTransitionNotAllowedError();
           }
+          // Completion with corrections must return to Riesgo even without a
+          // previous reconciliation. Resolve its destination before this check.
+          if (step.actionCode !== "finalizar_revision_datos") assertAnalysisControl(solicitud, step.actionCode);
           assertCoreReconciled(solicitud, step.actionCode);
           let transition = await executor.workflowTransition.findFirst({
             where: {
@@ -367,11 +378,11 @@ export class SolicitudWorkflowPrismaDatasource {
             if (readSellerReviewChanges(solicitud.sellerReviewChanges).length > 0) {
               transition = await this.requireActiveTransition(executor, solicitud.estadoActualId, "devolver_revision_datos");
             } else {
+              assertAnalysisControl(solicitud, step.actionCode);
               assertCoreReconciled(solicitud, "verificar_firma");
               const approval = await getSignatureApproval(tx, solicitud.id);
               if (approval.approved) {
-                // Historical loans can lack a reconciliation control. Verify the
-                // full contract before either handoff, under the same row lock.
+                // Verify the full signed contract before either handoff under the same lock.
                 await this.verifySignatureLoan(tx, solicitud.id);
                 sellerApprovalId = approval.decisionId;
               }
@@ -699,8 +710,7 @@ export class SolicitudWorkflowPrismaDatasource {
       input.solicitud.estadoActual.owner.code, input.transition.toState.owner.code, input.solicitud.sellerReviewChanges,
     );
     const contractChanged = input.transition.actionCode === "devolver_revision_datos"
-      && handoff.metadata?.sellerReviewChanges.some(change =>
-        change.field === "solicitud.fechaPrimerVencimiento" || change.field === "solicitud.lineaPrestamoLegacyOid");
+      && handoff.metadata?.sellerReviewChanges.some(change => SELLER_FIELDS_REQUIRING_NEW_SIGNATURE.has(change.field));
     const signatureCycle = contractChanged ? await signatureCycleAfterContractChange(input.executor as Prisma.TransactionClient,
       input.solicitud.id, input.solicitud.signatureExcludedVerificationIds) : null;
     const updateData: Prisma.SolicitudUpdateInput = {
@@ -834,6 +844,8 @@ export class SolicitudWorkflowPrismaDatasource {
     const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
       ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
     return transitions.filter(t => t.actionCode !== "liquidar_con_firma").map(t => {
+      const missingControl = solicitud.estadoActual.code === "Confirmada" && missingAnalysisControlReason(solicitud, t.actionCode);
+      if (missingControl) return { ...t, blockedReason: missingControl };
       if (isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code) && returnBlocked)
         return { ...t, blockedReason: returnBlocked };
       // Closing analysis runs the authoritative financial reconciliation first.

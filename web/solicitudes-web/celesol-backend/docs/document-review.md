@@ -86,6 +86,13 @@ el cierre y el pase a **Verificar firma y documentación**. Si la firma ya está
 aprobada para esa operación, registra también el pase a **Transferir**.
 La transferencia conserva sus controles financieros.
 
+Al devolver la solicitud a Riesgo, una corrección efectiva de cuotas, línea de
+préstamo, primer vencimiento, DNI o CUIT del titular abre un nuevo ciclo de firma
+y avisa al vendedor. Esto incluye un cambio de CUIT aunque el DNI siga igual.
+La aprobación anterior queda en el historial y los intentos previos ya identificados
+se excluyen, incluso si el proveedor comunica su finalización después de la corrección.
+Una edición de observaciones conserva la firma vigente.
+
 Al recibir una devolución desde Vendedores, Riesgo ve los campos corregidos y
 su valor anterior. Se muestran las diferencias efectivas de la última vuelta,
 incluido el pase desde Preaprobada a Confirmada. La primera carga llega a Riesgo

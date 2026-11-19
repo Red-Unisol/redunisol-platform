@@ -4,6 +4,7 @@ import type { UpdateSolicitudUseCase } from "../../application/use-cases/UpdateS
 import type { WorkflowCommand } from "../../domain/workflow/types";
 import { SolicitudWorkflowCapabilitiesService } from "../../application/services/SolicitudWorkflowCapabilitiesService";
 import { readSellerReviewChanges } from "../../application/services/SellerReviewChanges";
+import { assertAnalysisControl } from "../../domain/workflow/SellerReview";
 import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflowEngine";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import { ForbiddenSolicitudAccessError, SolicitudCoreNotFoundError, SolicitudTitularSocioRequiredForWorkflowError } from "../../domain/solicitudes-core-errors";
@@ -47,6 +48,7 @@ export class CompleteSellerReview {
         ? await tx.solicitud.findUniqueOrThrow({ where: { id }, include: { titular: true } })
         : current;
       if (!readSellerReviewChanges(reviewed.sellerReviewChanges).length) {
+        assertAnalysisControl(current, input.actionCode);
         if (!reviewed.titular || !(await new FindSolicitudTitularSocio({ sociosRepository: this.socios }).execute(reviewed.titular)))
           throw new SolicitudTitularSocioRequiredForWorkflowError();
         await this.verifyLoan(tx, id, currentUser.id);

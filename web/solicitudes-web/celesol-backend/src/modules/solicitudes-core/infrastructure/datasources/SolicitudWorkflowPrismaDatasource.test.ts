@@ -13,6 +13,7 @@ import {
   SolicitudWorkflowTransitionNotAllowedError,
   WorkflowExecutionPlanStateConflictError,
 } from "../../domain/solicitudes-core-errors";
+import { coreConditionsFingerprint } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudWorkflowPrismaDatasource } from "./SolicitudWorkflowPrismaDatasource";
 
 describe("SolicitudWorkflowPrismaDatasource", () => {
@@ -1158,7 +1159,8 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
   for (const scenario of [
     { approved: false, edited: false, state: "VerificarFirmaYDocumentacion", events: ["finalizar_revision_datos"] },
     { approved: true, edited: false, state: "Transferir", events: ["finalizar_revision_datos", "transferir"] },
-    { approved: true, edited: true, state: "RevisionRiesgo", events: ["devolver_revision_datos"] },
+    { approved: true, edited: true, state: "RevisionRiesgo", events: ["devolver_revision_datos"], missingControl: true },
+    { approved: true, edited: false, state: "Liquidada", events: [], missingControl: true },
   ]) {
     it(`finishes the seller review in ${scenario.state} (edited=${scenario.edited}, approved=${scenario.approved})`, async () => {
       const changes = scenario.edited ? [{ field: "titular.email", before: "old@test.invalid", after: "new@test.invalid" }] : [];
@@ -1167,11 +1169,11 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
       });
       const prisma = new FakeWorkflowPrisma({
         signatureApproved: scenario.approved,
-        currentSolicitud: solicitudRecord({
+        currentSolicitud: analysisLoanRecord({
           estadoActual: resolveStateById("state-liquidada"), sellerReviewStartedAt: new Date(),
           sellerReviewChanges: changes, legacyOid: "101", cuotas: 6, cuotaResultante: "200,00",
           titular: { nombre: "Persona", apellidoDenominacion: "de Prueba", nroDocumento: "30123456" },
-        }),
+        }, scenario.missingControl),
         activeTransition: route("state-liquidada", "finalizar_revision_datos", "state-verificacion"),
         alternateTransitions: [
           route("state-liquidada", "devolver_revision_datos", "state-riesgo"),
@@ -1183,10 +1185,18 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
         verifiedLoan = true;
         return { loanId: "101", conditionsFingerprint: "current-contract" };
       });
-      const result = await executeDomainStepPlan(datasource, {
+      const complete = executeDomainStepPlan(datasource, {
         actionCode: "finalizar_revision_datos", changedBy: "user-1", expectedFromStateId: "state-liquidada",
         expectedToStateId: "state-verificacion", now: new Date(), solicitudId: "sol-1", workflowOwnerId: "owner-vendedor",
       });
+      if (scenario.state === "Liquidada") {
+        await assert.rejects(complete, { statusCode: 409, message: /no tiene registro de conciliación/ });
+        assert.equal(verifiedLoan, false);
+        assert.equal(prisma.historyCreateCalls.length, 0);
+        assert.equal(prisma.solicitudUpdateCalls.length, 0);
+        return;
+      }
+      const result = await complete;
       assert.equal(result.solicitud.estadoActual.code, scenario.state);
       assert.equal(verifiedLoan, scenario.state === "Transferir");
       assert.equal(Boolean(result.solicitud.sellerReviewStartedAt), scenario.edited);
@@ -1273,11 +1283,18 @@ async function executeDomainStepPlan(
   });
 }
 
+function analysisLoanRecord(overrides: Record<string, unknown>, missingControl = false) {
+  const row = solicitudRecord(overrides);
+  return { ...row, administrativeCoreControl: missingControl ? null : {
+    loanId: row.legacyOid, reconciledFingerprint: coreConditionsFingerprint(row),
+  } };
+}
+
 function finalizationFixture(approved: boolean) {
   const pending = transitionRecord({ id: "finalize-review", actionCode: "liquidar", fromStateId: "state-confirmada", toState: resolveStateById("state-verificacion"), toStateId: "state-verificacion" });
   return new FakeWorkflowPrisma({
     signatureApproved: approved,
-    currentSolicitud: solicitudRecord({ estadoActual: resolveStateById("state-confirmada"), legacyOid: "101", cuotas: 6, cuotaResultante: "200,00", titular: { nombre: "Persona", apellidoDenominacion: "de Prueba", nroDocumento: "30123456" } }),
+    currentSolicitud: analysisLoanRecord({ estadoActual: resolveStateById("state-confirmada"), legacyOid: "101", cuotas: 6, cuotaResultante: "200,00", titular: { nombre: "Persona", apellidoDenominacion: "de Prueba", nroDocumento: "30123456" } }),
     activeTransition: pending,
     alternateTransitions: [transitionRecord({ id: "finalize-transfer", actionCode: "liquidar_con_firma", fromStateId: "state-confirmada", toState: resolveStateById("state-transferir"), toStateId: "state-transferir" })],
   });

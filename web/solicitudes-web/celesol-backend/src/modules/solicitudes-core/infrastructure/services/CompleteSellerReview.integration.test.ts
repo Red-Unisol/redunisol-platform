@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { after, it } from "node:test";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import express, { type ErrorRequestHandler } from "express";
 import { SociosPrismaDatasource } from "../../../socios/infrastructure/datasources/SociosPrismaDatasource";
 import { SocioRepositoryImpl } from "../../../socios/infrastructure/repositories/SocioRepositoryImpl";
@@ -11,7 +11,7 @@ import { SolicitudAdjuntosPrismaDatasource } from "../../adjuntos/infrastructure
 import { SolicitudAdjuntoRepositoryImpl } from "../../adjuntos/infrastructure/repositories/SolicitudAdjuntoRepositoryImpl";
 import { ChangeSolicitudStateUseCase } from "../../application/use-cases/ChangeSolicitudState.use-case";
 import { UpdateSolicitudUseCase } from "../../application/use-cases/UpdateSolicitud.use-case";
-import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
+import { AdministrativeCorrectionError, coreConditionsFingerprint } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflowEngine";
 import { SolicitudesCoreController } from "../../presentation/SolicitudesCoreController";
 import { SolicitudFieldAccessRulesPrismaDatasource } from "../datasources/SolicitudFieldAccessRulesPrismaDatasource";
@@ -39,12 +39,18 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
     cuit: "20" + dni + "1", tipoPersona: "FISICA", tipoDocumento: "DNI", nroDocumento: dni,
     nombre: "Prueba", apellido: "Vendedor", sexo: "M", fechaDeNacimiento: new Date("1980-01-01"),
   } });
-  const makeReview = () => db.solicitud.create({ data: {
-    createdBy: seller.id, assignedToUserId: analyst.id, estadoActualId: liquidada.id, sellerReviewStartedAt: new Date(),
-    legacyOid: randomUUID(), lineaPrestamoLegacyOid: "1", lineaPrestamoDescripcion: "Prueba",
-    montoAFinanciar: 10000, cuotas: 10,
-    titular: { create: { tipoDocumento: "DNI", nroDocumento: dni, celular: "1111" } },
-  } });
+  const makeReview = async (missingControl?: typeof Prisma.DbNull | typeof Prisma.JsonNull) => {
+    const row = await db.solicitud.create({ data: {
+      createdBy: seller.id, assignedToUserId: analyst.id, estadoActualId: liquidada.id, sellerReviewStartedAt: new Date(),
+      legacyOid: randomUUID(), lineaPrestamoLegacyOid: "1", lineaPrestamoDescripcion: "Prueba",
+      montoAFinanciar: 10000, cuotas: 10, administrativeCoreControl: missingControl,
+      titular: { create: { tipoDocumento: "DNI", nroDocumento: dni, celular: "1111" } },
+    }, include: { titular: true } });
+    if (missingControl) return row;
+    return db.solicitud.update({ where: { id: row.id }, data: { administrativeCoreControl: {
+      loanId: row.legacyOid, reconciledFingerprint: coreConditionsFingerprint(row),
+    } } });
+  };
   const read = (id: string) => db.solicitud.findUniqueOrThrow({ where: { id }, include: { estadoActual: true, titular: true } });
   const persistedEvents = (id: string) => db.solicitudEstadoHistorial.count({ where: { solicitudId: id } });
   const repository = new SolicitudesCorePrismaDatasource(db);
@@ -60,10 +66,11 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
     financialChecks++;
     if (rejectLoan) throw new AdministrativeCorrectionError("Préstamo pendiente de conciliación.");
   });
+  const workflow = new SolicitudWorkflowPrismaDatasource(db);
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
     now: () => new Date(), solicitudesRepository: repository, sociosRepository: socios,
     adjuntoRepository: new SolicitudAdjuntoRepositoryImpl(new SolicitudAdjuntosPrismaDatasource(db)),
-    engine: new SolicitudWorkflowEngine({ repository: new SolicitudWorkflowPrismaDatasource(db) }),
+    engine: new SolicitudWorkflowEngine({ repository: workflow }),
     completeSellerReview: (input, command) => review.execute(input, command),
   });
   let currentUser = seller;
@@ -88,7 +95,7 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
 
   try {
     await t.test("una corrección devuelve a Revisión de Riesgo, incluso frente a doble clic", async () => {
-      const row = await makeReview();
+      const row = await makeReview(Prisma.JsonNull);
       const body = { changes: { titular: { celular: "2222" } } };
       const responses = await Promise.all([post(row, body), post(row, body)]);
       assert.deepEqual(responses.map(r => r.status).sort(), [200, 409], await Promise.all(responses.filter(r => !r.ok).map(r => r.text())).then(bodies => bodies.join(" | ")));
@@ -110,6 +117,42 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       assert.equal(saved.sellerReviewStartedAt, null);
       assert.equal(await persistedEvents(row.id), 1);
       assert.equal(financialChecks, 1);
+    });
+    await t.test("sin registro, ni Liquidada ni los tres avances de Confirmada modifican el préstamo o el análisis", async () => {
+      const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });
+      const beforeChecks = financialChecks;
+      for (const missingControl of [Prisma.DbNull, Prisma.JsonNull]) {
+        const row = await makeReview(missingControl);
+        const sellerActions = await workflow.listAvailableTransitions({ solicitudId: row.id, workflowOwnerId: liquidada.ownerId });
+        assert.equal(sellerActions.find(action => action.actionCode === "finalizar_revision_datos")?.blockedReason, null);
+        const blocked = await post(row);
+        assert.equal(blocked.status, 409);
+        assert.match(await blocked.text(), /no tiene registro de conciliación/);
+        let saved = await read(row.id);
+        assert.equal(saved.estadoActual.code, "Liquidada");
+        assert.equal(saved.updatedAt.getTime(), row.updatedAt.getTime());
+        await db.solicitud.update({ where: { id: row.id }, data: { estadoActualId: confirmed.id, sellerReviewStartedAt: null } });
+        const riskActions = await workflow.listAvailableTransitions({ solicitudId: row.id, workflowOwnerId: confirmed.ownerId });
+        for (const code of ["enviar_a_liquidada", "liquidar"]) {
+          assert.match(riskActions.find(action => action.actionCode === code)?.blockedReason ?? "", /no tiene registro de conciliación/);
+        }
+        currentUser = analyst;
+        try {
+          for (const actionCode of ["enviar_a_liquidada", "liquidar", "liquidar_con_firma"]) {
+            const response = await fetch(`http://127.0.0.1:${port}/solicitudes/${row.id}/transitions`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actionCode }),
+            });
+            assert.equal(response.status, 409);
+            assert.match(await response.text(), /no tiene registro de conciliación/);
+          }
+        } finally { currentUser = seller; }
+        saved = await read(row.id);
+        assert.equal(saved.estadoActual.code, "Confirmada");
+        assert.equal(saved.analisisFinalizadoAt, null);
+        assert.equal(saved.administrativeCoreControl, null);
+        assert.equal(await persistedEvents(row.id), 0);
+      }
+      assert.equal(financialChecks, beforeChecks);
     });
     await t.test("rechaza una versión obsoleta y el intento de una persona de Riesgo", async () => {
       const row = await makeReview();
