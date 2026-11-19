@@ -4,7 +4,7 @@ Dominio para automatizaciones de cobranzas y mora.
 
 ## Integraciones en preparación
 
-- [Pago360: cuotas vencidas](pago360-cuotas.md): plan coordinado con el portal y primer núcleo de controles, sin adaptadores ni escritura real habilitados.
+- Los flujos de Pago360 usan el motor de cuotas vencidas del #744. Ambos flujos y sus disparadores están deshabilitados. [Entradas de Kestra y recuperación](pago360.md) · [Reglas del motor](pago360-cuotas.md)
 
 ## Flows
 

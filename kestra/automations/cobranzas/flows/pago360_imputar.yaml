@@ -1,0 +1,38 @@
+id: pago360_imputar
+namespace: redunisol
+# This integration is deliberately inert until its contracts and rollout are approved.
+disabled: true
+concurrency:
+  limit: 1
+  behavior: QUEUE
+labels:
+  domain: cobranzas
+  integration: pago360
+  schedule_scope: prod_only
+description: Consulta el motor de cuotas vencidas para una operacion de Pago360. Los contratos de cobro siguen bloqueados.
+inputs:
+  - id: operacion_id
+    type: STRING
+    defaults: ""
+tasks:
+  - id: ejecutar
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - pago360/**
+        - pago360_cuotas/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    env:
+      KESTRA_EXECUTION_ID: "{{ execution.id }}"
+      OPERATION_ID: "{{ inputs.operacion_id }}"
+      TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | toJson) : '{}' }}"
+    commands:
+      - python -m pago360.entrypoint
+triggers:
+  - id: pago_verificado
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('PAGO360_WEBHOOK_KEY') }}"
+    disabled: true
