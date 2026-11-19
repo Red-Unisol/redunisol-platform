@@ -73,6 +73,24 @@ class IntakeTest(unittest.TestCase):
         )
         self.assertEqual(fields(envelope)["payment_bank"]["status"], "not_applicable")
 
+    def test_municipal_retirement_is_a_benefit_without_invented_paying_organization(self):
+        web = sample()
+        web["payload"].update(province="Córdoba", employment_status="Jubilado Municipal")
+        wa = sample("whatsapp")
+        wa["payload"].update(provincia="cordoba", situacion_cordoba="jubilado_municipal", banco_cordoba="nacion")
+        for result in fields(web), fields(wa):
+            self.assertEqual(result["benefit_kind"]["value"], "retirement")
+            self.assertEqual(result["benefit_regime"]["value"], "municipal")
+            self.assertEqual(result["employment_kind"]["status"], "not_applicable")
+            self.assertEqual(result["paying_organization"]["status"], "missing")
+
+    def test_whatsapp_transport_phone_is_not_a_form_answer(self):
+        envelope = sample("whatsapp")
+        envelope["payload"]["whatsapp"] = "synthetic transport phone"
+        result = fields(envelope)
+        self.assertEqual(result["phone"]["status"], "not_in_form")
+        self.assertEqual(capture(envelope, now=NOW).payload["whatsapp"], "synthetic transport phone")
+
     def test_unseen_form_is_captured_without_speculative_interpretation(self):
         missing_contract = capture(sample() | {"form_version": "web-loan-v2"}, now=NOW)
         self.assertEqual(normalize(missing_contract)["status"], "unsupported_form_version")

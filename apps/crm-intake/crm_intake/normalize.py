@@ -24,7 +24,7 @@ EMPLOYMENT = {
     "empleado publico municipal": "public_employee_municipal", "policia": "police", "policia cordoba": "police",
     "policia federal": "federal_police", "pfa": "federal_police", "docente": "teacher",
     "personal de salud": "health_worker", "salud": "health_worker", "empleado de la unc": "unc", "unc": "unc",
-    "daspu": "daspu", "jubilado municipal": "municipal_retiree", "otra": "other",
+    "daspu": "daspu", "otra": "other",
 }
 
 
@@ -80,15 +80,33 @@ def identity(payload, phone_field):
         fact("declared", "cuil", value=cleaned) if valid else
         fact("missing" if cuil is None or cuil == "" else "invalid", "cuil")
     )
-    for field, output in (("email", "email"), (phone_field, "phone")):
-        value = payload.get(field)
+    email = payload.get("email")
+    if email is None or email == "":
+        result["email"] = fact("missing", "email")
+    elif isinstance(email, str) and len(email.strip()) <= 254 and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip()):
+        result["email"] = fact("declared", "email", value=email.strip().lower())
+    else:
+        result["email"] = fact("invalid", "email")
+    if phone_field is None:
+        result["phone"] = fact("not_in_form")
+    else:
+        value = payload.get(phone_field)
         if value is None or value == "":
-            result[output] = fact("missing", field)
+            result["phone"] = fact("missing", phone_field)
         elif isinstance(value, str) and value.strip():
-            result[output] = fact("declared", field, value=value.strip())
+            result["phone"] = fact("declared", phone_field, value=value.strip())
         else:
-            result[output] = fact("invalid", field)
+            result["phone"] = fact("invalid", phone_field)
     return result
+
+
+def municipal_benefit(field):
+    return {
+        "employment_kind": fact("not_applicable", field),
+        "benefit_kind": fact("inferred", field, value="retirement"),
+        "benefit_regime": fact("inferred", field, value="municipal"),
+        "paying_organization": fact("missing", field),
+    }
 
 
 def web_fields(payload):
@@ -101,7 +119,9 @@ def web_fields(payload):
         "benefit_kind": fact("not_applicable", situation),
         "paying_organization": fact("not_applicable", situation),
     }
-    if kind in {"jubilado nacional", "jubilado provincial", "pensionado", "jubilado o pensionado"}:
+    if kind == "jubilado municipal":
+        fields.update(municipal_benefit(situation))
+    elif kind in {"jubilado nacional", "jubilado provincial", "pensionado", "jubilado o pensionado"}:
         if kind == "jubilado o pensionado":
             fields["benefit_kind"] = fact("ambiguous", situation, alternatives=["retirement", "pension"])
         else:
@@ -130,11 +150,14 @@ def whatsapp_fields(payload, *, legacy_grouped):
         fields.update({key: fact("undetermined", "provincia") for key in (
             "employment_kind", "benefit_kind", "paying_organization", "payment_bank",
         )})
-        return fields | identity(payload, "whatsapp")
+        return fields | identity(payload, None)
     branch = "otra" if province_code == "other" else province_code
     situation = f"situacion_{branch}"
     kind = token(payload.get(situation))
-    if kind in {"jubilado", "pensionado"} or (legacy_grouped and kind == "jubilado pensionado"):
+    if branch == "cordoba" and kind == "jubilado municipal":
+        fields.update(municipal_benefit(situation))
+        fields["payment_bank"] = bank(payload, "banco_cordoba")
+    elif kind in {"jubilado", "pensionado"} or (legacy_grouped and kind == "jubilado pensionado"):
         fields["employment_kind"] = fact("not_applicable", situation)
         if kind == "jubilado pensionado":
             fields["benefit_kind"] = fact("ambiguous", situation, alternatives=["retirement", "pension"])
@@ -162,7 +185,7 @@ def whatsapp_fields(payload, *, legacy_grouped):
         fields["payment_bank"] = (
             bank(payload, f"banco_{branch}") if employment["status"] == "declared" else fact("undetermined", situation)
         )
-    return fields | identity(payload, "whatsapp")
+    return fields | identity(payload, None)
 
 
 def normalize(submission):
