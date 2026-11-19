@@ -76,7 +76,10 @@ class WebFormChatRouting
     {
         return DB::transaction(function () use ($limit): int {
             $rows = DB::table('web_form_chat_routes')->whereIn('state', ['pending', 'waiting', 'unknown'])
-                ->where('created_at', '<=', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))
+                ->where(fn ($q) => $q->whereNull('reason')->orWhere('reason', '!=', WebFormChatRetryPolicy::QUEUED_SELLER))
+                ->where(fn ($q) => $q->where('retry_expires_at', '<=', now())
+                    ->orWhere(fn ($legacy) => $legacy->whereNull('retry_expires_at')
+                        ->where('created_at', '<=', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))))
                 ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->orderBy('created_at')->limit($limit)->lockForUpdate()->get();
             $policy = new WebFormChatRetryPolicy;
@@ -100,7 +103,9 @@ class WebFormChatRouting
                     $q->whereIn('state', ['pending', 'waiting'])
                         ->orWhere(fn ($unknown) => $unknown->where('state', 'unknown')->whereIn('transfer_state', ['sending', 'unknown']));
                 })
-                ->where('created_at', '>', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))
+                ->where(fn ($q) => $q->where('reason', WebFormChatRetryPolicy::QUEUED_SELLER)->orWhere('retry_expires_at', '>', now())
+                    ->orWhere(fn ($ordinary) => $ordinary->whereNull('retry_expires_at')
+                        ->where('created_at', '>', now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))))
                 ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->where(fn ($q) => $q->whereNull('enqueued_at')->orWhere('enqueued_at', '<=', now()->subMinute()))

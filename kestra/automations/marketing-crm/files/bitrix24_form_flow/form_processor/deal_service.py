@@ -700,7 +700,7 @@ def _counter(value):
     return int(value)
 
 
-def _unattended_sales_session(client, chat_id, initial):
+def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
     """Read the exact current session twice, then reread its identity/owner.
 
     No accepting/starting/transfer is used for inspection. The external transfer
@@ -772,6 +772,7 @@ def _unattended_sales_session(client, chat_id, initial):
                 raise ValueError("Native history has a tariff limit.")
             messages = history["message"].values() if isinstance(history["message"], dict) else history["message"]
             seen = set()
+            entry_matches = []
             for message in messages:
                 if not isinstance(message, dict) or str(message.get("chatid")) != str(chat_id):
                     raise ValueError("Native message identity is unknown.")
@@ -795,6 +796,15 @@ def _unattended_sales_session(client, chat_id, initial):
                     raise ValueError("Native sender is unknown.")
                 if user["connector"] is False:
                     return False, "operator_message_preserved"
+                if entry_binding is not None:
+                    params = message.get("params", {})
+                    params = json.loads(params) if isinstance(params, str) else params
+                    external = params.get("connectorMid", params.get("CONNECTOR_MID", [])) if isinstance(params, dict) else []
+                    values = external if isinstance(external, list) else [external]
+                    if entry_binding["entry_message_id"] in [str(value) for value in values]:
+                        entry_matches.append((str(mid), str(sender)))
+            if entry_binding is not None and entry_matches != [(entry_binding["message_id"], channel[3])]:
+                return False, "native_message_unverified"
         last = read("imopenlines.dialog.get", {"CHAT_ID": chat_id})
         if not isinstance(last, dict) or active_open_line_session_id(last) != session_id:
             return False, "session_changed_before_transfer"

@@ -579,8 +579,12 @@ Cada espera se elige al azar entre el 50 % y el 100 % del techo; no supera
 entre consultas. El poll corre cada minuto: estos intervalos indican cuándo
 el trabajo pasa a estar disponible, no una promesa de ejecución exacta.
 
-La recuperación automática termina a las **8 horas desde `created_at` de la ruta
-del mensaje**, sin renovar ese plazo con cada intento. El claim comprueba el
+La recuperación automática dispone de **8 horas desde `created_at` de la ruta
+del mensaje**. Para ingresos nuevos desde el 19/11/2026 a las 11:00 ART se descuenta
+la espera de apertura acreditada por Kestra para esa misma negociación y sesión.
+Se guarda el despertar previsto y los intentos se reanudan con el tiempo que quedaba.
+Las esperas por identidad, evidencia de atención o errores de lectura siguen consumiendo el plazo.
+El claim comprueba el
 vencimiento antes de cualquier lectura CRM; también se verifica durante el job
 y antes de transferir. El poll caduca filas sin lease vigente en lotes acotados.
 Los jobs antiguos ya encolados se reconocen y terminan localmente sin repetir
@@ -776,9 +780,9 @@ vincular o transferir, el puente prueba el MID nativo del mensaje original y del
 actual, el chat, la sesión, la identidad declarada y el recibo web. Otra sesión
 libera únicamente su callback nuevo al ingreso habitual; no se reproduce el inbox.
 Dos solicitudes activas o evidencia incompatible quedan para revisión.
-La ventana de ocho horas es fija desde el mensaje original y no se renueva con
-mensajes ni reintentos; se mantienen el backoff exponencial con jitter y la
-prioridad de ingresos nuevos del puente.
+La ventana parte del mensaje original y conserva su vencimiento entre reintentos.
+Solo el intervalo de espera comercial confirmado prolonga el plazo del ingreso
+nuevo y su contexto. Se conserva la prioridad de ingresos nuevos del puente.
 
 Una conversión de prospecto a negociación se acepta sólo con la negociación
 activa única en el embudo comercial, `LEAD_ID` y contacto exactos y actividad

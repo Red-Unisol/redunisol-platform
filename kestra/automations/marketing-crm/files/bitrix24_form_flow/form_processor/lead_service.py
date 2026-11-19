@@ -36,6 +36,8 @@ def create_lead(
     submission: NormalizedInput,
     contact_id: int,
     logger: Logger,
+    *,
+    provisional_owner: bool = False,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
     source_id = (
@@ -67,6 +69,8 @@ def create_lead(
         config.fields.lead_source: source_id,
     }
 
+    if provisional_owner:
+        fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
     fields.update(_build_optional_tracking_fields(config, submission))
     fields.update(attribution_lead_fields(
         client, submission.attribution,

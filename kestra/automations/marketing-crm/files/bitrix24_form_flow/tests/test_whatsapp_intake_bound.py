@@ -1,10 +1,12 @@
 import copy
+from datetime import datetime, timedelta
 import json
 import unittest
 from unittest.mock import Mock, patch
 
 from bitrix24_form_flow.form_processor.intake_context import CHANNEL_CONTRACT, CHANNEL_SUBFLOW
 from bitrix24_form_flow.form_processor.intake_crm_client import IntakeCrmClient
+from bitrix24_form_flow.form_processor._initial_receiver import prefill_receipt
 from bitrix24_form_flow.form_processor.lead_service import build_prequalification_input_from_lead
 from bitrix24_form_flow.form_processor.qualification import evaluate_prequalification
 from bitrix24_form_flow.form_processor.whatsapp_intake import InvalidIntake, process
@@ -57,6 +59,57 @@ class BoundCrm(IntakeCrm):
 
 
 class BoundIntakeTests(unittest.TestCase):
+    def test_normalize_only_the_new_proven_unattended_native_receiver(self):
+        created = "2026-12-01T15:00:00+00:00"
+        epoch = int(datetime.fromisoformat(created).timestamp())
+        for scenario in ("pristine", "verified_prefill", "missing_receipt", "edited_after_prefill",
+                         "answered", "replied", "transferred", "reopened", "wrong_message",
+                         "wrong_creator", "old_entry", "manual_reassignment"):
+            with self.subTest(scenario=scenario):
+                api = BoundCrm()
+                p = channel_payload()
+                p["received_at"] = (datetime.fromisoformat(created) + timedelta(minutes=4)).isoformat()
+                p["entry_context"]["received_at"] = created if scenario != "old_entry" else "2026-11-01T15:00:00Z"
+                lead = api.leads["10"]
+                lead.update(DATE_CREATE=created, DATE_MODIFY=created, ASSIGNED_BY_ID="74827",
+                            MODIFY_BY_ID="74827", CREATED_BY_ID="74827" if scenario != "wrong_creator" else "57")
+                env = dict(CHANNEL_ENV)
+                if scenario in ("verified_prefill", "missing_receipt", "edited_after_prefill"):
+                    before = dict(lead)
+                    lead.update(STATUS_ID="NEW", DATE_MODIFY="2026-12-01T15:01:00+00:00", MODIFY_BY_ID="71283")
+                    if scenario != "missing_receipt":
+                        env["INITIAL_RECEIVER_REVISION"] = prefill_receipt(before, lead, "NEW")
+                        self.assertTrue(env["INITIAL_RECEIVER_REVISION"])
+                    if scenario == "edited_after_prefill":
+                        lead["DATE_MODIFY"] = "2026-12-01T15:02:00+00:00"
+                if scenario == "manual_reassignment":
+                    lead["ASSIGNED_BY_ID"] = "90231"
+                original_owner = lead["ASSIGNED_BY_ID"]
+                session = "301" if scenario == "reopened" else "300"
+                api.dialog.update(entity_id=f"whatsappbyedna|1|{PHONE}@2423|17", owner=74827,
+                                  entity_data_1=f"Y|LEAD|10|N|N|{session}|{epoch}|0", text_field_enabled=True)
+                def read(method, body):
+                    if method == "imopenlines.v2.Session.list":
+                        return {"hasNextPage": False, "sessions": [{"id": 300, "chatId": 200, "configId": 1,
+                            "dateCreate": created, "status": "answered" if scenario == "answered" else "new",
+                            "operatorId": None, "dateOperatorAnswer": None, "dateFirstAnswer": None, "dateClose": None}]}
+                    if method == "imopenlines.v2.Session.Stat.get":
+                        return {"sessions": [{"sessionId": 300, "messagesOperatorCount": int(scenario == "replied"),
+                                              "transfersCount": int(scenario == "transferred")}]}
+                    if method == "imopenlines.v2.Session.Transfer.list":
+                        return {"transfers": [{"sessionId": 300, "type": "USER", "mode": "MANUAL"}]
+                                if scenario == "transferred" else []}
+                    if method == "imopenlines.session.history.get":
+                        return {"sessionId": 300, "chatId": 200, "hasNextPage": False, "users": {"17": {"connector": True}},
+                                "message": [{"id": 400, "chatid": 200, "senderid": 17,
+                                             "params": {"connectorMid": ["105" if scenario == "wrong_message" else "101"]}}]}
+                    return BoundCrm.call(api, method, body)
+                with patch.object(api, "call", side_effect=read):
+                    result = process(p, env=env, client=api)
+                self.assertEqual(result["action"], "queued")
+                expected = 57 if scenario in ("pristine", "verified_prefill") else original_owner
+                self.assertEqual(lead["ASSIGNED_BY_ID"], expected)
+
     def test_native_bitrix_initial_records_handoff_once_without_new_leads_or_contacts(self):
         for stage in ("UC_PWTVG6", "UC_5N2OEO", "NEW"):
             for policy in (None, False, "", []):

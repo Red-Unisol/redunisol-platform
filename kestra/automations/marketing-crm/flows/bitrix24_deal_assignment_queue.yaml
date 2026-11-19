@@ -1,7 +1,7 @@
 id: bitrix24_deal_assignment_queue
 namespace: redunisol
 
-description: Reintenta una negociación por bucket y cierra la cola al finalizar la ventana semanal.
+description: Reintenta una negociación por grupo en horario de Ventas y conserva los ingresos nuevos hasta la próxima apertura.
 
 concurrency:
   limit: 1
@@ -21,29 +21,28 @@ tasks:
   # logLevel WARN en las dos tareas: corre cada minuto y el resultado de cada vuelta ya
   # queda en los outputs del flow; en la base se guardan solo advertencias y errores.
   - id: hay_pendientes
-    type: io.kestra.plugin.scripts.python.Script
+    type: io.kestra.plugin.scripts.python.Commands
     timeout: PT1M
     logLevel: WARN
     taskRunner:
       type: io.kestra.plugin.core.runner.Process
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/kestra_assignment_queue_probe.py
+        - bitrix24_form_flow/form_processor/config.py
+        - bitrix24_form_flow/form_processor/_sales_opening.py
+        - bitrix24_form_flow/form_processor/_routing_cutover.py
+        - edna_incoming/out_of_hours.py
     env:
       BITRIX24_LIST_URL: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.item.list.json"
       BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
       BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID: "{{ envs.bitrix24_deal_assignment_queue_stage_id ?? 'C1:KESTRA_QUEUE' }}"
-    script: |
-      import json, os, urllib.request
-      body = json.dumps({
-          "entityTypeId": 2,
-          "filter": {"=categoryId": os.environ["BITRIX24_DEAL_CATEGORY_ID"],
-                     "=stageId": os.environ["BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID"]},
-          "select": ["id"],
-      }).encode()
-      request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
-                                       headers={"Content-Type": "application/json"})
-      with urllib.request.urlopen(request, timeout=15) as response:
-          total = json.load(response).get("total")
-      # Sin total no se sabe: corre el procesamiento, como antes de esta tarea.
-      print("::" + json.dumps({"outputs": {"total": total if isinstance(total, int) else 1}}) + "::")
+      QUEUE_REASON_FIELD: "{{ envs.bitrix24_deal_queue_reason_field ?? 'ufCrmKqReason' }}"
+      ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
+      BITRIX24_ROUTING_CONFIG_URL: "{{ envs.bitrix24_routing_config_url ?? 'https://redunisol.com.ar/api/internal/bitrix-routing' }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_assignment_queue_probe
 
   - id: procesar_colas
     type: io.kestra.plugin.scripts.python.Commands
@@ -53,6 +52,7 @@ tasks:
       enabled: true
       include:
         - bitrix24_form_flow/**
+        - edna_incoming/out_of_hours.py
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
     containerImage: ghcr.io/kestra-io/pydata:latest

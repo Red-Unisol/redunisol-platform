@@ -49,6 +49,7 @@ tasks:
       enabled: true
       include:
         - bitrix24_form_flow/**
+        - edna_incoming/out_of_hours.py
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       networkMode: kestra_net

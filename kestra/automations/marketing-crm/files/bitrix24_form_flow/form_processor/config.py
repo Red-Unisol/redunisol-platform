@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from urllib.error import URLError
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 from urllib.request import urlopen
 
 
@@ -228,11 +229,12 @@ class AppConfig:
     commercial_owner: CommercialOwnerConfig
     deal: DealConfig
     timeout_seconds: int
+    sales_calendar: dict | None
 
 
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
     source = dict(os.environ if env is None else env)
-    routing_pools = _load_routing_pools(source)
+    routing_pools, sales_calendar = load_routing_settings(source)
 
     return AppConfig(
         base_url=_strip_trailing_slashes(_required_env(source, "BITRIX24_BASE_URL")),
@@ -542,16 +544,20 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
+        sales_calendar=sales_calendar,
     )
 
 
-def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
+def load_routing_settings(env: dict[str, str]) -> tuple[dict[str, tuple[int, ...]], dict | None]:
     url = env.get("BITRIX24_ROUTING_CONFIG_URL", "").strip()
     if not url:
-        return {}
+        return {}, {"timezone": "America/Argentina/Cordoba", "open": "09:00", "close": "17:00",
+                    "weekdays": [1, 2, 3, 4, 5], "holidays": []}
 
     try:
-        with urlopen(url, timeout=3) as response:
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True), include="sales_calendar")
+        with urlopen(urlunsplit(parts._replace(query=urlencode(query))), timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
         raise RuntimeError("No se pudo consultar la distribución administrada; reintentar sin asignar vendedores de respaldo.") from None
@@ -589,7 +595,7 @@ def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
         if key not in payload and "santa_fe_anses" in payload:
             pools[key] = pools["santa_fe_anses"]
 
-    return pools
+    return pools, payload.get("sales_calendar")
 
 
 def _required_env(env: dict[str, str], key: str) -> str:

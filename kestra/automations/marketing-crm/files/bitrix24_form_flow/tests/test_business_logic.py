@@ -2983,6 +2983,25 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertNotIn("UTM_TERM", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_CONTENT", client.calls[-1][1]["fields"])
 
+    def test_only_fresh_server_stamped_web_intake_sets_the_provisional_lead_owner(self):
+        for channel, received, expected in (
+            ("redunisol-web", "2026-12-01T09:00:00-03:00", 57),
+            ("redunisol-web", "2026-11-01T09:00:00-03:00", None),
+            ("redunisol-web", None, None),
+            ("other", "2026-12-01T09:00:00-03:00", None),
+        ):
+            with self.subTest(channel=channel, received=received):
+                client = FakeBitrixClient()
+                result = ingest_submission({
+                    "full_name": "Prueba Web", "email": "perfil@example.com", "whatsapp": "3511234567",
+                    "cuil": "20-87654321-9", "province": "Cordoba", "employment_status": "Jubilado Provincial",
+                    "payment_bank": "Banco Santander Rio S.A.", "lead_source": "Facebook",
+                    "submission_channel": channel, "form_received_at": received,
+                }, env=self.env, bitrix_client=client, logger=SilentLogger())
+                self.assertTrue(result["ok"])
+                added = next(body["fields"] for method, body in client.calls if method == "crm.lead.add")
+                self.assertEqual(added.get("ASSIGNED_BY_ID"), expected)
+
     def test_ingest_submission_reuses_master_contact_when_cuil_is_duplicated(self) -> None:
         client = FakeBitrixClient()
         client.contacts[101] = {
@@ -3810,6 +3829,26 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual([lead["lead_id"] for lead in select()], ["801", "802"])
         with self.assertRaises(ValueError):
             select_new_leads_for_prefill(limit=3, env=self.env)
+
+    def test_only_first_stage_only_prefill_attests_the_native_receiver(self):
+        stamp = "2026-12-01T09:00:00-03:00"
+        for owner_after in ("74827", "90231"):
+            with self.subTest(owner_after=owner_after):
+                client = FakeBitrixClient()
+                client.leads[802] = {"ID": "802", "STATUS_ID": "UC_5N2OEO", "CREATED_BY_ID": "74827",
+                    "MODIFY_BY_ID": "74827", "ASSIGNED_BY_ID": "74827", "DATE_CREATE": stamp, "DATE_MODIFY": stamp}
+                def call(method, body):
+                    res = FakeBitrixClient.call(client, method, body)
+                    if method == "crm.lead.update":
+                        self.assertEqual(body["fields"], {"STATUS_ID": "NEW"})
+                        client.leads[802].update(MODIFY_BY_ID="71283", ASSIGNED_BY_ID=owner_after,
+                                                 DATE_MODIFY="2026-12-01T09:01:00-03:00")
+                    return res
+                with patch.object(client, "call", side_effect=call):
+                    res = prefill_lead(802, arca_output={}, credixsa_output={}, env=self.env,
+                                       bitrix_client=client, logger=SilentLogger())
+                self.assertEqual(res["action"], "advanced_partial")
+                self.assertEqual(len(res.get("initial_receiver_revision", "")), 64 if owner_after == "74827" else 0)
 
     def test_prefill_missing_cuil_advances_immediately_without_retry(self) -> None:
         client = FakeBitrixClient()
@@ -5855,6 +5894,83 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(closed["distribution_reason"], "assignment_queue_closed")
         self.assertEqual(client.deals[964]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[964]["assignedById"], 57)
+        self.assertEqual(client.chat_transfers, [])
+
+    def test_new_weekend_intake_waits_without_seller_queries_until_open(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {10451}
+        arrived = "2026-12-05T02:00:00-03:00"
+        client.leads[965] = self._cordoba_enriched_lead(965, employment_id="1239", bcra_entities=[])
+        client.leads[965].update(DATE_CREATE=arrived, UF_CRM_BCRA_CHECKED_AT=arrived)
+        client.deals[965] = {**self._pending_deal(965, 965), "createdTime": arrived}
+        env = {**self.env, "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true"}
+        with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee") as resolve:
+            result = qualify_catamarca_deal(965, env=env, bitrix_client=client, logger=SilentLogger(),
+                                            now=datetime.fromisoformat(arrived))
+            self.assertEqual(result["reason"], "waiting_for_sales_opening")
+            self.assertEqual(client.deals[965]["ufCrmKqReason"],
+                             "waiting_for_sales_opening|2026-12-05T05:00:00+00:00|2026-12-07T12:00:00+00:00|cbu_approved")
+            for date in ("2026-12-06T13:00:00-03:00", "2026-12-07T08:59:59-03:00"):
+                waiting = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),
+                                                     now=datetime.fromisoformat(date))
+                self.assertEqual(waiting["event_count"], 0)
+            resolve.assert_not_called()
+
+        opened = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),
+                                            now=datetime.fromisoformat("2026-12-07T09:00:00-03:00"))
+        self.assertEqual(opened["distributed_count"], 1)
+        self.assertEqual(opened["events"][0]["commercial_reason"], "cbu_approved")
+        self.assertEqual(client.deals[965]["assignedById"], 10451)
+
+    def test_new_daytime_queue_holds_at_close_and_observes_sales_holidays(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = set()
+        arrived = "2026-12-04T16:30:00-03:00"
+        client.leads[965] = self._cordoba_enriched_lead(965, employment_id="1239", bcra_entities=[])
+        client.leads[965].update(DATE_CREATE=arrived, UF_CRM_BCRA_CHECKED_AT=arrived)
+        client.deals[965] = {**self._pending_deal(965, 965), "createdTime": arrived}
+        calendar = {"timezone": "America/Argentina/Cordoba", "open": "09:00", "close": "17:00",
+                    "weekdays": [1, 2, 3, 4, 5], "holidays": ["2026-12-07"]}
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {"sales_calendar": calendar, "cordoba_general": [10451, 29]}).encode()
+        env = {**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"}
+        with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+            result = qualify_catamarca_deal(965, env=env, bitrix_client=client, logger=SilentLogger(),
+                                            now=datetime.fromisoformat(arrived))
+            self.assertEqual(result["distribution_reason"], "assignment_queued")
+            client.online_user_ids = {10451}
+            for date in ("2026-12-04T17:00:00-03:00", "2026-12-07T11:00:00-03:00"):
+                waiting = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),
+                                                     now=datetime.fromisoformat(date))
+                self.assertEqual(waiting["closed_count"], 0)
+                self.assertEqual(client.deals[965]["ufCrmKqReason"],
+                                 "waiting_for_sales_opening|2026-12-04T20:00:00+00:00|2026-12-08T12:00:00+00:00|cbu_approved")
+            client.leads[965]["ASSIGNED_BY_ID"] = 29
+            with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee") as select:
+                opened = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),
+                                                    now=datetime.fromisoformat("2026-12-08T09:00:00-03:00"))
+                select.assert_not_called()
+            self.assertTrue(opened["ok"])
+            self.assertEqual(client.leads[965]["ASSIGNED_BY_ID"], 29)
+            self.assertEqual(client.chat_transfers, [])
+
+    def test_new_assignment_crossing_friday_close_is_held(self) -> None:
+        from bitrix24_form_flow.form_processor import catamarca_deal_qualification as qualifier
+
+        client = FakeBitrixClient()
+        client.online_user_ids = {10451}
+        arrived = "2026-12-04T16:59:55-03:00"
+        closing = datetime.fromisoformat("2026-12-04T17:00:00-03:00")
+        client.leads[965] = self._cordoba_enriched_lead(965, employment_id="1239", bcra_entities=[])
+        client.leads[965].update(DATE_CREATE=arrived, UF_CRM_BCRA_CHECKED_AT=arrived)
+        client.deals[965] = {**self._pending_deal(965, 965), "createdTime": arrived}
+        with patch.object(qualifier, "resolve_round_robin_assignee", wraps=qualifier.resolve_round_robin_assignee) as select:
+            clock = lambda source, now: closing if select.called else datetime.fromisoformat(arrived)
+            with patch.object(qualifier, "_local_datetime", side_effect=clock):
+                result = qualify_catamarca_deal(965, env=self.env, bitrix_client=client, logger=SilentLogger())
+        self.assertEqual(result["distribution_reason"], "waiting_for_sales_opening")
+        self.assertEqual(client.deals[965]["assignedById"], 57)
         self.assertEqual(client.chat_transfers, [])
 
     def test_deal_created_on_weekend_does_not_enter_queue_on_monday(self) -> None:

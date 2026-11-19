@@ -39,6 +39,7 @@ it('queues form persistence after receiving commercial prequalification', functi
         'utm_source' => 'google',
         'recibo_url' => 'https://cdn.example.test/recibos/archivo.pdf',
         'journey_page_id' => 'c7aa9165-e5c9-49aa-8db7-97e1b449f90e',
+        '_form_received_at' => '2099-01-01T00:00:00Z',
     ]);
 
     $response->assertOk()->assertJson([
@@ -51,6 +52,7 @@ it('queues form persistence after receiving commercial prequalification', functi
 
     Queue::assertPushed(PersistFormSubmission::class, function ($job) {
         return $job->qualified
+            && abs(now()->diffInSeconds($job->input['_form_received_at'])) < 5
             && $job->prequalification['reason'] === 'qualified'
             && $job->input['cuil'] === '20-12345678-3'
             && $job->input['email'] === 'juan.perez@example.com'

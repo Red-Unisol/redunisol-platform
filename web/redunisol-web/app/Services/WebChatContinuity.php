@@ -16,9 +16,9 @@ class WebChatContinuity
 
     public const WINDOW_HOURS = 8;
 
-    public function eligibleEntry(object $event): bool
+    public function eligibleEntry(object $event, int $salesCredit = 0): bool
     {
-        return $this->authenticated($event) !== null;
+        return $this->authenticated($event, salesCredit: $salesCredit) !== null;
     }
 
     public function captureReference(object $event, object $receipt): ?int
@@ -149,7 +149,7 @@ class WebChatContinuity
         return false;
     }
 
-    public function bind(int $entryId, array $proof): array
+    public function bind(int $entryId, array $proof, int $salesCredit = 0): array
     {
         $continuation = DB::table('web_form_continuations')->where('entry_event_id', $entryId)->first();
         $context = $continuation?->context_id ? DB::table('web_chat_contexts')->find($continuation->context_id) : null;
@@ -157,10 +157,10 @@ class WebChatContinuity
             return $this->result('review', 'web_context_unavailable');
         }
 
-        return app(WebFormReceipt::class)->serialized($context->phone_hash, function () use ($entryId, $proof, $context): array {
+        return app(WebFormReceipt::class)->serialized($context->phone_hash, function () use ($entryId, $proof, $context, $salesCredit): array {
             $context = DB::table('web_chat_contexts')->where('id', $context->id)->lockForUpdate()->first();
             $event = DB::table('edna_incoming_events')->find($entryId);
-            $payload = $event ? $this->authenticated($event) : null;
+            $payload = $event ? $this->authenticated($event, salesCredit: $salesCredit) : null;
             $cut = $this->cutover();
             if (! $context || ! $event || ! $payload || ! $cut || ! $this->active($context, $cut)) {
                 return $this->result('released', 'web_context_expired_or_ended', $context?->id);
@@ -170,13 +170,18 @@ class WebChatContinuity
                 || ! $this->validProof($proof, $event)) {
                 return $this->result('review', 'web_context_message_unverified', $context->id);
             }
-            if ($this->contexts($context->subject_id, $context->phone_hash, $cut)->pluck('submission_id')->unique()->count() !== 1) {
+            if ($context->sales_opening_at && $context->state === 'review') {
+                return $this->result('review', 'web_context_multiple_submissions', $context->id);
+            }
+            if ($this->contexts($context->subject_id, $context->phone_hash, $cut)->where('submission_id', '!=', $context->submission_id)->exists()) {
                 $this->markAmbiguous($context->subject_id, $context->phone_hash, $cut);
 
                 return $this->result('review', 'web_context_multiple_submissions', $context->id);
             }
             $anchor = DB::table('edna_incoming_events')->find($context->anchor_entry_event_id);
-            $anchorPayload = $anchor ? $this->authenticated($anchor) : null;
+            $anchorCredit = $context->sales_expires_at
+                ? max(0, CarbonImmutable::parse($context->sales_expires_at)->timestamp - CarbonImmutable::parse($context->expires_at)->timestamp) : 0;
+            $anchorPayload = $anchor ? $this->authenticated($anchor, salesCredit: $anchorCredit) : null;
             if (! $anchor || ! $anchorPayload || ! $this->validAnchor($context, $anchorPayload, $cut)) {
                 return $this->result('review', 'web_context_anchor_unverified', $context->id);
             }
@@ -233,7 +238,8 @@ class WebChatContinuity
             $context = DB::table('web_chat_contexts')->where('id', $continuation->context_id)->lockForUpdate()->first();
             $event = DB::table('edna_incoming_events')->find($entryId);
             $cut = $this->cutover();
-            if (! $context || ! $cut || ! $this->active($context, $cut) || ! $event || ! $this->eligibleEntry($event)) {
+            $salesCredit = $fields['sales_credit_seconds'] ?? 0;
+            if (! $context || ! $cut || ! $this->active($context, $cut) || ! $event || ! $this->eligibleEntry($event, $salesCredit)) {
                 return;
             }
             $update = ['route_state' => $state, 'reason' => $reason, 'last_route_entry_event_id' => $entryId, 'updated_at' => now()];
@@ -272,6 +278,26 @@ class WebChatContinuity
             }
             DB::table('web_chat_contexts')->where('id', $context->id)->update($update);
         });
+    }
+
+    /** Called in the route's lease transaction. Follow-ups must still prove this exact chat and session. */
+    public function holdForOpening(int $contextId, object $route, array $proof, CarbonImmutable $start, CarbonImmutable $open): void
+    {
+        $context = DB::table('web_chat_contexts')->where('id', $contextId)->lockForUpdate()->first();
+        if (! $context || $context->submission_id !== $route->submission_id
+            || ! $this->id($context->chat_id) || (string) $context->chat_id !== (string) ($proof['chat_id'] ?? '')
+            || ! $this->id($context->session_id) || (string) $context->session_id !== (string) ($proof['session_id'] ?? '')
+            || in_array($context->state, ['released', 'expired', 'preserved', 'review'], true)) {
+            return;
+        }
+        $deadline = CarbonImmutable::parse($context->sales_expires_at ?? $context->expires_at);
+        if ($context->sales_opening_at) {
+            $start = $start->max(CarbonImmutable::parse($context->sales_opening_at));
+        }
+        if ($start->lt($deadline) && $start->lt($open)) {
+            DB::table('web_chat_contexts')->where('id', $contextId)->update(['sales_opening_at' => $open,
+                'sales_expires_at' => $deadline->addSeconds($open->timestamp - $start->timestamp), 'updated_at' => now()]);
+        }
     }
 
     private function validAnchor(object $context, array $payload, object $cut): bool
@@ -314,7 +340,7 @@ class WebChatContinuity
         }
     }
 
-    private function authenticated(object $event, ?array $provided = null): ?array
+    private function authenticated(object $event, ?array $provided = null, int $salesCredit = 0): ?array
     {
         $cut = $this->cutover();
         if (! $cut || ! $this->id($event->id ?? null) || (int) $event->id <= (int) $cut->entry_id_after
@@ -334,7 +360,7 @@ class WebChatContinuity
             $received = CarbonImmutable::parse($timestamp);
 
             return $received->gte(CarbonImmutable::parse($cut->starts_at))
-                && $received->gt(now()->subHours(self::WINDOW_HOURS)) && $received->lte(now()->addMinutes(5)) ? $payload : null;
+                && $received->gt(now()->subHours(self::WINDOW_HOURS)->subSeconds($salesCredit)) && $received->lte(now()->addMinutes(5)) ? $payload : null;
         } catch (Throwable) {
             return null;
         }
@@ -353,13 +379,14 @@ class WebChatContinuity
     {
         return DB::table('web_chat_contexts')->where('subject_id', $subject)->where('phone_hash', $hash)
             ->where('created_at', '>=', $cut->starts_at)->where('anchor_entry_event_id', '>', $cut->entry_id_after)
-            ->where('expires_at', '>', now())->whereNotIn('state', ['released', 'expired'])->orderBy('id');
+            ->where(fn ($q) => $q->where('expires_at', '>', now())->orWhere('sales_expires_at', '>', now()))
+            ->whereNotIn('state', ['released', 'expired'])->orderBy('id');
     }
 
     private function active(object $context, object $cut): bool
     {
         return $this->afterCut($context->created_at, $cut) && (int) $context->anchor_entry_event_id > (int) $cut->entry_id_after
-            && ! in_array($context->state, ['released', 'expired'], true) && CarbonImmutable::parse($context->expires_at)->gt(now());
+            && ! in_array($context->state, ['released', 'expired'], true) && CarbonImmutable::parse($context->sales_expires_at ?? $context->expires_at)->gt(now());
     }
 
     private function afterCut(mixed $timestamp, object $cut): bool
