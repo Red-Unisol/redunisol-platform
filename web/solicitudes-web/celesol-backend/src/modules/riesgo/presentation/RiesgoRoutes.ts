@@ -7,6 +7,16 @@ export class RiesgoRoutes {
     const router = Router();
 
     router.get("/calculadora", controller.getCalculadora);
+    router.get("/calculadora/versiones", controller.listarVersiones);
+    router.post(
+      "/calculadora/versiones/vista-previa",
+      controller.previsualizarVersion,
+    );
+    router.post("/calculadora/versiones", controller.aplicarVersion);
+    router.post(
+      "/calculadora/versiones/:versionId/restaurar",
+      controller.restaurarVersion,
+    );
     router.get(
       "/calculadora/core/:solicitudId/datos",
       controller.getCalculadoraDatosByCoreId,

@@ -80,6 +80,13 @@ class EdnaIntake
     // The authenticated inbox worker owns the surrounding event transaction.
     public function receiveEntry(object $event, array $payload): bool
     {
+        $continuationChecked = false;
+        if ($this->salesChannelEntry($event, $payload) && app(WebChatContinuity::class)->eligibleEntry($event)) {
+            $continuationChecked = true;
+            if (app(WebFormContinuation::class)->receive($event, $payload)) {
+                return true;
+            }
+        }
         if (app(EdnaOrganicMenu::class)->receiveChoice($event, $payload)) {
             return true;
         }
@@ -87,7 +94,7 @@ class EdnaIntake
             return false;
         }
         if (config('edna.organic_menu_enabled')) {
-            if (app(WebFormContinuation::class)->receive($event, $payload)) {
+            if (! $continuationChecked && app(WebFormContinuation::class)->receive($event, $payload)) {
                 return true;
             }
             $paid = app(EdnaPaidEntry::class)->classify($event, $payload);
@@ -102,7 +109,7 @@ class EdnaIntake
             }
         } else {
             if (app(WebFormChatRouting::class)->receiveReentry($event, $payload)
-                || app(WebFormContinuation::class)->receive($event, $payload)) {
+                || (! $continuationChecked && app(WebFormContinuation::class)->receive($event, $payload))) {
                 return true;
             }
         }

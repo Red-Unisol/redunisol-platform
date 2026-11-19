@@ -1,0 +1,12 @@
+---
+- name: Maintain backups of the active recent MetaMap backend on the dedicated
+  hosts: metamap_server_hosts
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Maintain only the explicitly authorized live backup service
+      ansible.builtin.include_role:
+        name: metamap_server
+        tasks_from: recent-backup

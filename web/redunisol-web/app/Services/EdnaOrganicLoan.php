@@ -36,13 +36,13 @@ class EdnaOrganicLoan
     {
         return DB::transaction(function () use ($menuId): bool {
             $menu = DB::table('edna_organic_menus')->where('id', $menuId)->lockForUpdate()->first();
-            if (! $menu || ! in_array($menu->state, ['loan_pending', 'submission_pending'], true)
+            if (! $menu || ! in_array($menu->state, ['loan_pending', 'submission_pending', 'fallback_pending'], true)
                 || ($menu->lease_until && CarbonImmutable::parse($menu->lease_until)->isFuture())
                 || ($menu->available_at && CarbonImmutable::parse($menu->available_at)->isFuture())
                 || ($menu->enqueued_at && CarbonImmutable::parse($menu->enqueued_at)->gt(now()->subMinute()))) {
                 return false;
             }
-            $pushed = app(EdnaWorkQueue::class)->push($menu->state === 'loan_pending' ? new PrepareEdnaOrganicLoan($menuId) : new SubmitEdnaOrganicLoan($menuId));
+            $pushed = app(EdnaWorkQueue::class)->push($menu->state === 'submission_pending' ? new SubmitEdnaOrganicLoan($menuId) : new PrepareEdnaOrganicLoan($menuId));
             if ($pushed) {
                 DB::table('edna_organic_menus')->where('id', $menuId)->update(['enqueued_at' => now(), 'updated_at' => now()]);
             }
@@ -53,7 +53,7 @@ class EdnaOrganicLoan
 
     public function prepare(int $menuId): void
     {
-        $menu = $this->claim($menuId, 'loan_pending');
+        $menu = $this->claim($menuId, 'loan_pending') ?? $this->claim($menuId, 'fallback_pending');
         if (! $menu) {
             return;
         }
@@ -63,11 +63,22 @@ class EdnaOrganicLoan
 
                 return;
             }
+            if ($menu->state === 'fallback_pending') {
+                $this->fallback($menu, 'profile_requires_fresh_confirmation');
+
+                return;
+            }
             $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
             $attention = $this->attention->inspectWelcome($proof);
             if (($attention['status'] ?? '') !== 'ready') {
                 $this->finish($menu, $attention['status'] === 'waiting' ? 'loan_pending' : 'preserved', $attention['reason']);
 
+                return;
+            }
+            if ($this->preserveWebContext($menu, $proof)) {
                 return;
             }
             $snapshot = $this->attention->snapshot($proof);
@@ -101,7 +112,7 @@ class EdnaOrganicLoan
             ]);
             $this->enqueue($menuId);
         } catch (Throwable) {
-            $this->finish($menu, $menu->attempts >= 12 ? 'review' : 'loan_pending', 'organic_profile_preparation_pending');
+            $this->finish($menu, $menu->attempts >= 12 ? 'review' : ($menu->state === 'fallback_pending' ? 'fallback_pending' : 'loan_pending'), 'organic_profile_preparation_pending');
         }
     }
 
@@ -128,6 +139,9 @@ class EdnaOrganicLoan
                 return;
             }
             $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
             $store = Cache::getStore();
             if (! $store instanceof LockProvider || (! app()->runningUnitTests() && ! $store instanceof DatabaseStore && ! $store instanceof RedisStore)) {
                 $this->finish($menu, 'submission_pending', 'shared_chat_lock_unavailable');
@@ -189,14 +203,46 @@ class EdnaOrganicLoan
                 'entry_context' => ['version' => 1, 'source' => 'edna_authenticated', 'event_id' => (int) $entry->id,
                     'message_id' => $entry->message_id, 'subject_id' => $menu->subject_id,
                     'received_at' => CarbonImmutable::parse($payload['receivedAt'])->toIso8601String(), 'origin' => $frozen['origin']]];
+            if (app(WebChatContinuity::class)->eligibleEntry($entry)) {
+                $body['routing_policy'] = WebChatContinuity::NAME;
+                if (empty($body['crm_binding']['native_lead_id']) && ! empty($body['crm_binding']['contact_id'])
+                    && app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::CONTACT_DEAL)) {
+                    $body['contact_deal_activity'] = true;
+                }
+            }
             if (microtime(true) - $startedAt > 45) {
                 $this->finish($menu, 'submission_pending', 'organic_preflight_budget_elapsed');
 
                 return;
             }
-            // Record this intent before the one application POST. Polling never
-            // resubmits a case whose business acknowledgement may have been lost.
-            $this->update($menu, ['state' => 'submitting', 'reason' => 'organic_reuse_request_started']);
+            if ($this->preserveBenefits($menu, $proof)) {
+                return;
+            }
+            $finalAttention = $this->attention->inspectWelcome($proof);
+            if (($finalAttention['status'] ?? '') !== 'ready'
+                || (string) ($finalAttention['owner_id'] ?? '') !== (string) ($attention['owner_id'] ?? '')
+                || (string) ($finalAttention['session_id'] ?? '') !== (string) ($attention['session_id'] ?? '')) {
+                $this->finish($menu, ($finalAttention['status'] ?? '') === 'waiting' ? 'submission_pending' : 'preserved',
+                    $finalAttention['reason'] ?? 'attention_changed_before_business_request');
+
+                return;
+            }
+            // Serialize the local check and claim with reference capture, then
+            // release the recipient lock before the one application POST.
+            $claim = function () use ($menu, $proof): bool {
+                if ($this->preserveWebContext($menu, $proof)) {
+                    return false;
+                }
+                $this->update($menu, ['state' => 'submitting', 'reason' => 'organic_reuse_request_started']);
+
+                return true;
+            };
+            $claimed = app(WebChatContinuity::class)->eligibleEntry($entry)
+                ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
+            if (! $claimed) {
+                return;
+            }
+            // Polling never resubmits an uncertain business acknowledgement.
             $started = true;
             $response = Http::asJson()->acceptJson()->connectTimeout(3)->timeout(60)->withoutRedirecting()->post($url, $body);
             $result = $response->json();
@@ -207,11 +253,23 @@ class EdnaOrganicLoan
             }
             $action = $result['action'] ?? '';
             if ($action === 'reused_not_valid' && $result['write_attempted'] === false) {
+                // Persist the acknowledged no-write outcome. A delayed purpose
+                // check resumes only this fallback, never the business POST.
+                $menu->state = 'fallback_pending';
+                $this->update($menu, ['state' => 'fallback_pending', 'reason' => 'profile_requires_fresh_confirmation',
+                    'profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result,
+                        array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
                 $this->fallback($menu, 'profile_requires_fresh_confirmation');
             } elseif ($action === 'assigned_case' && $result['write_attempted'] === false
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['deal_id'] ?? ''))
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['seller_id'] ?? ''))) {
                 $assigned = array_intersect_key($result, array_flip(['deal_id', 'seller_id', 'lead_id', 'contact_id']));
+                if (($result['reason'] ?? '') === 'existing_contact_deal') {
+                    if (! is_string($result['contact_deal_stage'] ?? null) || $result['contact_deal_stage'] === '') {
+                        throw new RuntimeException('Contact deal stage missing from acknowledgement.');
+                    }
+                    $assigned['contact_deal_stage'] = $result['contact_deal_stage'];
+                }
                 $assigned['profile_identity_hash'] = (new WebFormReceipt)->identityHash($answer['cuil']);
                 $this->finish($menu, 'route_pending', 'existing_commercial_case', ['deal_id' => (string) $result['deal_id'],
                     'seller_id' => (string) $result['seller_id'], 'available_at' => now(), 'enqueued_at' => null,
@@ -235,12 +293,52 @@ class EdnaOrganicLoan
 
     private function fallback(object $menu, string $reason): void
     {
+        $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+        if ($this->preserveBenefits($menu, $proof)) {
+            return;
+        }
         DB::transaction(function () use ($menu, $reason): void {
+            $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+            if ($this->preserveWebContext($menu, $proof)) {
+                return;
+            }
             $this->update($menu, ['state' => 'selected', 'reason' => $reason]);
             $sendId = app(EdnaFlowRouter::class)->startOrganicChoice((int) $menu->id);
             $this->finish($menu, $sendId ? 'flow_scheduled' : 'preserved', $sendId ? 'new_profile_requested' : 'existing_flow_or_context_preserved',
                 $sendId ? ['flow_send_id' => $sendId] : []);
         });
+    }
+
+    private function preserveBenefits(object $menu, array $proof): bool
+    {
+        $entryId = $menu->entry_event_id;
+        if ($menu->choice_event_id && is_array($proof['choice_proof'] ?? null)) {
+            $entryId = $menu->choice_event_id;
+            $proof = $proof['choice_proof'];
+        }
+        $event = DB::table('edna_incoming_events')->find($entryId);
+        if (! $event || ! ($decision = app(EdnaBenefitsRouting::class)->check($event, $proof))) {
+            return false;
+        }
+        $state = match ($decision['state'] ?? '') {
+            'waiting' => $menu->state,
+            'review' => 'review',
+            default => 'preserved',
+        };
+        $this->finish($menu, $state, $decision['reason'] ?? 'benefits_routing');
+
+        return true;
+    }
+
+    private function preserveWebContext(object $menu, array $proof): bool
+    {
+        $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+        if (! $entry || ! app(WebChatContinuity::class)->blocksOutbound($entry, $proof)) {
+            return false;
+        }
+        $this->finish($menu, 'preserved', 'web_continuity_priority');
+
+        return true;
     }
 
     public function poll(int $limit = 25): int
@@ -250,7 +348,7 @@ class EdnaOrganicLoan
                 'lease_until' => null, 'updated_at' => now()]);
         $queue = app(EdnaWorkQueue::class);
         $ids = DB::table('edna_organic_menus')->where(fn ($query) => $query
-            ->where(fn ($prepare) => $queue->withoutPending($prepare->where('state', 'loan_pending'), PrepareEdnaOrganicLoan::class, 'edna_organic_menus.id'))
+            ->where(fn ($prepare) => $queue->withoutPending($prepare->whereIn('state', ['loan_pending', 'fallback_pending']), PrepareEdnaOrganicLoan::class, 'edna_organic_menus.id'))
             ->orWhere(fn ($submit) => $queue->withoutPending($submit->where('state', 'submission_pending'), SubmitEdnaOrganicLoan::class, 'edna_organic_menus.id')))
             ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
             ->where(fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<=', now()))

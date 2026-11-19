@@ -19,6 +19,7 @@ CONTRACT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CONTRACT)
 DEFAULTS = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
 IMAGE = DEFAULTS["bcra_file_api_image"]
+MIGRATION_IMAGE = DEFAULTS["bcra_file_api_migration_image"]
 REVISION = "a" * 40
 
 
@@ -30,7 +31,7 @@ def migration():
         "copy_tree_sha256": "7" * 64, "transfer_revocation_receipt_sha256": "8" * 64,
         "transfer_access_revoked": True, "receiver_alias_removed": True,
         "tree_sha256": "3" * 64, "source_container_id": "d9be0a209f53",
-        "cutoff_at": "2026-11-12T01:59:26.637806Z", "image": IMAGE,
+        "cutoff_at": "2026-11-12T01:59:26.637806Z", "image": MIGRATION_IMAGE,
     }
 
 
@@ -50,7 +51,7 @@ def metadata():
 class MigrationGateTests(unittest.TestCase):
     def validate(self, value):
         raw = json.dumps(value).encode()
-        return CONTRACT.migration_document(raw, hashlib.sha256(raw).hexdigest(), IMAGE)
+        return CONTRACT.migration_document(raw, hashlib.sha256(raw).hexdigest(), MIGRATION_IMAGE)
 
     def test_verified_cutoff_is_preserved_without_exporting_extra_payload(self):
         value = migration()
@@ -67,7 +68,7 @@ class MigrationGateTests(unittest.TestCase):
 
     def test_unverified_copy_sqlite_or_wrong_image_cannot_authorize_start(self):
         for changes in ({"copy_verified": False}, {"sqlite_verified": False}, {"copy_verified": 1},
-                        {"image": "ghcr.io/red-unisol/bcra-file-api:latest"}, {"source_manifest_sha256": ""},
+                        {"image": IMAGE}, {"image": "ghcr.io/red-unisol/bcra-file-api:latest"}, {"source_manifest_sha256": ""},
                         {"source_container_id": "unknown"}, {"cutoff_at": "2026-11-12T01:59:26"},
                         {"cutoff_at": "2026-11-11T22:59:26-03:00"}, {"version": True},
                         {"transfer_access_revoked": False}, {"receiver_alias_removed": False},
@@ -225,7 +226,7 @@ class ColdBackupGateTests(unittest.TestCase):
                 "offsite": False, "continuous_backup": False,
                 "repository_id": "7" * 64, "snapshot_id": "8" * 64,
                 "migration_manifest_sha256": "9" * 64, "restored_manifest_sha256": "9" * 64,
-                "image": IMAGE, "tree_sha256": "3" * 64, "cutoff_at": migration()["cutoff_at"]}
+                "image": MIGRATION_IMAGE, "tree_sha256": "3" * 64, "cutoff_at": migration()["cutoff_at"]}
 
     def validate(self, receipt):
         raw = json.dumps(receipt).encode()

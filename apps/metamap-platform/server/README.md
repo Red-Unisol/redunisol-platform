@@ -106,10 +106,15 @@ En GitHub Actions, la validacion de esos `.env.enc` usa `RUNTIME_ENV_KEY`
 desde el environment `vps-infra`.
 
 El deploy usa el mismo environment `vps-infra`, publica una imagen en GHCR y actualiza el
-runtime remoto en `/opt/metamap-platform-server-dev`. Corre automaticamente cuando los
+runtime remoto en el dedicado, `/srv/redunisol/platform/metamap-server`. Corre automaticamente cuando los
 cambios del servidor o de su workflow llegan a `main`. El job rechaza otras ramas;
 el dispatch manual mediante `Deploy MetaMap Server Operativo` requiere `main` y `Nasst`.
 Los nombres historicos con `dev` se conservan, pero ese destino es operativo.
+El Compose es `deploy/docker-compose.dedicated.yml`, puerto loopback18083,
+datos bajo `/srv/redunisol/state/metamap-server`. El workflow conserva el
+`runtime.env` privado existente, hace backup consistente antes del deploy y
+comprueba la revision local y publica. Ver
+[estado del corte y accesos CI pendientes](../../../docs/metamap-dedicated-migration.md).
 La rama `dev` valida codigo y build en CI sin desplegar sobre ese servidor.
 
 Para cambios coordinados con el cliente desktop, desplegar primero el servidor y distribuir

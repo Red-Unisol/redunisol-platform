@@ -38,7 +38,7 @@ export function coreConditionsFingerprint(s: ControlledSolicitud) {
 }
 
 export function coreReconciliationPending(s: ControlledSolicitud) {
-  if (!s.administrativeCoreControl) return false;
+  if (!s.legacyOid || !s.administrativeCoreControl) return false;
   const control = s.administrativeCoreControl as Record<string, unknown>;
   return control.loanId !== s.legacyOid ||
     control.reconciledFingerprint !== coreConditionsFingerprint(s);

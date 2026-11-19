@@ -88,13 +88,14 @@ jobs:
             --public-key apps/metamap-platform/client/transferencias-celesol/update-public-key.base64
       - uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
         with:
-          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.METAMAP_SSH_PRIVATE_KEY }}
       - name: Publish immutable release and atomic signed pointer
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          UPDATE_KNOWN_HOSTS: ${{ vars.TRANSFERENCIAS_UPDATE_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.METAMAP_SSH_HOST }}
+          SSH_PORT: ${{ secrets.METAMAP_SSH_PORT }}
+          SSH_USER: ${{ secrets.METAMAP_SSH_USER }}
+          TRANSFERENCIAS_UPDATE_ROOT: /srv/redunisol/state/metamap-server/updates/transferencias
+          UPDATE_KNOWN_HOSTS: ${{ vars.METAMAP_SSH_KNOWN_HOSTS }}
         run: |
           export UPDATE_KNOWN_HOSTS_FILE="$RUNNER_TEMP/update_known_hosts"
           printf '%s\n' "$UPDATE_KNOWN_HOSTS" > "$UPDATE_KNOWN_HOSTS_FILE"

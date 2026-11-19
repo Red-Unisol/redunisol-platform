@@ -31,6 +31,10 @@ export class SolicitudesCoreRepositoryImpl implements SolicitudesCoreRepository 
     return this.datasource.findByLegacyOid(legacyOid);
   }
 
+  findByIdempotencyKey(idempotencyKey: string, createdBy: string) {
+    return this.datasource.findByIdempotencyKey(idempotencyKey, createdBy);
+  }
+
   findWorkflowOwnerCodeById(id: string) {
     return this.datasource.findWorkflowOwnerCodeById(id);
   }

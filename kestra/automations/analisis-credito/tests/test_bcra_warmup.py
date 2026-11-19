@@ -1,6 +1,8 @@
 from collections import Counter
 from contextlib import closing
 from copy import deepcopy
+from email.message import Message
+from io import BytesIO
 import importlib.util
 import gc
 import json
@@ -11,6 +13,8 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch, call
+from urllib.error import HTTPError
+from urllib.response import addinfourl
 
 DOMAIN = Path(__file__).resolve().parent.parent
 ROOT = DOMAIN.parents[2]
@@ -21,6 +25,8 @@ from consulta_quiebra_credix.service import (
 )
 
 CUIT = "20123456786"
+PRIVATE_API = "http://bcra-file-api-poc:8080"
+ACCESS = {"BCRA_FILE_BASE_URL": PRIVATE_API, "BCRA_FILE_TOKEN": "test-only"}
 
 
 def period(label, entities):
@@ -56,6 +62,60 @@ class BcraWarmupTests(unittest.TestCase):
     def setUp(self):
         self.sleep = patch.object(bcra.time, "sleep").start()
         self.addCleanup(patch.stopall)
+
+    def test_private_client_authenticates_both_routes_and_accepts_published_no_data(self):
+        headers = Message()
+        headers["X-BCRA-Source"] = "monthly-files"
+        headers["X-BCRA-Period"] = "202609"
+        headers["X-BCRA-Version"] = "test-version"
+        headers["X-BCRA-Checked-At"] = "2026-11-19T00:00:00+00:00"
+
+        def respond(request, timeout):
+            if "/Historicas/" in request.full_url:
+                missing = b'{"status":404,"errorMessages":["No se encontraron datos para la identificacion ingresada."]}'
+                raise HTTPError(request.full_url, 404, "Not found", headers, BytesIO(missing))
+            data = payload([period("202609", [("Banco", 2, 10)])])
+            return addinfourl(BytesIO(json.dumps(data).encode()), headers, request.full_url, 200)
+
+        with (patch.dict(os.environ, ACCESS),
+              patch.object(bcra._private_http, "open", side_effect=respond) as opened):
+            financial = bcra.enrich_bcra(source_result())["normalized"]["bcra"]
+
+        self.assertEqual(financial["fuente"], "BCRA")
+        self.assertEqual(financial["deuda_vigente_total"], "$ 10.000")
+        self.assertEqual(opened.call_count, 2)
+        for invocation in opened.call_args_list:
+            request = invocation.args[0]
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(request.get_header("Authorization"), "Bearer test-only")
+            self.assertEqual(invocation.kwargs["timeout"], bcra.TIMEOUT_SECONDS)
+        debt_url = PRIVATE_API + "/centraldedeudores/v1.0/Deudas/"
+        self.assertEqual({item.args[0].full_url for item in opened.call_args_list},
+                         {debt_url + CUIT, debt_url + "Historicas/" + CUIT})
+        self.assertEqual([item["http_status"] for item in financial["consulta_directa_intentos"]], [200, 404])
+
+    def test_unpublished_no_data_stays_retryable(self):
+        data = b'{"status":404,"errorMessages":["No se encontraron datos para la identificacion ingresada."]}'
+
+        def respond(request, timeout):
+            raise HTTPError(request.full_url, 404, "Not found", Message(), BytesIO(data))
+
+        attempts = []
+        with (patch.dict(os.environ, ACCESS),
+              patch.object(bcra._private_http, "open", side_effect=respond)):
+            self.assertIsNone(bcra.consult_bcra(CUIT, attempts=attempts, max_attempts=1))
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["http_status"] == 404 and item["result"] == "invalid_response"
+                            for item in attempts))
+
+    def test_missing_private_access_keeps_fallback_without_calling_or_waiting(self):
+        with (patch.dict(os.environ, {**ACCESS, "BCRA_FILE_TOKEN": ""}),
+              patch.object(bcra._private_http, "open") as opened):
+            financial = bcra.enrich_bcra(source_result())["normalized"]["bcra"]
+        self.assertEqual(financial["fuente"], "CredixSA")
+        self.assertEqual(financial["consulta_directa_estado"], "unavailable")
+        opened.assert_not_called()
+        self.sleep.assert_not_called()
 
     def test_retries_only_failed_endpoint_then_caches_normalized_pesos(self):
         calls = Counter()
@@ -141,7 +201,10 @@ class BcraWarmupTests(unittest.TestCase):
         self.assertEqual(financial["fuente"], "CredixSA")
         self.assertEqual(financial["consulta_directa_estado"], "invalid_response")
         attempts = financial["consulta_directa_intentos"]
-        self.assertEqual(attempts[0], {"endpoint": "current", "attempt": 1, "http_status": 200, "result": "ok"})
+        self.assertEqual(attempts[0], {
+            "endpoint": "current", "attempt": 1, "http_status": 200,
+            "result": "ok", "provider": "bcra_monthly_files",
+        })
         self.assertEqual([i["attempt"] for i in attempts if i["result"] == "invalid_response"], [1, 2, 3])
         self.assertTrue(all(i["http_status"] == 200 for i in attempts))
 

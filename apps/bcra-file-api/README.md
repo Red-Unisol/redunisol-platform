@@ -2,8 +2,9 @@
 
 Servicio interno FastAPI/Uvicorn que consulta los archivos de la Central de
 Deudores. Expone contratos compatibles de deudas vigentes e histórico de 24
-meses. No hay consumidores de negocio conectados, no escribe en Bitrix y no
-consulta la API individual del BCRA. Cheques rechazados queda fuera de alcance.
+meses. Por el enlace privado, Bitrix consulta deuda vigente y CredixSA consulta
+deuda vigente e histórica. El servicio usa archivos oficiales y atiende consultas
+de lectura. Cheques rechazados queda fuera de alcance.
 
 ## Contrato compatible
 
@@ -25,6 +26,16 @@ entidad en meses anteriores. Incluye los campos `entidad`, `situacion`, `fechaSi
 Histórico incluye `entidad`, `situacion`, `monto`, `enRevision` y `procesoJud` por
 mes. Sólo se devuelven meses y entidades con información. Los montos están en
 **miles de pesos**, con un decimal; internamente se almacenan como enteros.
+
+Si una entidad del histórico ya no figura en el maestro mensual, se usa su
+último nombre oficial conservado dentro de los 24 meses. Además de los maestros
+mensuales se consultan las denominaciones verificadas en el [registro semestral
+del BCRA](https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/EntidadesNo/enf022024.pdf).
+La ficha del código 10917, por ejemplo, identifica a FF CFA CRÉDITOS II. Si
+falta un nombre oficial, `entidad` muestra `Entidad BCRA <código> · nombre pendiente`.
+El código debe figurar en el control oficial de 24DSF o en una rectificación
+efectiva. Una baja se aplica al período correspondiente. El historial conserva
+los montos, situaciones y observaciones informados.
 
 El padrón ARCA aporta la denominación completa; se conserva el maestro `nomdeu`
 como respaldo para identificaciones que no estén en el padrón. Del padrón se
@@ -159,7 +170,7 @@ importación. No se confía en metadatos remotos no verificados.
 - Nombres: `Padron_ARCA.txt`, ancho fijo de 220 caracteres. No se almacenan
   nacimiento, sexo, domicilio, actividades ni otras columnas del padrón.
 
-Se rechazan diseños desconocidos, duplicados, entidades sin maestro, fechas
+Se rechazan diseños desconocidos, duplicados, deudas vigentes con entidades sin maestro, fechas
 inconsistentes, componentes principales con menos de 100.000 filas y caídas de
 más del 20% respecto de la versión previa. Cada SQLite pasa `quick_check`.
 El código `9 = No aplicable` y códigos no interpretables no se convierten en

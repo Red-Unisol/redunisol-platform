@@ -82,7 +82,6 @@ it('redirects retired Cordoba paths directly to the existing landing, preserving
 })->with([
     '/jubilados-de-cordoba',
     '/jubilados-de-cordoba/form-abajo',
-    '/prestamos-para-jubilados/jubilados-cordoba/form-abajo',
 ]);
 
 it('excludes retired paths from the sitemap even if their CMS pages are still indexed', function () {

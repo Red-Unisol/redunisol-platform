@@ -1,0 +1,6 @@
+{{ {'schema_version': 1, 'scope': 'metamap-server-preparation', 'revision': metamap_revision,
+    'image': metamap_image, 'prefetch_requested': metamap_prefetch_image,
+    'platform_dir': metamap_platform_dir, 'data_dir': metamap_data_dir,
+    'updates_dir': metamap_updates_dir, 'activation_included': false,
+    'runtime_settings_staged': metamap_stage_runtime_env, 'runtime_settings_loaded': false,
+    'production_data_transferred': false} | to_nice_json }}

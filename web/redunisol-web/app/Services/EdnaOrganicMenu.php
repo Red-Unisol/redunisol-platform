@@ -104,6 +104,11 @@ class EdnaOrganicMenu
             || app(EdnaPaidEntry::class)->classify($event, $stored)) {
             return false;
         }
+        if (app(WebChatContinuity::class)->receive($event, $stored)) {
+            $this->record($event->id, 'web_form_continuation');
+
+            return true;
+        }
         $received = CarbonImmutable::parse($stored['receivedAt']);
         $phone = $stored['subscriber']['identifier'];
         $inserted = DB::table('edna_organic_menus')->insertOrIgnore([
@@ -171,6 +176,10 @@ class EdnaOrganicMenu
             if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
                 return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
             }
+            if ($menu->send_state === 'pending'
+                && app(WebChatContinuity::class)->blocksOutbound($event, $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null)) {
+                return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
+            }
             // Pending work captured before the paid/organic split can change route
             // only while no greeting has been attempted. Accepted or uncertain
             // sends keep their original receipt and are never followed by a replay.
@@ -235,6 +244,9 @@ class EdnaOrganicMenu
             if (CarbonImmutable::parse($menu->expires_at)->isPast()) {
                 return $this->finish('expired', 'conversation_window_elapsed');
             }
+            if (! $menu->choice_event_id && ($benefits = $this->benefitsDecision($menu, $proof))) {
+                return $benefits;
+            }
             if ($menu->send_state === 'pending') {
                 return $this->send($menu, $proof);
             }
@@ -242,6 +254,10 @@ class EdnaOrganicMenu
                 return $this->finish('review', 'menu_outgoing_not_confirmed');
             }
             if ($menu->state === 'route_pending') {
+                if ($benefits = $this->benefitsDecision($menu, $proof)) {
+                    return $benefits;
+                }
+
                 return $this->transfer($menu, $proof, (int) $menu->seller_id);
             }
             if (! $menu->choice_event_id) {
@@ -267,6 +283,9 @@ class EdnaOrganicMenu
             }
             $proof['choice_proof'] = $choiceProof;
             $this->write(['proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+            if ($benefits = $this->benefitsDecision($menu, $proof)) {
+                return $benefits;
+            }
             if ($menu->choice === 'other') {
                 return $this->transfer($menu, $proof, (int) config('edna.organic_other_operator_id', 5737));
             }
@@ -315,6 +334,9 @@ class EdnaOrganicMenu
         }
         $this->assertBudget(13);
         $this->transport->assertChannel($menu);
+        if ($benefits = $this->benefitsDecision($menu, $proof)) {
+            return $benefits;
+        }
         $this->assertBudget(35);
         $fresh = $this->attention->inspectWelcome($proof);
         if (($fresh['status'] ?? '') !== 'ready'
@@ -328,7 +350,21 @@ class EdnaOrganicMenu
             return $this->wait('menu_send_gate_changed');
         }
         $this->assertBudget(13);
-        $this->write(['send_state' => 'sending', 'send_started_at' => now()]);
+        $claim = function () use ($menu, $proof): bool {
+            $event = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+            if ($event && app(WebChatContinuity::class)->blocksOutbound($event, $proof)) {
+                return false;
+            }
+            $this->write(['send_state' => 'sending', 'send_started_at' => now()]);
+
+            return true;
+        };
+        $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+        $claimed = $entry && app(WebChatContinuity::class)->eligibleEntry($entry)
+            ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
+        if (! $claimed) {
+            return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
+        }
         $this->assertLease();
         $result = $this->transport->schedule($this->current());
         $this->write($result);
@@ -337,6 +373,28 @@ class EdnaOrganicMenu
         }
 
         return $this->finish($result['send_state'] === 'unknown' ? 'unknown' : 'waiting', 'menu_history_pending');
+    }
+
+    private function benefitsDecision(object $menu, array $proof): ?array
+    {
+        // A new choice can continue an old conversation without replaying its
+        // original entry. Each action is proved by its own native message.
+        $entryId = $menu->entry_event_id;
+        if ($menu->choice_event_id && is_array($proof['choice_proof'] ?? null)) {
+            $entryId = $menu->choice_event_id;
+            $proof = $proof['choice_proof'];
+        }
+        $event = DB::table('edna_incoming_events')->find($entryId);
+        if (! $event || ! ($decision = app(EdnaBenefitsRouting::class)->check($event, $proof))) {
+            return null;
+        }
+        $reason = $decision['reason'] ?? 'benefits_routing';
+        if (($decision['state'] ?? '') === 'waiting') {
+            return $this->wait($reason);
+        }
+
+        return $this->finish(($decision['state'] ?? '') === 'review' ? 'review' : 'preserved', $reason,
+            ['transfer_state' => 'preserved']);
     }
 
     private function transfer(object $menu, array $proof, int $target): array
@@ -358,7 +416,10 @@ class EdnaOrganicMenu
             return $this->attentionDecision($attention);
         }
         $before = $attention['native_snapshot'] ?? null;
-        if (! is_array($before) || ! $this->attention->canTransfer($before, $target)) {
+        $otherInquiry = $menu->choice === 'other' && $case === null
+            && $target === (int) config('edna.organic_other_operator_id', 5737);
+        $verifiedContact = isset($case['contact_deal_stage']) ? $case['CONTACT_ID'] : null;
+        if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry, $verifiedContact)) {
             return $this->finish('preserved', 'native_crm_assignment_preserved');
         }
         $this->assertBudget(65);
@@ -368,14 +429,19 @@ class EdnaOrganicMenu
         }
         $this->assertBudget(12);
         if (! is_array($fresh['native_snapshot'] ?? null)
-            || ! $this->attention->compatible($before, $fresh['native_snapshot'], $target)
+            || ! $this->attention->compatible($before, $fresh['native_snapshot'], $target, false, $otherInquiry, $verifiedContact)
             || ! $this->attention->targetActive($target)
             || ($case !== null && $this->commercialCase($menu, $target) !== $case)) {
             return $this->finish('preserved', 'routing_context_changed');
         }
+        if ($verifiedContact !== null && ! $this->attention->confirmContactDeal($proof, $fresh['native_snapshot'],
+            $verifiedContact, $case['ID'], $target, $case['contact_deal_stage'])) {
+            return $this->finish('preserved', 'contact_deal_or_attention_changed');
+        }
         $intent = ['target_id' => (string) $target, 'session_id' => (string) $proof['session_id'],
             'owner_before' => (string) $fresh['owner_id'], 'snapshot' => $fresh['native_snapshot'],
-            'commercial_case' => $case, 'created_at' => now()->toIso8601String()];
+            'commercial_case' => $case, 'routing_policy' => $otherInquiry ? 'other_inquiry' : 'commercial',
+            'created_at' => now()->toIso8601String()];
         $this->assertBudget(6);
         $this->write(['transfer_state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
             'seller_id' => (string) $target, 'transfer_acknowledged' => false]);
@@ -412,7 +478,10 @@ class EdnaOrganicMenu
         if ($owner === (string) $target) {
             $this->assertBudget(30);
             $after = $this->attention->snapshot($proof);
-            if (! $this->attention->compatible($intent['snapshot'], $after, $target, true)
+            $otherInquiry = ($intent['routing_policy'] ?? '') === 'other_inquiry' && $menu->choice === 'other'
+                && $intent['commercial_case'] === null && $target === (int) config('edna.organic_other_operator_id', 5737);
+            $verifiedContact = isset($intent['commercial_case']['contact_deal_stage']) ? $intent['commercial_case']['CONTACT_ID'] : null;
+            if (! $this->attention->compatible($intent['snapshot'], $after, $target, true, $otherInquiry, $verifiedContact)
                 || ($intent['commercial_case'] !== null && $this->commercialCase($menu, $target, true) !== $intent['commercial_case'])) {
                 return $this->finish('review', 'crm_changed_after_transfer', ['transfer_state' => 'observed']);
             }
@@ -490,6 +559,9 @@ class EdnaOrganicMenu
         }
         $snapshot['LEAD_ID'] = $leadId;
         $snapshot['profile_identity_hash'] = $identity;
+        if (isset($assigned['contact_deal_stage'])) {
+            $snapshot['contact_deal_stage'] = $assigned['contact_deal_stage'];
+        }
 
         return $snapshot;
     }

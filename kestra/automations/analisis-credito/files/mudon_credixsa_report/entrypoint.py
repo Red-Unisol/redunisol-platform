@@ -16,6 +16,7 @@ from .core import DEFAULT_MUDON_LINES, fetch_active_mudon_members
 from .credix import load_shared_cache, process_output, query_online
 from .excel import atomic_publish, write_workbook
 from .state import StateStore
+from ._resume_gate import parse_trigger_body, resume_state_for_result
 
 
 LOCAL_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -36,17 +37,6 @@ def env_int(name: str, default: int, minimum: int, maximum: int) -> int:
 def env_bool(name: str, default: bool = False) -> bool:
     value = env(name, "true" if default else "false").lower()
     return value in {"1", "true", "yes", "si"}
-
-
-def parse_trigger_body(raw: str) -> dict[str, Any]:
-    if not raw.strip():
-        return {}
-    value: Any = json.loads(raw)
-    if isinstance(value, str):
-        value = json.loads(value)
-    if not isinstance(value, dict):
-        raise ValueError("El body del webhook debe ser un objeto JSON.")
-    return value
 
 
 def log_event(event: str, **fields: Any) -> None:
@@ -274,6 +264,7 @@ def set_kestra_outputs(values: dict[str, Any]) -> None:
 def main() -> int:
     try:
         result = run_batch()
+        result["resume_state"] = resume_state_for_result(result, env("TRIGGER_BODY_JSON", "{}"))
         set_kestra_outputs(result)
         print(json.dumps(result, ensure_ascii=True, separators=(",", ":")))
         return 0
@@ -281,6 +272,7 @@ def main() -> int:
         result = {
             "ok": False,
             "status": "technical_error",
+            "resume_state": "pending",
             "run_id": "",
             "total": 0,
             "completed": 0,

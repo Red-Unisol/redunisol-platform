@@ -88,9 +88,12 @@ tasks:
     - bitrix24_form_flow/**
   taskRunner:
     type: io.kestra.plugin.scripts.runner.docker.Docker
+    networkMode: kestra_net
     pullPolicy: IF_NOT_PRESENT
   containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
   env:
+    BCRA_FILE_BASE_URL: "{{ envs.bcra_file_poc_url }}"
+    BCRA_FILE_TOKEN: "{{ secret('BCRA_FILE_POC_TOKEN') }}"
     ARCA_IDENTITY_OK: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.ok ?? false) : false }}"
     ARCA_IDENTITY_STATUS: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.status ?? '') : '' }}"
     ARCA_IDENTITY_CUIL: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.cuil ?? '') : '' }}"
@@ -151,6 +154,14 @@ tasks:
     BITRIX24_TIMEOUT_SECONDS: '{{ envs.bitrix24_timeout_seconds }}'
   commands:
   - python -m bitrix24_form_flow.kestra_lead_prefill_entrypoint
+- id: guardar_responsable_inicial
+  type: io.kestra.plugin.core.kv.Set
+  runIf: "{{ (outputs.completar_backfill.vars.initial_receiver_revision ?? '') != '' }}"
+  key: 'routing.initial-owner.{{ inputs.lead_id }}'
+  value: '{{ outputs.completar_backfill.vars.initial_receiver_revision }}'
+  kvType: STRING
+  ttl: P7D
+  allowFailure: true
 outputs:
 - id: ok
   type: BOOL

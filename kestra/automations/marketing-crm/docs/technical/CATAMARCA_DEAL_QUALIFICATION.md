@@ -86,7 +86,20 @@ Para una negociacion con bucket:
 
 ## Distribucion Fuera De Horario
 
-La distribucion automatica funciona de forma continua desde el lunes a las 00:00
+Para ingresos nuevos desde el 19/11/2026 a las 11:00 ART, la distribución
+usa el calendario diario de Ventas. Las negociaciones distribuibles de grupos
+con varios habilitados conservan en cola la decisión comercial y la próxima apertura.
+Al despertar se releen el caso y la atención humana. Los fines de semana y feriados
+se tratan como cualquier otro cierre. Ver [reglas de distribución](../commercial-rules/DEAL_ROUTING.md#fuera-de-horario).
+
+Para un prospecto nativo de WhatsApp que sigue a nombre del receptor inicial,
+el v3 comprueba el mensaje, la sesión sin atención y la revisión de Bitrix. Si
+el prellenado ya avanzó la ficha por falta de CUIL, su primera actualización
+conserva durante siete días una huella de la revisión confirmada en el KV de
+Kestra (`routing.initial-owner.<lead_id>`). Una edición posterior invalida esa
+prueba. La cuenta que hizo la última modificación, por sí sola, no acredita el origen.
+
+Para ingresos anteriores al corte, la distribucion automatica funciona de forma continua desde el lunes a las 00:00
 inclusive hasta el viernes a las 17:00 exclusive, usando
 `America/Argentina/Cordoba`.
 
@@ -114,7 +127,7 @@ Las decisiones de rechazo BCRA o comercial no participan de la distribucion: Kes
 aplica directamente la etapa correspondiente, conserva a Maru como responsable y no
 busca vendedor, no transfiere el chat y no las incorpora a la cola.
 
-Al cerrar la ventana semanal, el mismo flow mueve todo remanente a
+Al cerrar la ventana semanal, el mismo flow mueve el remanente de la política anterior a
 `C1:KESTRA_REVIEW` con Maru y lo retira definitivamente de la distribucion automatica.
 
 ## Contrato De Decisiones Y Trazabilidad

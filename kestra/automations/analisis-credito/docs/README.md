@@ -25,7 +25,8 @@ Dominio para automatizaciones de analisis y calificacion de credito.
   habilitado por flag; carga manual con run_now=true.
 - bcra_archivo_consultar_poc: webhook síncrono con HTTP nativo hacia un
   contenedor persistente, sin crear un contenedor por consulta.
-- No hay consumidores existentes ni cambios de reglas comerciales.
+- CredixSA consulta deuda vigente e historica por el enlace privado.
+  [Integracion y recuperacion](bcra-recovery.md).
 - [Arquitectura, contrato, límites y activación](../../../../apps/bcra-file-api/README.md).
 
 ## renovacion_cruz_del_eje
@@ -1090,6 +1091,27 @@ logica que lo administra viven en Git.
 - `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
 
 Cada trigger fija explicitamente el input interno `run_mode` (`monthly`, `resume` o `manual`). El worker no infiere el modo desde metadatos del trigger: `resume` nunca crea una corrida nueva y solo continua una corrida activa.
+
+La reanudacion consulta primero el KV `mudon_credixsa_report.resume_state.v1`
+del mismo namespace y un helper de biblioteca estandar con runner `Process`.
+Una marca `idle` evita arrancar Docker; la ejecucion conserva sus salidas
+habituales con `status=idle`. Monthly, manual, `retry_errors` y las consultas
+explicitas de estado siempre pueden llegar al estado SQLite real.
+
+Antes de cada lote se escribe `pending`. Solo un resultado satisfactorio sin
+pendientes, `idle`, `completed` o `completed_with_errors`, permite volver a
+`idle`; un fallo, timeout o cancelacion deja pendiente la reanudacion. Una
+consulta `mode=status` no desactiva esa marca. El KV expira al dia: al faltar,
+expirar o contener un valor desconocido se ejecuta una comprobacion completa,
+incluido el primer sondeo posterior al despliegue. No requiere migrar SQLite,
+nuevos secretos ni montar el cache en el proceso principal de Kestra. Tras una
+restauracion externa del SQLite, ejecutar una reanudacion manual o eliminar
+esta marca para verificar inmediatamente el estado restaurado.
+
+El lote usa `pullPolicy: IF_NOT_PRESENT`. Reutiliza la imagen local; para
+adoptar una imagen nueva se debe cambiar su tag/digest en Git o refrescarla
+durante un despliegue operativo autorizado. Mover `latest` en GHCR no sustituye
+automaticamente la imagen que ya esta cacheada en el host.
 
 Body manual opcional:
 

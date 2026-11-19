@@ -3,6 +3,7 @@
 use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\ProcessEdnaOrganicMenu;
 use App\Services\AttributionJourney;
+use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaIntake;
 use App\Services\EdnaMessageBinding;
@@ -10,6 +11,7 @@ use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicMenu;
 use App\Services\EdnaOrganicTransport;
+use App\Services\WebChatContinuity;
 use App\Services\WebFormChatRouting;
 use App\Services\WebFormReceipt;
 use Illuminate\Queue\Events\JobQueued;
@@ -283,6 +285,9 @@ test('a welcome is unique per exact chat session and a new session gets its own 
 
 test('an other choice transfers once and lost acknowledgement can only become observed', function (bool $ack) {
     $h = organicMenuHarness();
+    $h['attention']->shouldReceive('canTransfer')->once()->with(Mockery::type('array'), 5737, true, null)->andReturnTrue();
+    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, false, true, null)->andReturnTrue();
+    $h['attention']->shouldReceive('compatible')->once()->with(Mockery::type('array'), Mockery::type('array'), 5737, true, true, null)->andReturnTrue();
     $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 5737])->andReturn($ack);
     $h['crm']->shouldReceive('call')->once()->with('imopenlines.dialog.get', ['CHAT_ID' => 601])
         ->andReturn(['id' => 601, 'owner' => 5737, 'entity_data_1' => 'Y|LEAD|101|N|N|501|1794400000', 'text_field_enabled' => true]);
@@ -290,11 +295,25 @@ test('an other choice transfers once and lost acknowledgement can only become ob
     $choice = organicMenuChoice($menu, 'other');
     $h['service']->receiveChoice($choice, organicMenuPayload($choice));
     expect($h['service']->process($menu->id)['state'])->toBe('unknown');
+    expect(json_decode(DB::table('edna_organic_menus')->find($menu->id)->transfer_intent, true)['routing_policy'])->toBe('other_inquiry');
     organicMenuDue($menu->id);
     expect($h['service']->process($menu->id)['state'])->toBe('routed')
         ->and(DB::table('edna_organic_menus')->find($menu->id)->transfer_state)->toBe($ack ? 'confirmed' : 'observed');
     expect($h['service']->process($menu->id)['state'])->toBe('not_claimed');
 })->with([true, false]);
+
+test('acceptance immediately before an other inquiry transfer preserves the human attention', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuConfirmed($h);
+    $choice = organicMenuChoice($menu, 'other');
+    $h['service']->receiveChoice($choice, organicMenuPayload($choice));
+    $h['attention']->shouldReceive('inspect')->twice()->andReturn(
+        ['status' => 'ready', 'owner_id' => '0', 'session_id' => '501', 'native_snapshot' => ['version' => 1]],
+        ['status' => 'preserved', 'reason' => 'operator_attention_preserved'],
+    );
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'operator_attention_preserved']);
+    $h['crm']->shouldNotHaveReceived('call');
+});
 
 test('an uncertain transfer never posts again when its result is absent', function () {
     $h = organicMenuHarness();
@@ -502,4 +521,189 @@ test('a contact change after the initial commercial read is stopped by the final
     expect($h['service']->process($menu->id)['reason'])->toBe('routing_context_changed')
         ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved');
     $h['crm']->shouldNotHaveReceived('call', ['imopenlines.operator.transfer', Mockery::any()]);
+});
+
+function organicMenuBoundWebContext(): array
+{
+    $input = ['celular' => '3510000000', 'cuil' => '20301234563',
+        '_journey_links' => ['submission_id' => (string) Str::uuid()]];
+    $reference = app(WebFormReceipt::class)->register($input);
+    DB::table('web_form_receipts')->where('id', $input['_journey_links']['submission_id'])
+        ->update(['state' => 'synced', 'lead_id' => '101', 'contact_id' => '301']);
+    $receipt = DB::table('web_form_receipts')->find($input['_journey_links']['submission_id']);
+    $anchor = organicMenuEvent(['messageContent' => ['text' => '(solicitud: '.$reference.')']]);
+    $continuity = new WebChatContinuity;
+    $id = $continuity->captureReference($anchor, $receipt);
+    expect($id)->toBeInt()
+        ->and($continuity->bind((int) $anchor->id, organicMenuProof($anchor))['status'])->toBe('bound');
+
+    return [$id, $reference, $receipt];
+}
+
+test('a web context established during the last welcome checks prevents scheduling', function (string $phase) {
+    DB::table('edna_intake_cutovers')->insert(['name' => WebChatContinuity::NAME,
+        'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    $h = organicMenuHarness();
+    $event = organicMenuEvent();
+    $menu = organicMenuCapture($h['service'], $event);
+    expect((new WebChatContinuity)->blocksOutbound($event))->toBeFalse();
+    $createContext = function (): void {
+        organicMenuBoundWebContext();
+    };
+    if ($phase === 'channel') {
+        $h['transport']->shouldReceive('assertChannel')->once()->andReturnUsing($createContext);
+        $h['attention']->shouldReceive('inspectWelcome')->twice()
+            ->andReturn(['status' => 'ready', 'owner_id' => '0', 'session_id' => '501']);
+    } else {
+        $h['transport']->shouldReceive('assertChannel')->once()->andReturnNull();
+        $inspections = 0;
+        $h['attention']->shouldReceive('inspectWelcome')->twice()->andReturnUsing(function () use (&$inspections, $createContext) {
+            if (++$inspections === 2) {
+                $createContext();
+            }
+
+            return ['status' => 'ready', 'owner_id' => '0', 'session_id' => '501'];
+        });
+    }
+    $h['transport']->shouldNotReceive('schedule');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'web_continuity_priority']);
+    $saved = DB::table('edna_organic_menus')->find($menu->id);
+    expect($saved)->toMatchObject(['state' => 'preserved', 'send_state' => 'pending', 'send_started_at' => null])
+        ->and(json_decode($saved->proof, true)['session_id'])->toBe('501')
+        ->and(DB::table('web_chat_contexts')->first())->toMatchObject(['state' => 'bound', 'chat_id' => 601, 'session_id' => 501]);
+    $h['transport']->shouldNotHaveReceived('schedule');
+    Http::assertNothingSent();
+})->with(['channel', 'second-inspection']);
+
+test('a released explicit reference reenters the real intake and creates its new session menu once', function () {
+    foreach ([WebChatContinuity::NAME, 'native-v3-v1'] as $name) {
+        DB::table('edna_intake_cutovers')->insert(['name' => $name,
+            'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    }
+    $h = organicMenuHarness();
+    app()->instance(EdnaOrganicMenu::class, $h['service']);
+    [$id, $reference] = organicMenuBoundWebContext();
+    $callback = organicMenuEvent(['messageContent' => ['text' => '(solicitud: '.$reference.')']]);
+    $payload = organicMenuPayload($callback);
+    expect((new EdnaIntake)->receiveEntry($callback, $payload))->toBeTrue()
+        ->and(DB::table('edna_organic_menus')->count())->toBe(0);
+    $initialRoutes = DB::table('web_form_chat_routes')->count();
+    $proof = organicMenuProof($callback, 502);
+    $proof['activity_id'] = '802';
+    $continuity = new WebChatContinuity;
+
+    expect($continuity->bind((int) $callback->id, $proof))->toMatchArray(['status' => 'released', 'rerouted' => true]);
+    // The same callback or its queued former web route cannot reopen the old path.
+    expect($continuity->bind((int) $callback->id, $proof)['status'])->toBe('released');
+    expect((new EdnaIntake)->receiveEntry($callback, $payload))->toBeTrue();
+    expect(DB::table('web_form_continuations')->where('entry_event_id', $callback->id)->first())
+        ->toMatchObject(['state' => 'released', 'reason' => 'web_context_session_changed', 'proof_source' => 'web_context'])
+        ->and(DB::table('web_chat_contexts')->find($id)->state)->toBe('released')
+        ->and(DB::table('web_form_chat_routes')->count())->toBe($initialRoutes)
+        ->and(DB::table('edna_organic_menus')->where('entry_event_id', $callback->id)->count())->toBe(1)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertPushed(ProcessEdnaOrganicMenu::class, 1);
+    Http::assertNothingSent();
+});
+
+test('a benefits activation reply is routed without sending the general menu', function () {
+    $h = organicMenuHarness();
+    $event = organicMenuEvent(['messageContent' => ['type' => 'BUTTON', 'text' => 'Sí, quiero activarla'],
+        'replyOutMessageId' => '317620969', 'replyOutMessageExternalRequestId' => '317620969']);
+    $menu = organicMenuCapture($h['service'], $event);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->withArgs(fn ($e, $p) => $e->id === $event->id
+        && $p['entry_event_id'] === $event->id && $p['chat_id'] === '601')
+        ->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    $h['transport']->shouldNotReceive('schedule');
+    $h['attention']->shouldNotReceive('inspectWelcome');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'benefits_routing'])
+        ->and(DB::table('edna_organic_menus')->find($menu->id))->toMatchObject([
+            'send_state' => 'pending', 'send_started_at' => null, 'transfer_state' => 'preserved'])
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('a benefits case discovered during the final welcome checks prevents the menu POST', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuCapture($h['service']);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->twice()->andReturn(null, ['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    $h['transport']->shouldReceive('assertChannel')->once()->andReturnNull();
+    $h['transport']->shouldNotReceive('schedule');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'benefits_routing'])
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->send_started_at)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('incomplete or ambiguous benefits evidence cannot authorize a greeting', function (string $state) {
+    $h = organicMenuHarness();
+    $menu = organicMenuCapture($h['service']);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->andReturn(['state' => $state, 'reason' => 'benefits_case_unavailable']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    $h['transport']->shouldNotReceive('schedule');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => $state, 'reason' => 'benefits_case_unavailable'])
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->send_started_at)->toBeNull();
+    Http::assertNothingSent();
+})->with(['waiting', 'review']);
+
+test('a new choice on an older menu uses its own native message for benefits continuity', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuConfirmed($h);
+    $choice = organicMenuChoice($menu);
+    $h['service']->receiveChoice($choice, organicMenuPayload($choice));
+    organicMenuDue($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->withArgs(fn ($e, $p) => $e->id === $choice->id
+        && $p['entry_event_id'] === $choice->id && $p['entry_message_id'] === $choice->message_id)
+        ->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    $h['crm']->shouldNotReceive('call');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'benefits_routing'])
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('an uncertain greeting is only reconciled and never converted into a fresh benefits attempt', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuCapture($h['service']);
+    $h['service']->process($menu->id);
+    organicMenuDue($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldNotReceive('check');
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'awaiting_choice', 'reason' => 'menu_outgoing_confirmed']);
+    Http::assertNothingSent();
+});
+
+test('human acceptance during the final benefits reads is checked before sending the menu', function () {
+    $accepted = false;
+    $h = organicMenuHarness();
+    $menu = organicMenuCapture($h['service']);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $calls = 0;
+    $benefits->shouldReceive('check')->twice()->andReturnUsing(function () use (&$calls, &$accepted) {
+        $accepted = ++$calls === 2;
+
+        return null;
+    });
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    $h['attention']->shouldReceive('inspectWelcome')->twice()->andReturnUsing(function () use (&$accepted) {
+        return $accepted
+            ? ['status' => 'preserved', 'reason' => 'operator_attention_preserved', 'owner_id' => '0', 'session_id' => '501']
+            : ['status' => 'ready', 'owner_id' => '0', 'session_id' => '501'];
+    });
+    $h['transport']->shouldNotReceive('schedule');
+
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'operator_attention_preserved']);
+    Http::assertNothingSent();
 });

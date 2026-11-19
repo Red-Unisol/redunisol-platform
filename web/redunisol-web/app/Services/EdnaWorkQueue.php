@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Jobs\CloseEdnaRejectedChat;
 use App\Jobs\LinkWebFormChat;
 use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\ProcessEdnaOrganicMenu;
+use App\Jobs\RouteEdnaBenefitsChat;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Queue\DatabaseQueue;
@@ -18,6 +20,8 @@ use Throwable;
 class EdnaWorkQueue
 {
     private const JOBS = [
+        RouteEdnaBenefitsChat::class => ['entryEventId', 'edna_benefit_chat_routes.entry_event_id'],
+        CloseEdnaRejectedChat::class => ['closureId', 'edna_rejected_chat_closures.id'],
         LinkWebFormChat::class => ['entryEventId', 'web_form_chat_routes.entry_event_id'],
         ProcessEdnaOrganicMenu::class => ['menuId', 'edna_organic_menus.id'],
         PrepareEdnaOrganicLoan::class => ['menuId', 'edna_organic_menus.id'],
@@ -43,7 +47,16 @@ class EdnaWorkQueue
     {
         $this->identity($job);
 
-        return $job::class === LinkWebFormChat::class ? 'edna-web-reconcile' : 'edna';
+        if ($job::class === CloseEdnaRejectedChat::class) {
+            return 'edna-rejection-close';
+        }
+        if ($job::class === LinkWebFormChat::class) {
+            $attempts = DB::table('web_form_chat_routes')->where('entry_event_id', $job->entryEventId)->value('attempts');
+
+            return $attempts !== null && (int) $attempts === 0 ? 'edna-web-new' : 'edna-web-reconcile';
+        }
+
+        return 'edna';
     }
 
     /** Holds must be excluded before a bounded poll selects its next batch. */
@@ -117,7 +130,11 @@ class EdnaWorkQueue
         } catch (Throwable) {
             throw new RuntimeException('Edna work payload is unavailable.');
         }
-        $allowedQueues = $job::class === LinkWebFormChat::class ? ['edna', 'edna-web-reconcile'] : ['edna'];
+        $allowedQueues = match ($job::class) {
+            LinkWebFormChat::class => ['edna', 'edna-web-new', 'edna-web-reconcile'],
+            CloseEdnaRejectedChat::class => ['edna-rejection-close'],
+            default => ['edna'],
+        };
         if (! $row || ! in_array($row->queue, $allowedQueues, true)
             || ($expectedQueue !== null && $row->queue !== $expectedQueue) || ! is_array($payload)
             || ($payload['displayName'] ?? null) !== $job::class

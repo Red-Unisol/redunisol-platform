@@ -20,10 +20,13 @@ tasks:
         - bitrix24_form_flow/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: kestra_net
     containerImage: ghcr.io/kestra-io/pydata:latest
     beforeCommands:
       - pip install kestra > /dev/null
     env:
+      BCRA_FILE_BASE_URL: "{{ envs.bcra_file_poc_url }}"
+      BCRA_FILE_TOKEN: "{{ secret('BCRA_FILE_POC_TOKEN') }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"

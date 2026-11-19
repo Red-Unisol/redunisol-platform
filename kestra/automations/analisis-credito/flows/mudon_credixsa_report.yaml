@@ -34,82 +34,121 @@ inputs:
     description: Reabre los errores definitivos de la ultima corrida.
 
 tasks:
-  - id: procesar_lote
+  - id: leer_estado_reanudacion
+    type: io.kestra.plugin.core.kv.Get
+    key: mudon_credixsa_report.resume_state.v1
+    errorOnMissing: false
+
+  - id: comprobar_reanudacion
     type: io.kestra.plugin.scripts.python.Commands
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
     namespaceFiles:
       enabled: true
       include:
-        - mudon_credixsa_report/**
-        - consulta_quiebra_credix/**
-    taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-      pullPolicy: ALWAYS
-      volumes:
-        - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
-        - /srv/redunisol-reports:/reports
-    containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
-    beforeCommands:
-      - python -c "import openpyxl" 2>/dev/null || pip install --no-cache-dir openpyxl==3.1.5 > /dev/null
+        - mudon_credixsa_report/_resume_gate.py
     env:
       RUN_MODE: "{{ inputs.run_mode }}"
+      MUDON_RESUME_STATE: "{{ outputs.leer_estado_reanudacion.value ?? '' }}"
       TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'force_refresh': inputs.force_refresh ?? false, 'retry_errors': inputs.retry_errors ?? false} | toJson) }}"
-      MUDON_STATE_DB_PATH: /data/credixsa-cache/mudon-report.sqlite
-      CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
-      REPORTS_ROOT: /reports
-      MUDON_CORE_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
-      MUDON_CORE_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
-      MUDON_CORE_TIMEOUT_SECONDS: "{{ envs.mudon_core_timeout_seconds ?? '60' }}"
-      MUDON_CORE_VERIFY_TLS: "{{ envs.mudon_core_verify_tls ?? 'false' }}"
-      MUDON_CORE_MAX_ROWS: "{{ envs.mudon_core_max_rows ?? '5000' }}"
-      MUDON_LOAN_LINES: "{{ envs.mudon_loan_lines ?? 'MUDON HABERES|MUDON HABERES SOCIOS NUEVOS' }}"
-      MUDON_CREDIXSA_BATCH_SIZE: "{{ envs.mudon_credixsa_batch_size ?? '5' }}"
-      MUDON_CREDIXSA_DELAY_SECONDS: "{{ envs.mudon_credixsa_delay_seconds ?? '15' }}"
-      MUDON_CREDIXSA_CACHE_MAX_AGE_DAYS: "{{ envs.mudon_credixsa_cache_max_age_days ?? '7' }}"
-      MUDON_CREDIXSA_MAX_ATTEMPTS: "{{ envs.mudon_credixsa_max_attempts ?? '3' }}"
-      CREDIX_LOGIN_URL: https://www.credixsa.com/nuevo/login.php
-      CREDIX_TIMEOUT_SECONDS: "{{ envs.credix_timeout_seconds ?? '90' }}"
-      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'false' }}"
-      CREDIX_DEBUG_DIR: /data/credixsa-cache/debug
-      CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
-      CREDIX_USER: "{{ secret('CREDIX_USER') }}"
-      CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
     commands:
-      - python -m mudon_credixsa_report.entrypoint
+      - python mudon_credixsa_report/_resume_gate.py
+
+  - id: ejecutar_si_hay_trabajo
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.comprobar_reanudacion.vars.should_run }}"
+    then:
+      # Keep pending on task failure, cancellation or an interrupted publication.
+      - id: marcar_reanudacion_pendiente
+        type: io.kestra.plugin.core.kv.Set
+        key: mudon_credixsa_report.resume_state.v1
+        overwrite: true
+        value: pending
+        ttl: P1D
+
+      - id: procesar_lote
+        type: io.kestra.plugin.scripts.python.Commands
+        namespaceFiles:
+          enabled: true
+          include:
+            - mudon_credixsa_report/**
+            - consulta_quiebra_credix/**
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: IF_NOT_PRESENT
+          volumes:
+            - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
+            - /srv/redunisol-reports:/reports
+        containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
+        beforeCommands:
+          - python -c "import openpyxl" 2>/dev/null || pip install --no-cache-dir openpyxl==3.1.5 > /dev/null
+        env:
+          RUN_MODE: "{{ inputs.run_mode }}"
+          TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'force_refresh': inputs.force_refresh ?? false, 'retry_errors': inputs.retry_errors ?? false} | toJson) }}"
+          MUDON_STATE_DB_PATH: /data/credixsa-cache/mudon-report.sqlite
+          CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
+          REPORTS_ROOT: /reports
+          MUDON_CORE_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+          MUDON_CORE_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
+          MUDON_CORE_TIMEOUT_SECONDS: "{{ envs.mudon_core_timeout_seconds ?? '60' }}"
+          MUDON_CORE_VERIFY_TLS: "{{ envs.mudon_core_verify_tls ?? 'false' }}"
+          MUDON_CORE_MAX_ROWS: "{{ envs.mudon_core_max_rows ?? '5000' }}"
+          MUDON_LOAN_LINES: "{{ envs.mudon_loan_lines ?? 'MUDON HABERES|MUDON HABERES SOCIOS NUEVOS' }}"
+          MUDON_CREDIXSA_BATCH_SIZE: "{{ envs.mudon_credixsa_batch_size ?? '5' }}"
+          MUDON_CREDIXSA_DELAY_SECONDS: "{{ envs.mudon_credixsa_delay_seconds ?? '15' }}"
+          MUDON_CREDIXSA_CACHE_MAX_AGE_DAYS: "{{ envs.mudon_credixsa_cache_max_age_days ?? '7' }}"
+          MUDON_CREDIXSA_MAX_ATTEMPTS: "{{ envs.mudon_credixsa_max_attempts ?? '3' }}"
+          CREDIX_LOGIN_URL: https://www.credixsa.com/nuevo/login.php
+          CREDIX_TIMEOUT_SECONDS: "{{ envs.credix_timeout_seconds ?? '90' }}"
+          CREDIX_DEBUG: "{{ envs.credix_debug ?? 'false' }}"
+          CREDIX_DEBUG_DIR: /data/credixsa-cache/debug
+          CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
+          CREDIX_USER: "{{ secret('CREDIX_USER') }}"
+          CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
+        commands:
+          - python -m mudon_credixsa_report.entrypoint
+
+      - id: actualizar_estado_reanudacion
+        type: io.kestra.plugin.core.kv.Set
+        key: mudon_credixsa_report.resume_state.v1
+        overwrite: true
+        value: "{{ outputs.procesar_lote.vars.resume_state }}"
+        ttl: P1D
 
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ outputs.procesar_lote.vars.ok }}"
+    value: "{{ outputs.procesar_lote.vars.ok ?? true }}"
   - id: status
     type: STRING
-    value: "{{ outputs.procesar_lote.vars.status }}"
+    value: "{{ outputs.procesar_lote.vars.status ?? 'idle' }}"
   - id: run_id
     type: STRING
-    value: "{{ outputs.procesar_lote.vars.run_id }}"
+    value: "{{ outputs.procesar_lote.vars.run_id ?? '' }}"
   - id: total
     type: INT
-    value: "{{ outputs.procesar_lote.vars.total }}"
+    value: "{{ outputs.procesar_lote.vars.total ?? 0 }}"
   - id: completed
     type: INT
-    value: "{{ outputs.procesar_lote.vars.completed }}"
+    value: "{{ outputs.procesar_lote.vars.completed ?? 0 }}"
   - id: pending
     type: INT
-    value: "{{ outputs.procesar_lote.vars.pending }}"
+    value: "{{ outputs.procesar_lote.vars.pending ?? 0 }}"
   - id: errors
     type: INT
-    value: "{{ outputs.procesar_lote.vars.errors }}"
+    value: "{{ outputs.procesar_lote.vars.errors ?? 0 }}"
   - id: qualifying
     type: INT
-    value: "{{ outputs.procesar_lote.vars.qualifying }}"
+    value: "{{ outputs.procesar_lote.vars.qualifying ?? 0 }}"
   - id: latest_path
     type: STRING
-    value: "{{ outputs.procesar_lote.vars.latest_path }}"
+    value: "{{ outputs.procesar_lote.vars.latest_path ?? '' }}"
   - id: history_path
     type: STRING
-    value: "{{ outputs.procesar_lote.vars.history_path }}"
+    value: "{{ outputs.procesar_lote.vars.history_path ?? '' }}"
   - id: error
     type: STRING
-    value: "{{ outputs.procesar_lote.vars.error }}"
+    value: "{{ outputs.procesar_lote.vars.error ?? '' }}"
 
 triggers:
   - id: primer_dia_del_mes

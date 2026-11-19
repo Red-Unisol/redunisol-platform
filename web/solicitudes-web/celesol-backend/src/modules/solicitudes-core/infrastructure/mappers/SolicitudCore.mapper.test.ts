@@ -28,6 +28,7 @@ describe("SolicitudCoreMapper", () => {
     const record: PrismaSolicitudShape = {
       administrativeCoreControl: null,
       desestimacionHistorialId: null,
+      idempotencyKey: null,
       archivedAt: null,
       analisisFinalizadoAt: null, analisisFinalizadoBy: null,
       signatureCycleId: null, signatureRequestedAt: null,
@@ -146,6 +147,7 @@ describe("SolicitudCoreMapper", () => {
       ...({
         administrativeCoreControl: null,
       desestimacionHistorialId: null,
+      idempotencyKey: null,
       archivedAt: null,
       analisisFinalizadoAt: null, analisisFinalizadoBy: null,
       signatureCycleId: null, signatureRequestedAt: null,

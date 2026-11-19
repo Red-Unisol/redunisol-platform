@@ -161,7 +161,7 @@ jobs:
         run: python -m unittest kestra.tools.tests.test_ci_image_tags
 
       - name: Run deploy tooling tests
-        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy
+        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy kestra.tools.tests.test_deploy_log_defaults
 
       - name: Run alert sweep tests
         run: python -m pytest kestra/tools/tests/test_alerta_barrido.py -q
@@ -273,6 +273,8 @@ jobs:
           php artisan key:generate --force
       - name: Test Edna HTTP inbox and delivery worker
         run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaIntakeTest.php tests/Feature/EdnaUnifiedIntakeTest.php tests/Feature/EdnaIntakeBindingTest.php tests/Feature/EdnaFlowResendTest.php tests/Feature/EdnaFlowReconciliationTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
+      - name: Test new-only native V3 binding and manual attention guards
+        run: php vendor/bin/pest tests/Feature/EdnaDealMessageBindingTest.php tests/Unit/EdnaMessageBindingTest.php tests/Unit/EdnaCurrentMessageBindingTest.php tests/Feature/EdnaFreshIntakeTest.php tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/WebFormContinuationTest.php tests/Feature/EdnaOrganicFlowTest.php tests/Feature/WebFormChatLinkerTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

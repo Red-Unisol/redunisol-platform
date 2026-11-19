@@ -19,6 +19,8 @@ from .bcra_service import (
 )
 from .bitrix_client import BitrixClient
 from .distribution_schedule import is_within_business_hours as _is_within_business_hours
+from . import _sales_opening as schedule
+from ._routing_cutover import new_routing_enabled
 from .config import AppConfig, load_config
 from .expanded_deal_family import expanded_deal_family
 from .commercial_trace import (
@@ -33,6 +35,7 @@ from .deal_service import (
     active_open_line_owners,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
+    inspect_open_line_assignments,
     notify_distribution_supervisor,
     notify_unmatched_routing,
     resolve_round_robin_assignee,
@@ -303,7 +306,11 @@ def qualify_catamarca_deal(
         )
 
     lead = get_lead(client, lead_id, active_logger)
+    new_intake = _new_owner_policy(deal, lead)
     contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
+    guarded_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason, active_logger)
     province = lead_enum_label(client, lead, config.fields.lead_province) or ""
     employment_status = lead_enum_label(
         client, lead, config.fields.lead_employment_status
@@ -403,6 +410,9 @@ def qualify_catamarca_deal(
         _manual(config, vimarx_resolution.reason) if vimarx_resolution.reason
         else bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     )
+    fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason or fresh_sessions != guarded_sessions:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
     # Persist before leaving PENDING: stage alone cannot distinguish a rejection
     # from manual review. A failed write keeps this deal out of the chat sweep.
     persist_commercial_decision(client, deal_id_int, decision.action)
@@ -416,29 +426,14 @@ def qualify_catamarca_deal(
             "commercial_rejection",
             "rejection_without_distribution",
         )
-        _assign_lead_responsible(
-            client,
-            lead_id=lead_id,
-            assigned_by_id=config.deal.provisional_user_id,
-            logger=active_logger,
-        )
-        client.call(
-            "crm.item.update",
-            {
-                "entityTypeId": DEAL_ENTITY_TYPE_ID,
-                "id": deal_id_int,
-                "fields": {
-                    "stageId": decision.stage_id,
-                    "assignedById": config.deal.provisional_user_id,
-                    config.deal.commercial_line_field: "",
-                    config.deal.routing_bucket_field: routing_bucket_key,
-                    config.deal.queue_action_field: "",
-                    config.deal.queue_reason_field: "",
-                    config.deal.queue_target_stage_field: "",
-                    config.deal.queue_enqueued_at_field: "",
-                },
-            },
-        )
+        preserved = _update_routing_owners(client, config, deal, {
+            "stageId": decision.stage_id, "assignedById": config.deal.provisional_user_id,
+            config.deal.commercial_line_field: "", config.deal.routing_bucket_field: routing_bucket_key,
+            config.deal.queue_action_field: "", config.deal.queue_reason_field: "",
+            config.deal.queue_target_stage_field: "", config.deal.queue_enqueued_at_field: "",
+        }, guarded_sessions, active_logger, processed_at)
+        if preserved:
+            return preserved
         return _result(
             action=decision.action,
             has_pending=False,
@@ -470,7 +465,7 @@ def qualify_catamarca_deal(
         )
 
     single_seller_bucket = bucket is not None and len(bucket.seller_ids) == 1
-    outside_distribution_window = not single_seller_bucket and _business_hours_gate_enabled(source) and (
+    outside_distribution_window = not new_intake and not single_seller_bucket and _business_hours_gate_enabled(source) and (
         not within_business_hours or not created_within_distribution_window
     )
     if outside_distribution_window:
@@ -593,25 +588,40 @@ def qualify_catamarca_deal(
             message="La clasificacion comercial se conservo; falta resolver el enrutamiento.",
             **bcra_trace,
         )
-    try:
-        assignment = resolve_round_robin_assignee(
-            client,
-            config,
-            contact_id=contact_id,
-            deal_id=deal_id_int,
-            lead_id=lead_id,
-            bucket_key=bucket.key,
-            bucket_field=config.deal.routing_bucket_field,
-            pool=bucket.seller_ids,
-            legacy_province_label=bucket.legacy_province_label,
-            logger=active_logger,
-        )
-    except NoOnlineSellersError as exc:
+    window = None
+    if new_intake and not single_seller_bucket:
+        # Qualification may have spent several minutes waiting for commercial data.
+        processed_at = _local_datetime(source, now)
+        window = schedule.sales_closed_window(processed_at, config.sales_calendar)
+        within_business_hours = window is None
+    assignment = None
+    configured_pool = bucket.seller_ids
+    if window is None:
+        try:
+            assignment = resolve_round_robin_assignee(
+                client, config, contact_id=contact_id, deal_id=deal_id_int, lead_id=lead_id,
+                bucket_key=bucket.key, bucket_field=config.deal.routing_bucket_field,
+                pool=bucket.seller_ids, legacy_province_label=bucket.legacy_province_label, logger=active_logger,
+            )
+        except NoOnlineSellersError as exc:
+            configured_pool = exc.configured_pool
+        if new_intake and not single_seller_bucket:
+            processed_at = _local_datetime(source, now)
+            window = schedule.sales_closed_window(processed_at, config.sales_calendar)
+            within_business_hours = window is None
+            if window:
+                assignment = None
+    if assignment is None:
+        fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+        if guard_reason or fresh_sessions != guarded_sessions:
+            return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
         can_enqueue = (
-            not _business_hours_gate_enabled(source)
+            new_intake or not _business_hours_gate_enabled(source)
             or (within_business_hours and created_within_distribution_window)
         )
-        waiting_reason = "routing_pool_paused" if not exc.configured_pool else "assignment_queued"
+        waiting_reason = "routing_pool_paused" if not configured_pool else "assignment_queued"
+        if configured_pool and window is not None:
+            waiting_reason = schedule.WAIT_FOR_OPENING
         distribution = DistributionDecision(
             "queued" if can_enqueue else "manual_owner",
             waiting_reason if can_enqueue else "no_online_sellers",
@@ -630,27 +640,20 @@ def qualify_catamarca_deal(
             update_fields.update(
                 {
                     config.deal.queue_action_field: decision.action,
-                    config.deal.queue_reason_field: decision.reason,
+                    config.deal.queue_reason_field: (
+                        schedule.encode_queue_reason(waiting_reason, decision.reason, processed_at, window)
+                        if new_intake else decision.reason
+                    ),
                     config.deal.queue_target_stage_field: decision.stage_id,
                     config.deal.queue_enqueued_at_field: processed_at.isoformat(),
                 }
             )
         if decision.commercial_line is not None:
             update_fields[config.deal.commercial_line_field] = decision.commercial_line
-        _assign_lead_responsible(
-            client,
-            lead_id=lead_id,
-            assigned_by_id=config.deal.provisional_user_id,
-            logger=active_logger,
-        )
-        client.call(
-            "crm.item.update",
-            {
-                "entityTypeId": DEAL_ENTITY_TYPE_ID,
-                "id": deal_id_int,
-                "fields": update_fields,
-            },
-        )
+        preserved = _update_routing_owners(client, config, deal, update_fields,
+                                          guarded_sessions, active_logger, processed_at)
+        if preserved:
+            return preserved
         queue_stage = (
             config.deal.assignment_queue_stage_id
             if can_enqueue
@@ -678,7 +681,7 @@ def qualify_catamarca_deal(
             source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy=distribution.strategy,
-            configured_pool=exc.configured_pool,
+            configured_pool=configured_pool,
             online_pool=(),
             commercial_action=decision.action,
             commercial_reason=decision.reason,
@@ -686,7 +689,9 @@ def qualify_catamarca_deal(
             distribution_action=distribution.action,
             distribution_reason=distribution.reason,
             message=(
-                "No habia vendedores disponibles; la negociacion queda en cola temporal."
+                "La negociación espera la apertura de Ventas."
+                if waiting_reason == schedule.WAIT_FOR_OPENING
+                else "No habia vendedores disponibles; la negociacion queda en cola temporal."
                 if can_enqueue
                 else "No habia vendedores disponibles; queda con Maru para gestion manual."
             ),
@@ -703,6 +708,9 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         logger=active_logger,
     )
+    fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason or fresh_sessions != guarded_sessions:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
     update_fields: dict[str, Any] = {
         "stageId": decision.stage_id,
         "assignedById": assigned_by_id,
@@ -711,20 +719,10 @@ def qualify_catamarca_deal(
     if decision.commercial_line is not None:
         update_fields[config.deal.commercial_line_field] = decision.commercial_line
 
-    _assign_lead_responsible(
-        client,
-        lead_id=lead_id,
-        assigned_by_id=assigned_by_id,
-        logger=active_logger,
-    )
-    client.call(
-        "crm.item.update",
-        {
-            "entityTypeId": DEAL_ENTITY_TYPE_ID,
-            "id": deal_id_int,
-            "fields": update_fields,
-        },
-    )
+    preserved = _update_routing_owners(client, config, deal, update_fields,
+                                      guarded_sessions, active_logger, processed_at)
+    if preserved:
+        return preserved
     linked_activity_count = bind_open_line_activities_to_deal(
         client,
         lead_id=lead_id,
@@ -740,6 +738,7 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=active_logger,
+        expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(
         client,
@@ -843,23 +842,6 @@ def process_distribution_queue(
             events.append(_queue_error_result(config, deal, processed_at, exc))
     queued = remaining
 
-    if not within_business_hours:
-        for deal in queued:
-            try:
-                events.append(
-                    _close_queued_deal(
-                        client, config, deal, active_logger, processed_at
-                    )
-                )
-            except Exception as exc:
-                active_logger.error(
-                    f"No se pudo cerrar la negociacion {_optional_int(deal.get('id'))}: {exc}"
-                )
-                events.append(
-                    _queue_error_result(config, deal, processed_at, exc)
-                )
-        return _queue_batch_result(events, processed_at)
-
     current_week_start = (
         processed_at - timedelta(days=processed_at.weekday())
     ).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -871,7 +853,21 @@ def process_distribution_queue(
             deal.get(config.deal.queue_enqueued_at_field), source
         )
         bucket_key = str(deal.get(config.deal.routing_bucket_field) or "").strip()
-        if enqueued_at is None or enqueued_at < current_week_start or bucket_key not in current:
+        state, reason = schedule.decode_queue_reason(str(deal.get(config.deal.queue_reason_field) or ""))
+        new_intake = bool(state) and new_routing_enabled(deal.get("createdTime"))
+        try:
+            if state and (not new_intake or state == "invalid_queue_marker"):
+                raise ValueError("El registro de espera no coincide con el alta de la negociación.")
+            if new_intake and enqueued_at and bucket_key in current and _hold_until_sales_opening(
+                client, config, deal, bucket_key, reason, enqueued_at, processed_at
+            ):
+                continue
+        except Exception as exc:
+            active_logger.error(f"No se pudo verificar la espera en la negociación {deal.get('id')}: {exc}")
+            events.append(_queue_error_result(config, deal, processed_at, exc))
+            continue
+        legacy_closed = not new_intake and (not within_business_hours or (enqueued_at and enqueued_at < current_week_start))
+        if enqueued_at is None or legacy_closed or bucket_key not in current:
             try:
                 events.append(
                     _close_queued_deal(
@@ -903,7 +899,8 @@ def process_distribution_queue(
         try:
             events.append(
                 _retry_queued_deal(
-                    client, config, oldest, active_logger, processed_at
+                    client, config, oldest, active_logger, processed_at,
+                    current_time=lambda: _local_datetime(source, now),
                 )
             )
         except Exception as exc:
@@ -914,6 +911,27 @@ def process_distribution_queue(
                 _queue_error_result(config, oldest, processed_at, exc)
             )
     return _queue_batch_result(events, processed_at)
+
+
+def _hold_until_sales_opening(client, config, deal, bucket_key, commercial_reason, enqueued_at, processed_at):
+    reason_field = config.deal.queue_reason_field
+    window = schedule.sales_closed_window(processed_at, config.sales_calendar)
+    if window is None:
+        return False
+    bucket = routing_bucket_by_key(config, bucket_key)
+    state = schedule.WAIT_FOR_OPENING if bucket.seller_ids else "routing_pool_paused"
+    marker = schedule.encode_queue_reason(state, commercial_reason, enqueued_at, window)
+    if deal.get(reason_field) != marker:
+        # The queue page is a snapshot; never restore a stage, owner or prior queue entry.
+        deal_id = int(deal["id"])
+        fresh = _get_deal(client, deal_id)
+        snapshot = ("stageId", "assignedById", reason_field, config.deal.queue_enqueued_at_field,
+                    config.deal.routing_bucket_field)
+        if all(fresh.get(key) == deal.get(key) for key in snapshot):
+            client.call("crm.item.update", {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID, "id": deal_id, "fields": {reason_field: marker},
+            })
+    return True
 
 
 def _list_queued_deals(client: Any, config: AppConfig) -> list[dict[str, Any]]:
@@ -976,6 +994,116 @@ def _split_legacy_queue_bucket(client: Any, config: AppConfig, deal: dict[str, A
     deal[config.deal.routing_bucket_field] = key
 
 
+def _new_owner_policy(deal, lead):
+    return new_routing_enabled(deal.get("createdTime")) and new_routing_enabled(lead.get("DATE_CREATE"))
+
+
+def _unverified_initial_owner(owners):
+    if 71283 in owners:
+        return "integration_owner_unverified"
+    if 74827 in owners:
+        return "sales_receiver_assignment_preserved"
+    return None
+
+
+def _routing_preflight(client, config, deal, logger):
+    """Preserve human CRM owners and attention before changing responsibles."""
+    try:
+        fresh = _get_deal(client, _required_int(deal.get("id"), "id"))
+        if any(str(fresh.get(key) or "") != str(deal.get(key) or "")
+               for key in ("id", "leadId", "contactId", "categoryId", "stageId", "assignedById")):
+            return {}, "deal_changed_before_assignment"
+        lead_id = _required_int(fresh.get("leadId"), "leadId")
+        lead = get_lead(client, lead_id, logger)
+        snapshot = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
+        expected = deal.setdefault("_routing_lead_snapshot", snapshot)
+        deal["_new_owner_policy"] = _new_owner_policy(fresh, lead)
+        if deal["_new_owner_policy"] and expected != snapshot:
+            return {}, "crm_identity_changed_before_assignment"
+        owners = [_optional_int(fresh.get("assignedById")), _optional_int(lead.get("ASSIGNED_BY_ID"))]
+        if any(owner not in (None, 0, config.deal.provisional_user_id) for owner in owners):
+            if deal["_new_owner_policy"]:
+                initial = _unverified_initial_owner(owners)
+                if initial:
+                    return {}, initial
+            return {}, "manual_owner_preserved"
+        if lead.get("CONTACT_ID") and str(lead["CONTACT_ID"]) != str(fresh.get("contactId")):
+            return {}, "crm_identity_changed_before_assignment"
+        return inspect_open_line_assignments(client, lead_id=lead_id,
+            contact_id=_optional_int(fresh.get("contactId")), deal_id=_required_int(fresh.get("id"), "id"),
+            distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+    except Exception:
+        return {}, "attention_inspection_unavailable"
+
+
+def _update_routing_owners(client, config, deal, fields, sessions, logger, processed_at):
+    lead_id, deal_id = int(deal["leadId"]), int(deal["id"])
+    target = fields["assignedById"]
+    new_policy = deal.get("_new_owner_policy", False)
+    snapshot = deal.get("_routing_lead_snapshot", {})
+
+    def crm_still_matches():
+        fresh = _get_deal(client, deal_id)
+        lead = get_lead(client, lead_id, logger)
+        return (all(str(fresh.get(key) or "") == str(deal.get(key) or "") for key in
+                    ("id", "leadId", "contactId", "categoryId", "stageId", "assignedById"))
+                and all(str(lead.get(key) or "") == str(snapshot.get(key) or "") for key in
+                        ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")))
+
+    if new_policy and not crm_still_matches():
+        return _routing_preserved(client, config, deal, processed_at, "crm_changed_before_assignment", logger)
+    if not new_policy or str(snapshot.get("ASSIGNED_BY_ID")) != str(target):
+        _assign_lead_responsible(client, lead_id=lead_id, assigned_by_id=target, logger=logger)
+        if new_policy:
+            # Bitrix has no multi-record compare-and-swap. Recheck human attention and
+            # both records after our first write, and never roll back over a later edit.
+            snapshot["ASSIGNED_BY_ID"] = target
+            current_sessions, reason = inspect_open_line_assignments(
+                client, lead_id=lead_id, contact_id=_optional_int(deal.get("contactId")), deal_id=deal_id,
+                distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+            if reason or sessions != current_sessions or not crm_still_matches():
+                return _routing_preserved(client, config, deal, processed_at,
+                                          reason or "crm_or_session_changed_before_assignment", logger)
+    if new_policy and str(deal.get("assignedById")) == str(target):
+        fields = {key: value for key, value in fields.items() if key != "assignedById"}
+    client.call("crm.item.update", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": deal_id, "fields": fields})
+    return None
+
+
+def _routing_preserved(client, config, deal, processed_at, reason, logger):
+    action = "skipped"
+    current = deal
+    try:
+        current = _get_deal(client, _required_int(deal.get("id"), "id"))
+        same = all(str(current.get(key) or "") == str(deal.get(key) or "")
+                   for key in ("id", "leadId", "contactId", "categoryId", "stageId", "assignedById"))
+        expected = deal.get("_routing_lead_snapshot")
+        lead = get_lead(client, _required_int(current.get("leadId"), "leadId"), logger)
+        same_lead = isinstance(expected, dict) and all(str(lead.get(key) or "") == str(expected.get(key) or "")
+                   for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID"))
+        coherent = (str(lead.get("ID")) == str(current.get("leadId"))
+                    and str(current.get("categoryId")) == str(config.deal.category_id)
+                    and (not lead.get("CONTACT_ID") or str(lead["CONTACT_ID"]) == str(current.get("contactId"))))
+        if (same and same_lead and coherent and current.get("stageId") in
+                {config.deal.pending_qualification_stage_id, config.deal.assignment_queue_stage_id}):
+            # Remove only this automatic selector entry. Responsibles, chat and
+            # commercial decision are untouched; this is a routing review.
+            client.call("crm.item.update", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": current["id"],
+                "fields": {"stageId": config.deal.routing_review_stage_id, config.deal.queue_reason_field: reason}})
+            current = {**current, "stageId": config.deal.routing_review_stage_id}
+            action = "routing_review"
+    except Exception:
+        # A failed/uncertain stage write never authorizes a responsible change.
+        pass
+    return _result(action=action, has_pending=False, reason=reason, processed_at=processed_at,
+        deal_id=_optional_int(current.get("id")), lead_id=_optional_int(current.get("leadId")),
+        contact_id=_optional_int(current.get("contactId")), stage_id=current.get("stageId"),
+        assigned_by_id=_optional_int(current.get("assignedById")),
+        assignment_strategy="manual_assignment_preserved", distribution_action="preserved",
+        distribution_reason=reason, chat_transfer_status="manual_owner_preserved",
+        message="Se conservan responsables y chat; atención o identidad requieren revisión de enrutamiento.")
+
+
 def _guard_queued_ownership(client, config, deal, logger, processed_at):
     """Re-read live ownership; a queue entry never overrides a human handoff."""
     fresh = _get_deal(client, _required_int(deal.get("id"), "id"))
@@ -989,13 +1117,29 @@ def _guard_queued_ownership(client, config, deal, logger, processed_at):
         )
     lead_id = _required_int(fresh.get("leadId"), "leadId")
     lead = get_lead(client, lead_id, logger)
-    owners = set(active_open_line_owners(
+    fresh["_routing_lead_snapshot"] = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
+    _, attention_reason = inspect_open_line_assignments(
         client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
         deal_id=_required_int(fresh.get("id"), "id"),
-        distributable_open_line_ids=config.deal.distributable_open_line_ids,
-    ))
-    owners.update(owner for value in (fresh.get("assignedById"), lead.get("ASSIGNED_BY_ID"))
-                  if (owner := _optional_int(value)) is not None and owner > 0)
+        distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+    new_policy = _new_owner_policy(fresh, lead)
+    if attention_reason and (new_policy or attention_reason != "manual_owner_preserved"):
+        return fresh, _routing_preserved(client, config, fresh, processed_at, attention_reason, logger)
+    owners = {owner for value in (fresh.get("assignedById"), lead.get("ASSIGNED_BY_ID"))
+              if (owner := _optional_int(value)) is not None and owner > 0}
+    if new_policy:
+        # The live attention check above already verified every active chat. Its
+        # unattended receiver is not a seller to copy onto the CRM records.
+        owners.discard(config.deal.provisional_user_id)
+        if owners:
+            reason = _unverified_initial_owner(owners) or "manual_owner_preserved"
+            return fresh, _routing_preserved(client, config, fresh, processed_at, reason, logger)
+    else:
+        owners.update(active_open_line_owners(
+            client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
+            deal_id=_required_int(fresh.get("id"), "id"),
+            distributable_open_line_ids=config.deal.distributable_open_line_ids,
+        ))
     owners.discard(config.deal.provisional_user_id)
     if not owners:
         return fresh, None
@@ -1030,6 +1174,7 @@ def _retry_queued_deal(
     processed_at: datetime,
     *,
     within_business_hours: bool = True,
+    current_time=None,
 ) -> dict[str, object]:
     deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
     if preserved is not None:
@@ -1042,6 +1187,25 @@ def _retry_queued_deal(
     if bucket is None:
         return _close_queued_deal(client, config, deal, logger, processed_at)
 
+    state, commercial_reason = schedule.decode_queue_reason(str(deal.get(config.deal.queue_reason_field) or ""))
+
+    def closing_wait():
+        if current_time is None or not state or len(bucket.seller_ids) == 1 or not new_routing_enabled(deal.get("createdTime")):
+            return None
+        instant = current_time()
+        enqueued_at = datetime.fromisoformat(str(deal[config.deal.queue_enqueued_at_field]))
+        if _hold_until_sales_opening(client, config, deal, bucket_key, commercial_reason, enqueued_at, instant):
+            return _queue_context_result(
+                client, config, deal, logger, action="queue_waiting",
+                reason=schedule.WAIT_FOR_OPENING if bucket.seller_ids else "routing_pool_paused",
+                within_business_hours=False, processed_at=instant, assignment_strategy="assignment_queue",
+                message="La negociación sigue en la cola comercial.",
+            )
+        return None
+
+    waiting = closing_wait()
+    if waiting:
+        return waiting
     try:
         assignment = resolve_round_robin_assignee(
             client,
@@ -1078,24 +1242,19 @@ def _retry_queued_deal(
         deal.get(config.deal.queue_target_stage_field)
         or config.deal.manual_review_stage_id
     )
-    _assign_lead_responsible(
-        client, lead_id=lead_id, assigned_by_id=assigned_by_id, logger=logger
-    )
-    client.call(
-        "crm.item.update",
-        {
-            "entityTypeId": DEAL_ENTITY_TYPE_ID,
-            "id": deal_id,
-            "fields": {
-                "stageId": target_stage,
-                "assignedById": assigned_by_id,
-                config.deal.queue_action_field: "",
-                config.deal.queue_reason_field: "",
-                config.deal.queue_target_stage_field: "",
-                config.deal.queue_enqueued_at_field: "",
-            },
-        },
-    )
+    guarded_sessions, guard_reason = _routing_preflight(client, config, deal, logger)
+    if guard_reason:
+        return _routing_preserved(client, config, deal, processed_at, guard_reason, logger)
+    waiting = closing_wait()
+    if waiting:
+        return waiting
+    preserved = _update_routing_owners(client, config, deal, {
+        "stageId": target_stage, "assignedById": assigned_by_id,
+        config.deal.queue_action_field: "", config.deal.queue_reason_field: "",
+        config.deal.queue_target_stage_field: "", config.deal.queue_enqueued_at_field: "",
+    }, guarded_sessions, logger, processed_at)
+    if preserved:
+        return preserved
     linked = bind_open_line_activities_to_deal(
         client, lead_id=lead_id, contact_id=contact_id,
         deal_id=deal_id, logger=logger,
@@ -1107,6 +1266,7 @@ def _retry_queued_deal(
         logger=logger,
         preserve_existing_ownership=True,
         provisional_user_id=config.deal.provisional_user_id,
+        expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(
         client, config, deal_id=deal_id,
@@ -1213,7 +1373,7 @@ def _queue_context_result(
         previous_assigned_by_id=_optional_int(deal.get("assignedById")),
         within_business_hours=overrides.pop("within_business_hours", overrides.get("action") != "queue_closed"),
         commercial_action=str(deal.get(config.deal.queue_action_field) or ""),
-        commercial_reason=str(deal.get(config.deal.queue_reason_field) or ""),
+        commercial_reason=schedule.decode_queue_reason(str(deal.get(config.deal.queue_reason_field) or ""))[1],
         commercial_stage_id=str(
             deal.get(config.deal.queue_target_stage_field) or ""
         ),
@@ -1256,7 +1416,7 @@ def _queue_error_result(
         routing_bucket=str(deal.get(config.deal.routing_bucket_field) or ""),
         assignment_strategy="assignment_queue_error",
         commercial_action=str(deal.get(config.deal.queue_action_field) or ""),
-        commercial_reason=str(deal.get(config.deal.queue_reason_field) or ""),
+        commercial_reason=schedule.decode_queue_reason(str(deal.get(config.deal.queue_reason_field) or ""))[1],
         commercial_stage_id=str(deal.get(config.deal.queue_target_stage_field) or ""),
         distribution_action="error",
         distribution_reason="internal_error",

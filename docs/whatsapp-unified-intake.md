@@ -1,6 +1,111 @@
 # Intake unificado de WhatsApp Ventas
 
+## Corrección de vinculación para ingresos nuevos (16/11/2026)
+
+El deploy productivo ejecuta `edna:intake-cutover activate` después de verificar
+las imágenes de todos los workers y la salud HTTP. El primer llamado conserva
+en `edna_intake_cutovers` el máximo ID del inbox y la fecha UTC. Los llamados
+posteriores no cambian ese corte ni encolan recuperaciones. Sólo los eventos con
+ID posterior y fecha original Edna posterior al corte usan la nueva resolución;
+un callback antiguo entregado tarde tampoco se considera nuevo. La migración
+crea tablas, sin modificar registros ni reencolar casos anteriores.
+
+Para esos ingresos, `EdnaMessageBinding` prueba mensaje, sesión y actividad
+nativos. Un prospecto original sin contacto ni caso anterior conserva el contrato
+de enriquecimiento habitual, incluyendo ahora el `activity_id` real que exige el
+control de pauta. Contactos y gestiones existentes usan una prueba local versión
+2, sin reservar nuevamente el `lead_id` único de un caso anterior.
+
+Una respuesta v3 real completada para una identidad existente se procesa mediante
+el contrato de perfil confirmado ya desplegado (`organic-profile-reuse-v1`), con
+proveniencia `edna_intake_request` y su fecha real. El transporte Flow y su respuesta
+siguen en sus registros originales: no se fabrica un menú, una elección ni otro
+envío. Se conserva la atribución del ingreso. El consumidor comprueba nuevamente
+CUIL, mensaje nativo, identidad y gestiones vigentes antes de cualquier escritura.
+Las ambigüedades y decisiones comerciales protegidas siguen en revisión.
+
+Si devuelve una única negociación ya asignada, `edna_intake_chat_routes` conserva
+prueba, destino, intención, acuse y resultado. La transferencia comparte el lock
+por chat con el menú y el puente web. Se releen negociación e identidad, y la
+atención humana se comprueba otra vez inmediatamente antes del único POST. Un
+resultado incierto sólo se concilia por lecturas; `observed` o `not_needed` no
+prueban autoría automática. El journal usa `whatsapp.native_intake_route` y exige
+la misma correlación con el evento nativo para atribuir una derivación.
+
+Un recibo web que sólo comparte teléfono ya no intercepta estos nuevos mensajes
+sin referencia: pasan al menú o a pauta y verifican la identidad por el recorrido
+correspondiente. Una referencia explícita inválida sigue en revisión. Esto no
+selecciona una solicitud por teléfono ni modifica los recibos históricos.
+
+El cambio no restablece callbacks que el proveedor no esté entregando. Para
+verificar el corte: `php artisan edna:intake-cutover status`. Un rollback debe
+conservar los consumidores nuevos mientras existan jobs `RouteEdnaIntakeChat`;
+no borrar el corte ni reactivar solicitudes anteriores como forma de recuperación.
+
+## Actividades de chat pertenecientes a negociaciones (17/11/2026)
+
+El resolvedor de mensajes web también busca negociaciones relacionadas por los
+IDs de prospectos y contactos cuyo teléfono ya fue verificado. Lee sus
+actividades `IMOPENLINES_SESSION` aunque la actividad pertenezca exclusivamente
+al deal. La relación sólo descubre candidatos: la prueba sigue exigiendo el ID
+externo exacto, sesión, chat, canal y emisor. Páginas completas, relaciones no
+verificables y pruebas múltiples quedan pendientes/revisión, sin elegir el primer
+resultado. No se selecciona vendedor por teléfono ni se crean fichas.
+
+El despliegue productivo ejecuta `php artisan edna:deal-message-binding activate`
+tras comprobar imágenes y salud. Guarda una frontera inmutable
+`deal-message-binding-v1` en `edna_intake_cutovers`: sólo inbox IDs posteriores
+y fechas originales posteriores al corte ganan esta búsqueda adicional. Repetir
+el deploy no mueve la frontera, no modifica otros cortes ni encola recuperaciones.
+Los mensajes anteriores conservan su resolución original; este cambio no recupera
+los casos detectados durante el diagnóstico. `status` permite leer la frontera.
+
+Los controles del puente sobre identidad, negociación vigente, sesión abierta,
+atención humana, lock compartido y lectura final antes del único POST se
+mantienen. Encontrar una actividad no demuestra una transferencia del chat.
+
 ## Alcance y escritor único
+
+### Restablecimiento de callbacks sin reprocesamiento
+
+Antes de restablecer una entrega detenida en Edna, desplegar el receptor con
+`edna:callback-reception` y ejecutar `php artisan edna:callback-reception arm`
+inmediatamente antes del cambio del proveedor. Guarda una frontera adicional
+append-only en `edna_intake_cutovers`; no altera el corte de intake nativo ni
+encola recuperaciones. Cada armado puede avanzar el límite, nunca retrocederlo.
+Los callbacks autenticados con fecha original anterior se acusan con HTTP200 e
+`ignored`, sin guardarlos ni despacharlos al bot. Las fechas no verificables se
+cuentan como `invalid`. Sólo se registran IDs técnicos y motivo de exclusión.
+`status` muestra el límite efectivo sin modificar datos. El deploy no arma
+automáticamente este filtro: se hace al restablecer deliberadamente el proveedor.
+
+No reemplazar los destinos de Edna sin releerlos: un webhook adicional puede
+reemplazar la entrega del principal para ese canal. Conservar Bitrix y el bot,
+el canal 2423, los tipos de evento y la autenticación existentes. No solicitar
+reenvío histórico. Verificar luego un mensaje nuevo por ID externo en el inbox
+y su procesamiento, preservando las comprobaciones de atención humana.
+
+Configuración deseada del proveedor para Ventas: webhook `2508`,
+`Red Unisol Main`, sender `Red Unisol - Ventas` / subject `2423`, únicamente
+`IN_MESSAGE`, con autenticación habilitada y su clave existente conservada.
+La URL principal es
+`https://redunisol.bitrix24.es/bitrix/tools/messageservice/callback_ednaru.php`
+y la URL adicional es `https://redunisol.com.ar/api/webhooks/edna/incoming`.
+No regenerar la clave ni sustituir el destino de Bitrix al recuperar el bot.
+
+El 16/11/2026 se observó vacía esa URL adicional y se restableció después de
+desplegar el PR #742 (`f4520818365d365bc6cb2429ce381ba1a1f84d12`). No se
+confirmó quién ni cómo la había eliminado. El límite de recepción quedó en
+`2026-11-16T22:56:57Z` (19:56:57 ART), con inbox previo `37216`, sin mover
+`native-v3-v1`. Edna confirmó el guardado y comprobó el receptor con HEAD 200.
+El primer mensaje real posterior, `21038026201`, quedó en inbox `37217` a
+las `22:58:01Z` y fue procesado a las `22:58:03Z` como `unified_intake_entry`.
+El menú `2433` conservó la deduplicación de la sesión
+(`menu_already_reserved_for_session`); no se afirma un nuevo envío ni una
+transferencia por ese ingreso. Las huellas de las 575 solicitudes históricas
+en revisión/resultado incierto permanecieron iguales. Una prueba adicional
+con lote vacío autenticado dio HTTP200 con todos los contadores en cero;
+esa prueba técnica se distingue del mensaje real.
 
 Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
 primero por la bienvenida de dos opciones. La regla funcional y sus casos se
@@ -16,6 +121,15 @@ requieren el v3. `Otra consulta` deriva el chat a Tincho, usuario `5737`, con
 lectura previa de atención, responsables y sesión. El texto escrito libremente
 no autoriza una selección: se valida el token opaco por envío, teléfono,
 subject, conversación, vencimiento y selección única.
+
+Para `Otra consulta`, el responsable comercial de un **contacto** puede conservarse
+mientras el chat se transfiere al destino configurado. Esta excepción no cambia
+responsables CRM ni se aplica al préstamo, a leads, negociaciones o empresas.
+Las lecturas anterior y posterior deben conservar exactamente el contacto y su
+responsable; una modificación concurrente detiene la acción o deja su resultado
+para revisión. La intención durable guarda `routing_policy=other_inquiry`; las
+intenciones anteriores conservan la política estricta. La atención humana real
+(aceptación, respuesta o transferencia previa) sigue bloqueando en todos los casos.
 
 ### Pauta y atribución de la entrada
 
@@ -153,6 +267,13 @@ normal por UUID, conservando responsables y reevaluando los criterios vigentes.
 Sólo `reused_not_valid` con `write_attempted=false` habilita pedir el v3 después
 de consultar ese endpoint. Un resultado incierto nunca habilita ese fallback.
 
+La preclasificación reconoce también `organic_profile_reuse` en la ruta explícita
+de jubilado provincial de Caja de Córdoba sin banco informado, igual que el
+ingreso unificado. No inventa un banco ni extiende la excepción a otras provincias,
+organismos o categorías. Esta corrección requiere publicar los namespace files
+de Marketing CRM, además del despliegue web para workers y derivación a Tincho.
+No se reenvían consultas ya recibidas ni se reabren las que esperan actualización.
+
 Desplegar primero el consumidor Kestra compatible y comprobar sus archivos/flow;
 luego activar Web. Antes de cualquier despliegue general deben estar en Git los
 resguardos de asignación manual que ya estén activos en runtime. Para rollback,
@@ -176,13 +297,19 @@ Los pollers excluyen estas reservas antes de seleccionar su lote acotado.
 La conexión debe ser la misma base de datos del ledger y el insert de cola
 debe ocurrir en la transacción; una configuración incompatible falla sin enviar.
 
-El único worker de Ventas atiende por orden `edna-inbox`, `edna` y
-`edna-web-reconcile`. Primero captura entradas; después procesa menú, v3 y
-préstamos; finalmente atiende los reintentos del puente web. La prioridad se
-aplica al tomar el siguiente job: no interrumpe el que ya está ejecutándose ni
-añade emisores simultáneos. El destino físico de la cola no modifica el comando
-serializado ni la identidad de sus reservas. Los jobs del puente ya existentes
-en `edna` siguen siendo válidos durante la transición.
+Ventas tiene un consumidor por cola: `edna-inbox-worker` recibe entradas de
+`edna-inbox`, `edna-worker` procesa menú/v3/préstamos en `edna`, y
+`edna-web-worker` consume primero `edna-web-new` y después
+`edna-web-reconcile` y finalmente `edna-rejection-close`. Así los reintentos del menú no
+impiden ejecutar el puente web ni capturar callbacks. Cada cola tiene un solo
+worker; no se escala el envío sin límite. Los tres comparten las reservas
+durables y los locks por chat existentes, y cada acción vuelve a verificar
+sesión y atención humana. Compose concede 130 segundos de parada para que
+termine el job actual (máximo 115 segundos, visibilidad de cola 120 segundos).
+Los workflows dev/prod verifican los tres servicios y su imagen efectiva.
+El destino físico no modifica el comando serializado ni sus reservas. Los jobs
+del puente ya existentes en `edna` siguen siendo válidos durante la transición.
+El despliegue no reabre estados terminales, mueve cortes ni reencola históricos.
 
 La recuperación operativa es explícita y separada del scheduler:
 
@@ -378,6 +505,116 @@ basta con la fase guardada o con que el vendedor ya sea dueño. Si aparece otra 
 humana posterior, se conserva; los resultados inciertos que no se resuelven
 terminan en revisión.
 
+### Cierre automático después de un rechazo avisado
+
+`edna:rejected-chats poll` descubre sólo relaciones locales comprobadas de las
+últimas 24 horas (binding/intake, consulta reutilizada o recibo web), con prospecto,
+mensaje y sesión nativa exactos. No enumera el CRM por teléfono ni cierra el
+histórico general. La ventana incluye los rechazos recientes todavía abiertos;
+no vuelve a clasificarlos ni reenvía sus avisos. La selección está acotada a 500
+candidatos locales por poll y 25 jobs, con prioridad para los más recientes.
+
+El prospecto debe conservar `RESULTADO PERDIDO`, motivo conocido y
+`UF_CRM_REJ_NOTICE=PROCESSED`. Además, se exige **el mensaje saliente real en la
+misma sesión**, posterior al rechazo y a su ingreso, con `connectorMid` y texto
+exacto de la plantilla correspondiente. PROCESSED por sí solo no autoriza cerrar:
+hay motivos que sólo envían correo o no tienen aviso. El catálogo reproducible
+`resources/crm/rejection-notices.json` conserva los 14 mensajes públicos activos
+del generador canónico del BP889; se regenera desde la raíz con:
+
+```text
+php web/redunisol-web/tools/build-rejection-notices.php
+```
+
+Ese mensaje nativo prueba que el aviso quedó registrado como salida, no su
+entrega o lectura en el dispositivo. El remitente puede ser Nico porque el BP
+usa el responsable del prospecto. Sólo se exceptúa ese ID exacto, con hash,
+fecha, autor, clase de salida y connectorMid coincidentes; cualquier otro
+mensaje de operador, aceptación, transferencia explícita o respuesta posterior
+del cliente conserva la conversación. Los eventos nativos con autor reservado 0
+no requieren un flag `system` que esta API omite; contradicciones de conector o
+una salida con ese autor detienen el proceso. El estado humano se relee completo
+dos veces y el prospecto se relee después de la última inspección.
+
+El job usa el lock compartido por chat. Antes del único
+`imopenlines.operator.another.finish(CHAT_ID)` guarda una intención durable en
+`edna_rejected_chat_closures`; luego conserva el acuse y verifica el cierre de
+la sesión original con fecha de cierre. Un timeout o acuse incierto habilita sólo
+lecturas posteriores, nunca repetir el POST. Un cierre observado sin acuse se
+separa del cierre confirmado propio. La recuperación usa backoff exponencial
+con jitter hasta 30 minutos y termina en revisión a las ocho horas.
+
+Bitrix no admite SESSION_ID ni comparación atómica de responsable/sesión en el
+POST de cierre. La relectura final reduce la carrera con una atención/reapertura,
+pero no elimina la ventana entre lectura y escritura. Una sesión nueva, un
+prospecto reabierto, atención humana o un vínculo cambiado no se cierran en los
+chequeos previos. Nunca se toma ni transfiere un chat para poder cerrarlo.
+
+La cola `edna-rejection-close` es la tercera prioridad de `edna-web-worker`, detrás
+de `edna-web-new` y `edna-web-reconcile`; no compite con callbacks ni menú/v3.
+Publicar código, migración y Compose juntos. `EDNA_REJECTION_CLOSE_ENABLED=false`
+pausa descubrimiento y ejecución; las otras compuertas existentes también siguen
+vigentes. Rollback: pausar primero la función, conservar el ledger y su intención,
+y mantener un consumidor compatible mientras existan jobs de esta clase.
+
+```text
+php artisan edna:rejected-chats status --limit=25
+php artisan edna:rejected-chats poll --limit=25
+```
+
+`status` sólo muestra IDs técnicos/estados locales. `poll` puede encolar cierres
+reales y lo ejecuta el scheduler cada minuto cuando las compuertas están activas.
+El recibo SQL es primario; `whatsapp.rejection_close` del journal agrega trazabilidad
+sin textos ni identidades personales. No se cuenta como transferencia automática.
+Los rechazos de negociación comercial/BCRA sin un aviso real verificable quedan
+fuera de este cierre; una revisión manual o proveedor temporalmente pendiente
+tampoco equivale a rechazo.
+
+### Reintentos acotados y prioridad de mensajes nuevos
+
+El puente aplica backoff exponencial con **equal jitter**: para los intentos
+1, 2, 3, 4, 5 y siguientes, el techo es 60, 120, 240, 480, 960 y 1800 segundos.
+Cada espera se elige al azar entre el 50 % y el 100 % del techo; no supera
+30 minutos. Una transferencia incierta conserva además un mínimo de 5 minutos
+entre consultas. El poll corre cada minuto: estos intervalos indican cuándo
+el trabajo pasa a estar disponible, no una promesa de ejecución exacta.
+
+La recuperación automática dispone de **8 horas desde `created_at` de la ruta
+del mensaje**. Para ingresos nuevos desde el 19/11/2026 a las 11:00 ART se descuenta
+la espera de apertura acreditada por Kestra para esa misma negociación y sesión.
+Se guarda el despertar previsto y los intentos se reanudan con el tiempo que quedaba.
+Las esperas por identidad, evidencia de atención o errores de lectura siguen consumiendo el plazo.
+El claim comprueba el
+vencimiento antes de cualquier lectura CRM; también se verifica durante el job
+y antes de transferir. El poll caduca filas sin lease vigente en lotes acotados.
+Los jobs antiguos ya encolados se reconocen y terminan localmente sin repetir
+consultas. No se eliminan recibos, pruebas ni reservas de trabajos aún activos.
+Una ruta sin transferencia incierta queda `expired/retry_window_expired`;
+`sending`/`unknown` o una intención sin resolución quedan en
+`review/transfer_unresolved_after_retry_window`, conservando el acuse disponible.
+No se repite el POST ni se reabre un caso vencido. Un mensaje nuevo puede crear
+su propia ruta elegible; no se reprocesa el mensaje anterior. Una prueba histórica
+válida de una ruta vencida puede orientar esa nueva resolución, pero todavía se
+exigen el mensaje exacto y las verificaciones vigentes antes de elegir el caso.
+
+Los primeros intentos usan `edna-web-new`; los reintentos usan
+`edna-web-reconcile`. El consumidor atiende las dos colas en ese orden y el poll
+también selecciona primero los intentos nuevos. Es prioridad estricta: si hay
+ingresos nuevos sostenidos, un reintento puede llegar al vencimiento sin volver
+a ejecutarse. Las reservas durables y el ACK siguen evitando duplicados entre
+productores y trabajos reservados.
+
+La prueba exacta del mensaje ya persistida se reutiliza en el reintento.
+Dentro de cada resolución se memoizan lecturas Bitrix idénticas; el snapshot se
+reinicia en cada llamada a `resolve`/`resolveCurrent` y no se comparte con otra invocación.
+No se cachean las verificaciones finales de sesión, vendedor ni atención humana.
+
+Publicar el código y el Compose compatible juntos: el worker debe consumir
+`--queue=edna-web-new,edna-web-reconcile,edna-rejection-close`. Para rollback, mantener un consumidor
+compatible hasta vaciar `edna-web-new` antes de retirarlo. No borrar ni trasladar
+jobs manualmente como parte del despliegue. El cambio no crea prospectos,
+negociaciones ni recupera asignaciones históricas.
+
 ### Operación y recuperación del puente
 
 Se mantienen las compuertas existentes `EDNA_INCOMING_ENABLED` e
@@ -531,3 +768,114 @@ Para el puente, conservar `web_form_receipts`, `web_form_continuations`,
 jobs ya encolados. Revertir código no autoriza borrar rutas, quitar vínculos
 nativos ni repetir transferencias con acuse incierto. Una versión de rollback
 debe seguir pudiendo conciliar esos resultados mediante lecturas.
+
+
+## Continuidad de una solicitud web durante la vinculación
+
+`web-chat-continuity-v1` conserva la referencia web válida del primer WhatsApp
+en `web_chat_contexts`. Los siguientes mensajes del mismo canal y destinatario
+heredan la espera: no abren otro menú general ni solicitan nuevamente el v3.
+El teléfono sólo correlaciona esa espera; nunca elige una ficha CRM. Antes de
+vincular o transferir, el puente prueba el MID nativo del mensaje original y del
+actual, el chat, la sesión, la identidad declarada y el recibo web. Otra sesión
+libera únicamente su callback nuevo al ingreso habitual; no se reproduce el inbox.
+Dos solicitudes activas o evidencia incompatible quedan para revisión.
+La ventana parte del mensaje original y conserva su vencimiento entre reintentos.
+Solo el intervalo de espera comercial confirmado prolonga el plazo del ingreso
+nuevo y su contexto. Se conserva la prioridad de ingresos nuevos del puente.
+
+Una conversión de prospecto a negociación se acepta sólo con la negociación
+activa única en el embudo comercial, `LEAD_ID` y contacto exactos y actividad
+nativa de esa sesión. Se usa su vendedor vigente y se conserva el responsable
+histórico del prospecto convertido. Un Guest distinto o un vínculo ambiguo siguen
+bloqueados. Si el chat ya está con ese vendedor, se registra como observado:
+no se inventa una transferencia ni se repite el POST. Los recibos de intención,
+acuse y prueba nativa siguen siendo necesarios para contar una derivación.
+
+El calificador Kestra revisa atención y transferencias humanas antes de cambiar
+responsables y otra vez antes del POST de chat, conservando también una devolución
+manual al receptor provisional. Una reapertura de sesión invalida la prueba
+anterior. Esta guarda no ejecuta ni reencola casos históricos.
+
+Publicación: instalar primero los namespace files compatibles de Marketing CRM
+en Kestra y verificar sus hashes; luego desplegar Web por GitHub Actions. Las
+migraciones son aditivas. El deploy activa `edna:web-chat-continuity activate`
+sólo después de comprobar imágenes, workers y HTTP. El corte persiste el último
+ID del inbox y la fecha UTC, y es idempotente: otro deploy no mueve ese límite.
+`edna:web-chat-continuity status` sólo lee el corte y cantidades por estado.
+La continuidad requiere tanto un recibo web creado después del corte como un
+callback con ID y fecha original posteriores. Formularios previos, callbacks
+tardíos y rutas ya existentes conservan su recorrido; no hay backfill, rescate ni
+reenvío al desplegar. Los POST nuevos al consumidor incluyen la política sólo
+cuando su entrada original pasa ese corte; la actividad convertida sin ese
+marcador mantiene la validación anterior.
+
+Rollback: conservar las tablas, pruebas e IDs de corte. No borrar ni volver a
+activar el corte para recuperar casos. Si es necesario revertir Web, mantener el
+consumidor Kestra compatible con los trabajos ya iniciados y verificar que ningún
+intento incierto vuelva a enviarse. Toda recuperación histórica requiere un
+pedido aparte.
+
+
+## Respuestas de BENEFICIOS: continuar con su responsable
+
+Un botón de activación de una gestión vigente no debe abrir la captación de
+préstamos. `EdnaBenefitsCase` reconoce exclusivamente una negociación nativa
+activa de BENEFICIOS (categoría 15) en el chat y sesión probados. Revalida
+actividad, vínculos y negocio; no busca un cliente por teléfono ni elige
+negociaciones históricas del contacto. El responsable vigente del negocio es el
+destino: actualmente Victoria Cornier (117941). No existe un override que sustituya
+una asignación CRM manual por ese ID.
+
+Antes de enviar el menú, un v3 orgánico o de publicidad, reutilizar un perfil o
+procesar una respuesta nueva, se conserva el recorrido de BENEFICIOS. El puente
+web aplica la misma prioridad antes de vincular actividad o derivar por VENTAS.
+Se mantiene la comprobación final previa a los POST. Las reservas aceptadas o
+inciertas se concilian; nunca se convierten en un nuevo envío. Si una respuesta de
+negocio ya confirmó que no escribió y necesita otro formulario, `fallback_pending`
+reanuda sólo esa decisión, sin repetir el POST de negocio durante una espera.
+
+El nuevo job `RouteEdnaBenefitsChat` transfiere el chat al responsable comprobado
+mediante `imopenlines.operator.transfer`. No envía mensajes al cliente ni escribe
+responsables o etapas CRM. Usa el lock de chat compartido y revalida atención
+humana justo antes de la intención y el POST: una toma, respuesta o transferencia
+manual de Nico, Maru u otra persona conserva su atención, aunque hayan devuelto el
+chat al receptor provisional. Si ya está con el responsable, registra observación
+sin efectuar una transferencia. Un caso cerrado, un propósito diferente o vínculos
+incompatibles nunca autorizan una derivación de BENEFICIOS.
+
+El responsable del contacto puede ser de otro circuito y no define el destino.
+VENTAS tiene `CRM_TRANSFER_CHANGE=Y`; Bitrix documenta esa opción como cambio del
+responsable CRM al transferir el diálogo
+([referencia oficial](https://apidocs.bitrix24.com/api-reference/imopenlines/openlines/imopenlines-config-list-get.html)).
+La guarda bloquea responsables manuales incompatibles del prospecto nativo y sólo
+admite la alineación de un prospecto provisional comprobado. Toda otra variación
+CRM durante la conciliación queda señalada para revisión, sin repetir el POST.
+No se modifica la configuración global del canal.
+
+### Corte, ejecución y evidencia
+
+El workflow aplica la migración aditiva y activa `edna:benefits-chats activate`
+después de verificar imágenes, workers y HTTP. El corte `benefits-chat-routing-v1`
+es inmutable por ID del inbox y fecha original del callback. La negociación puede
+ser anterior: lo nuevo es la respuesta que acaba de llegar. No se escanean ni
+reprocesan mensajes, menús, envíos o sesiones anteriores al corte, y un callback
+antiguo que llega tarde queda fuera. `status` sólo lee; `poll` despierta únicamente
+los recibos nuevos ya reservados. El scheduler lo ejecuta cada minuto en la cola
+durable existente `edna`, sin agregar servidores ni workers.
+
+`edna_benefit_chat_routes` conserva una ruta canónica por chat/sesión, su primer
+evento, prueba exacta, negocio, destino, intención, acuse y evento nativo. Otro
+callback de la misma sesión no crea otro POST ni renueva su plazo de ocho horas.
+Los reintentos usan backoff exponencial con jitter y no repiten una transferencia
+incierta. El journal `whatsapp.benefits_chat_route` permite auditar la misma ruta.
+Para atribuir una transferencia automática se exige intención, acuse verdadero y
+evento nativo coincidente por chat, sesión, destino, fecha y actor. En la evidencia
+v2 de Bitrix, `fromOperatorId`/`initiatorId` del POST son la cuenta API; no se
+confunden con el `owner_before` comprobado antes de transferir. `observed` y
+`not_needed` no cuentan como una transferencia automática nueva.
+
+Rollback: conservar la tabla, el corte, las intenciones y los acuses. Mantener un
+consumidor compatible con los jobs reservados; no borrar recibos ni resetear el
+corte para rescatar históricos. Una recuperación de casos anteriores requiere un
+pedido específico.

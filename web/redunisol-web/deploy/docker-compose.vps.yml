@@ -74,6 +74,7 @@ services:
       EDNA_ORGANIC_OTHER_OPERATOR_ID: ${EDNA_ORGANIC_OTHER_OPERATOR_ID:-5737}
       EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS: ${EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS:-6}
       EDNA_INTAKE_ENABLED: ${EDNA_INTAKE_ENABLED:-false}
+      EDNA_REJECTION_CLOSE_ENABLED: ${EDNA_REJECTION_CLOSE_ENABLED:-true}
       EDNA_INTAKE_CRM_ENABLED: ${EDNA_INTAKE_CRM_ENABLED:-false}
       EDNA_INTAKE_FLOW_ID: ${EDNA_INTAKE_FLOW_ID:-}
       EDNA_INTAKE_START_AT: ${EDNA_INTAKE_START_AT:-}
@@ -182,10 +183,10 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  edna-worker:
+  edna-worker: &edna-worker
     image: ${APP_IMAGE}
     entrypoint: [php, artisan, queue:work]
-    command: [edna, "--queue=edna-inbox,edna,edna-web-reconcile", --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+    command: [edna, --queue=edna, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
@@ -199,7 +200,17 @@ services:
         condition: service_started
       postgres:
         condition: service_started
+    # Let the longest Edna job (115s) finish before Compose sends SIGKILL.
+    stop_grace_period: 130s
     restart: unless-stopped
+
+  edna-inbox-worker:
+    <<: *edna-worker
+    command: [edna, --queue=edna-inbox, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+
+  edna-web-worker:
+    <<: *edna-worker
+    command: [edna, "--queue=edna-web-new,edna-web-reconcile,edna-rejection-close", --sleep=1, --tries=8, --timeout=45, --max-time=3600]
 
   scheduler:
     image: ${APP_IMAGE}

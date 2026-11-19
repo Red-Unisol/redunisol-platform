@@ -56,6 +56,7 @@ model User {
   changedSolicitudEstados       SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
   solicitudParticipants         SolicitudParticipant[]     @relation("SolicitudParticipantUser")
   evaluacionesRiesgo            SolicitudEvaluacionRiesgo[] @relation("EvaluacionRiesgoGuardadaPor")
+  calculadoraRiesgoVersiones    CalculadoraRiesgoVersion[] @relation("CalculadoraRiesgoVersionCargadaPor")
   createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
   workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
   documentReviewDecisions        SolicitudDocumentDecision[]
@@ -177,6 +178,10 @@ model Solicitud {
   administrativeCoreControl Json? @map("administrative_core_control")
   desestimacionHistorialId String? @map("desestimacion_historial_id") @db.Uuid
   legacyOid                String?                    @unique @map("legacy_oid")
+  // Clave que el frontend genera por cada alta y repite si reintenta: si el
+  // mismo alta llega dos veces (doble clic, reintento tras un corte por
+  // timeout), se devuelve la solicitud ya creada en vez de crear otra.
+  idempotencyKey           String?                    @unique @map("idempotency_key") @db.Uuid
   analisisFinalizadoAt      DateTime?                  @map("analisis_finalizado_at")
   analisisFinalizadoBy      String?                    @map("analisis_finalizado_by") @db.Uuid
   signatureCycleId          String?                    @map("signature_cycle_id")
@@ -644,6 +649,31 @@ model SolicitudEvaluacionRiesgo {
   guardadaPor   User?     @relation("EvaluacionRiesgoGuardadaPor", fields: [guardadaPorId], references: [id], onDelete: SetNull)
 
   @@map("solicitud_evaluaciones_riesgo")
+}
+
+enum CalculadoraRiesgoOrigen {
+  REPOSITORIO
+  VIMARX
+  RESTAURADA
+}
+
+// Versiones de la calculadora de riesgo que Riesgo trae de Vimarx (SCORINGPF)
+// con el boton de la calculadora. Una sola vigente; se guardan la vigente y
+// las 3 anteriores. Cada fila dice quien la trajo y cuando: es el historial.
+model CalculadoraRiesgoVersion {
+  id             String                  @id @default(uuid()) @db.Uuid
+  contenido      Bytes
+  sha256         String
+  origen         CalculadoraRiesgoOrigen
+  restauradaDeId String?                 @map("restaurada_de_id") @db.Uuid
+  resumenCambios Json?                   @map("resumen_cambios")
+  vigente        Boolean                 @default(false)
+  cargadaPorId   String?                 @map("cargada_por_id") @db.Uuid
+  cargadaEn      DateTime                @map("cargada_en")
+  cargadaPor     User?                   @relation("CalculadoraRiesgoVersionCargadaPor", fields: [cargadaPorId], references: [id], onDelete: SetNull)
+
+  @@index([cargadaEn])
+  @@map("calculadora_riesgo_versiones")
 }
 
 model SolicitudFieldAccessRule {

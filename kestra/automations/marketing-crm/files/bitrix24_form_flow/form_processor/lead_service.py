@@ -36,6 +36,8 @@ def create_lead(
     submission: NormalizedInput,
     contact_id: int,
     logger: Logger,
+    *,
+    provisional_owner: bool = False,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
     source_id = (
@@ -67,6 +69,8 @@ def create_lead(
         config.fields.lead_source: source_id,
     }
 
+    if provisional_owner:
+        fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
     fields.update(_build_optional_tracking_fields(config, submission))
     fields.update(attribution_lead_fields(
         client, submission.attribution,
@@ -224,7 +228,7 @@ def build_prequalification_input_from_lead(
 
     # Outside ANSES and the eligible Buenos Aires profiles, only the explicit
     # assisted Caja route allows an absent payment bank.
-    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake", "whatsapp_single_intake"}
+    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake", "whatsapp_single_intake", "organic_profile_reuse"}
             and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
             and not lead.get(config.fields.lead_payment_bank)):
         if employment.key == "jubilado_provincial" and province.key == "cordoba":

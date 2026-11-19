@@ -27,6 +27,7 @@ installUiLabNetworkGuard(
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
         },
       }
+    : window.location.pathname.startsWith("/loan-generation") ? { loanGeneration: search.get("scenario") ?? "match" }
     : window.location.pathname.startsWith("/reliquidacion") ? { reliquidation: parseReliquidationScenario(search.get("scenario")) }
     : window.location.pathname.startsWith("/external-legajo") ? {
         externalLegajo: search.get("scenario") === "approved" ? "approved" : search.get("scenario") === "error" ? "error" : "waiting",
@@ -44,7 +45,9 @@ async function start() {
   ] = await Promise.all([
     import("react-dom/client"),
     import("@tanstack/react-query"),
-    pathname.startsWith("/padrones")
+    pathname.startsWith("/loan-generation")
+      ? import("./loan-generation-entry")
+      : pathname.startsWith("/padrones")
       ? import("./padrones-entry")
       : pathname.startsWith("/workflow-action")
       ? import("./workflow-action-entry")

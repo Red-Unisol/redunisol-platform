@@ -38,7 +38,7 @@
       - --expected-sha256
       - "{{ bcra_file_api_data_manifest_sha256 }}"
       - --image
-      - "{{ bcra_file_api_image }}"
+      - "{{ bcra_file_api_migration_image }}"
   register: bcra_file_api_migration
   changed_when: false
   check_mode: false
@@ -58,7 +58,7 @@
       - --receipt-sha256
       - "{{ bcra_file_api_cold_backup_receipt_sha256 }}"
       - --image
-      - "{{ bcra_file_api_image }}"
+      - "{{ bcra_file_api_migration_image }}"
   register: bcra_file_api_cold_backup
   changed_when: false
   check_mode: false

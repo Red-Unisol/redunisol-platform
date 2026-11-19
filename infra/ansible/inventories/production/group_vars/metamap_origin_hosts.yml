@@ -1,0 +1,10 @@
+---
+metamap_origin_enabled: true
+metamap_origin_apply_authorized: false
+metamap_origin_backend_enabled: false
+metamap_origin_public_listen_authorized: true
+metamap_origin_hostname: metamap-origin.redunisol.com.ar
+metamap_origin_listen_address: 168.197.51.104
+metamap_origin_listen_port: 443
+metamap_origin_apache_package_version: 2.4.69-1~deb13u1
+metamap_origin_tls_mode: cloudflare-origin-ca

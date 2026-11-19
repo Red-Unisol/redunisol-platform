@@ -19,6 +19,9 @@ class EdnaMessageBinding
 
     private int $calls = 0;
 
+    /** Read snapshots belong to one resolution only, never to an ownership guard. */
+    private array $reads = [];
+
     public function __construct(?EdnaBitrix $crm = null)
     {
         $this->crm = $crm ?? new EdnaBitrix;
@@ -29,6 +32,7 @@ class EdnaMessageBinding
     {
         $this->deadline = microtime(true) + 30;
         $this->calls = 0;
+        $this->reads = [];
         $phoneHash = $this->entryPhone($event, $payload);
         if ($knownChatId !== null) {
             if ($knownChatId < 1) {
@@ -83,6 +87,75 @@ class EdnaMessageBinding
             }
         }
 
+        $chats = $this->candidateChats($candidates);
+
+        $proofs = [];
+        foreach ($chats as $chatId) {
+            // Keep all proofs from each chat: a locally ambiguous chat must not
+            // disappear behind another chat that happens to have one match.
+            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
+                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    /** The caller validates the exact server receipt identity; its lead only narrows discovery. */
+    public function resolveReceipt(object $event, array $payload, int $receiptLeadId): ?array
+    {
+        $this->deadline = microtime(true) + 30;
+        $this->calls = 0;
+        $this->reads = [];
+        $phoneHash = $this->entryPhone($event, $payload);
+        if (! $this->positiveId($receiptLeadId)) {
+            throw new RuntimeException('Invalid receipt lead hint.');
+        }
+        $records = $this->call('crm.lead.list', ['filter' => ['@ID' => [(string) $receiptLeadId]],
+            'select' => ['ID', 'PHONE', 'CONTACT_ID'], 'start' => -1]);
+        if (! is_array($records) || ! array_is_list($records) || count($records) !== 1
+            || (string) ($records[0]['ID'] ?? '') !== (string) $receiptLeadId
+            || ! is_array($records[0]['PHONE'] ?? null)
+            || ! collect($records[0]['PHONE'])->contains(fn ($phone) => is_array($phone)
+                && (new AttributionJourney)->phoneHash((string) ($phone['VALUE'] ?? '')) === $phoneHash)) {
+            throw new RuntimeException('Receipt lead does not match the authenticated sender.');
+        }
+        $contact = (string) ($records[0]['CONTACT_ID'] ?? '');
+        $candidates = ['lead' => [(string) $receiptLeadId]];
+        if ($this->positiveId($contact)) {
+            $candidates['contact'] = [$contact];
+        } elseif (! in_array($contact, ['', '0'], true)) {
+            throw new RuntimeException('Receipt contact hint is invalid.');
+        }
+        $deals = $this->call('crm.deal.list', ['filter' => ['LEAD_ID' => $receiptLeadId, 'CATEGORY_ID' => 1],
+            'select' => ['ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID'], 'start' => -1]);
+        if (! is_array($deals) || ! array_is_list($deals) || count($deals) >= 50) {
+            throw new RuntimeException('Receipt deal discovery is incomplete.');
+        }
+        foreach ($deals as $deal) {
+            if (! is_array($deal) || ! $this->positiveId($deal['ID'] ?? null)
+                || (string) ($deal['LEAD_ID'] ?? '') !== (string) $receiptLeadId
+                || (string) ($deal['CATEGORY_ID'] ?? '') !== '1'
+                || (string) ($deal['CONTACT_ID'] ?? '') !== $contact) {
+                throw new RuntimeException('Receipt deal does not match its exact lead and contact.');
+            }
+            $candidates['deal'][(string) $deal['ID']] = (string) $deal['ID'];
+        }
+        if (count($candidates['deal'] ?? []) > 25) {
+            throw new RuntimeException('Receipt deal window requires review.');
+        }
+        $proofs = [];
+        foreach ($this->candidateChats($candidates) as $chatId) {
+            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
+                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
+        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    private function candidateChats(array $candidates): array
+    {
         $chats = [];
         $connectors = [];
         foreach ($candidates as $entity => $ids) {
@@ -112,16 +185,7 @@ class EdnaMessageBinding
             }
         }
 
-        $proofs = [];
-        foreach ($chats as $chatId) {
-            // Keep all proofs from each chat: a locally ambiguous chat must not
-            // disappear behind another chat that happens to have one match.
-            foreach ($this->currentChatProofs($event, $phoneHash, $chatId) as $proof) {
-                $proofs[$proof['chat_id'].':'.$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
-            }
-        }
-
-        return count($proofs) === 1 ? array_values($proofs)[0] : null;
+        return $chats;
     }
 
     /** The phone discovers candidates; only the exact native connector message proves a binding. */
@@ -129,6 +193,7 @@ class EdnaMessageBinding
     {
         $this->deadline = microtime(true) + 30;
         $this->calls = 0;
+        $this->reads = [];
         $phoneHash = $this->entryPhone($event, $payload);
         if ($knownChatId !== null && $knownChatId < 1) {
             throw new RuntimeException('Invalid known message chat.');
@@ -195,7 +260,64 @@ class EdnaMessageBinding
             }
         }
 
+        // Preserve successful or ambiguous legacy evidence. A large deal history
+        // must not exhaust the read budget of a chat already proved by that path.
+        if ($proofs || ! app(EdnaDealMessageCutover::class)->applies($event, $payload)) {
+            return count($proofs) === 1 ? array_values($proofs)[0] : null;
+        }
+        $dealActivities = [];
+        $this->addDealActivities($dealActivities, $candidates);
+        foreach ($dealActivities as $activity) {
+            foreach ($this->proofs($event, $phoneHash, $activity) as $proof) {
+                $proofs[$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
+            }
+        }
+
         return count($proofs) === 1 ? array_values($proofs)[0] : null;
+    }
+
+    /** Related deals discover activity candidates, never select a seller or prove identity. */
+    private function addDealActivities(array &$activities, array $candidates): void
+    {
+        $deals = [];
+        foreach ([1 => 'LEAD_ID', 3 => 'CONTACT_ID'] as $type => $field) {
+            $ids = array_column(array_filter($candidates, fn ($candidate) => $candidate['type'] === $type), 'id');
+            foreach (array_chunk($ids, 50) as $batch) {
+                $rows = $this->call('crm.deal.list', [
+                    'filter' => ['@'.$field => $batch], 'select' => ['ID', 'LEAD_ID', 'CONTACT_ID'],
+                    'order' => ['ID' => 'ASC'], 'start' => -1,
+                ]);
+                // This transport omits pagination metadata. Never accept a full page.
+                if (! is_array($rows) || ! array_is_list($rows) || count($rows) >= 50) {
+                    throw new RuntimeException('Related deal discovery is incomplete.');
+                }
+                foreach ($rows as $row) {
+                    if (! is_array($row) || ! $this->positiveId($row['ID'] ?? null)
+                        || ! in_array((string) ($row[$field] ?? ''), $batch, true)) {
+                        throw new RuntimeException('Related deal response does not match its candidate.');
+                    }
+                    $id = (string) $row['ID'];
+                    $links = ['LEAD_ID' => (string) ($row['LEAD_ID'] ?? ''), 'CONTACT_ID' => (string) ($row['CONTACT_ID'] ?? '')];
+                    if (isset($deals[$id]) && $deals[$id] !== $links) {
+                        throw new RuntimeException('Related deal bindings changed during discovery.');
+                    }
+                    $deals[$id] = $links;
+                    if (count($deals) > 25) {
+                        throw new RuntimeException('Related deal window requires review.');
+                    }
+                }
+            }
+        }
+        if (! $deals) {
+            return;
+        }
+        foreach ($this->activities(['OWNER_TYPE_ID' => 2, '@OWNER_ID' => array_map('strval', array_keys($deals))]) as $activity) {
+            if ((string) ($activity['OWNER_TYPE_ID'] ?? '') !== '2'
+                || ! isset($deals[(string) ($activity['OWNER_ID'] ?? '')])) {
+                throw new RuntimeException('Deal activity is outside the proven candidate set.');
+            }
+            $this->addActivity($activities, $activity);
+        }
     }
 
     private function entryPhone(object $event, array $payload): string
@@ -384,9 +506,20 @@ class EdnaMessageBinding
 
     private function call(string $method, array $payload): mixed
     {
-        if (! in_array($method, ['crm.duplicate.findbycomm', 'crm.lead.list', 'crm.contact.list', 'crm.activity.list',
+        if (! in_array($method, ['crm.duplicate.findbycomm', 'crm.lead.list', 'crm.contact.list', 'crm.deal.list', 'crm.activity.list',
             'imopenlines.session.history.get', 'imopenlines.dialog.get', 'imopenlines.crm.chat.get'], true)) {
             throw new RuntimeException('Unsupported message binding operation.');
+        }
+        // Multiple CRM activities can point at the same native session. Reuse
+        // their read snapshot without dropping any candidate proof or ambiguity.
+        // resolve()/resolveCurrent() clear it before each new message/attempt;
+        // the caller's live ownership checks use EdnaBitrix directly.
+        if (microtime(true) >= $this->deadline) {
+            throw new RuntimeException('Message binding read budget exhausted.');
+        }
+        $key = hash('sha256', $method."\0".serialize($payload));
+        if (array_key_exists($key, $this->reads)) {
+            return $this->reads[$key];
         }
         $wait = max(0, $this->lastCall + 0.5 - microtime(true));
         if (++$this->calls > 32 || microtime(true) + $wait + 5 >= $this->deadline) {
@@ -397,7 +530,7 @@ class EdnaMessageBinding
         }
         $this->lastCall = microtime(true);
         try {
-            return $this->crm->call($method, $payload);
+            return $this->reads[$key] = $this->crm->call($method, $payload);
         } catch (Throwable) {
             throw new RuntimeException('Message binding read failed.');
         }

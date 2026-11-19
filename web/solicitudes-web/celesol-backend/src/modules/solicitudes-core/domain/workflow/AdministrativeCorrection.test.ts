@@ -37,6 +37,14 @@ it("existing solicitudes without administrative correction keep their workflow",
   assert(!coreReconciliationPending({ ...source(), administrativeCoreControl: null }));
 });
 
+it("an unlinked request has no loan to reconcile but its creation reservation still blocks workflow", () => {
+  const s = { ...source(), legacyOid: null, administrativeCoreControl: {} as Record<string, unknown> };
+  assert.equal(coreReconciliationPending(s), false);
+  s.administrativeCoreControl = { generationPending: { status: "CREATING" } };
+  assert.equal(coreReconciliationPending(s), false);
+  assert.throws(() => assertCoreReconciled(s, "liquidar"), /generación.*incierto/);
+});
+
 it("reserved action requires an administrator, structured correction and reason", () => {
   const context: WorkflowValidationContext = {
     command: { actionCode: ADMIN_CORRECTION_ACTION, changedBy: "admin", now: new Date(),

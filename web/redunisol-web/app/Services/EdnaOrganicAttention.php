@@ -114,19 +114,62 @@ class EdnaOrganicAttention
         }
     }
 
-    public function canTransfer(array $snapshot, int $targetId): bool
+    public function canTransfer(array $snapshot, int $targetId, bool $otherInquiry = false, ?string $verifiedContact = null): bool
     {
         if ($targetId < 1 || ! $this->validSnapshot($snapshot)
             || ! in_array($snapshot['dialog_tuple']['owner'], ['', '0', '57', '74827', (string) $targetId], true)) {
             return false;
         }
         foreach ($snapshot['records'] as $record) {
+            // An explicit non-loan inquiry routes the chat, not the contact's
+            // commercial responsibility. Live human attention is checked by inspect.
+            // Leads, deals and companies retain their existing ownership policy.
+            if ($verifiedContact !== null && $record['entity'] === 'contact' && $record['id'] === $verifiedContact
+                && ($snapshot['dialog_tuple']['bindings']['contact'] ?? null) === $verifiedContact) {
+                continue;
+            }
+            if ($otherInquiry && $targetId === (int) config('edna.organic_other_operator_id', 5737)
+                && $record['entity'] === 'contact') {
+                continue;
+            }
             if (! in_array($record['owner'], ['', '0', (string) $targetId], true) && ! $this->provisionalLead($record)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /** Recheck the exact deal activity, uniqueness and live human attention before the one transfer. */
+    public function confirmContactDeal(array $proof, array $snapshot, string $contact, string $deal, int $target, string $stage): bool
+    {
+        $tuple = $snapshot['dialog_tuple'];
+        if (($tuple['bindings']['deal'] ?? null) !== $deal || ($tuple['bindings']['contact'] ?? null) !== $contact
+            || isset($tuple['bindings']['lead']) || empty($proof['activity_id'])) {
+            return false;
+        }
+        $rows = $this->crm->call('crm.deal.list', ['filter' => ['=CONTACT_ID' => $contact, '@CATEGORY_ID' => [1, 5],
+            '=STAGE_SEMANTIC_ID' => 'P'], 'select' => ['ID', 'CATEGORY_ID', 'CONTACT_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID', 'ASSIGNED_BY_ID']]);
+        if (! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1
+            || (string) ($rows[0]['ID'] ?? '') !== $deal || (string) ($rows[0]['CATEGORY_ID'] ?? '') !== '1'
+            || (string) ($rows[0]['CONTACT_ID'] ?? '') !== $contact || (string) ($rows[0]['ASSIGNED_BY_ID'] ?? '') !== (string) $target
+            || ($rows[0]['STAGE_ID'] ?? '') !== $stage || ($rows[0]['STAGE_SEMANTIC_ID'] ?? '') !== 'P') {
+            return false;
+        }
+        $activity = $this->crm->call('crm.activity.get', ['id' => $proof['activity_id']]);
+        $params = $activity['PROVIDER_PARAMS'] ?? null;
+        $params = is_string($params) ? json_decode($params, true) : $params;
+        if ((string) ($activity['ID'] ?? '') !== (string) $proof['activity_id']
+            || ($activity['PROVIDER_ID'] ?? '') !== 'IMOPENLINES_SESSION'
+            || (string) ($activity['ASSOCIATED_ENTITY_ID'] ?? '') !== (string) $proof['session_id']
+            || (string) ($activity['OWNER_TYPE_ID'] ?? '') !== '2' || (string) ($activity['OWNER_ID'] ?? '') !== $deal
+            || ! is_string($params['USER_CODE'] ?? null)
+            || $this->keyedHash('organic-source:', $params['USER_CODE']) !== $tuple['source_hash']) {
+            return false;
+        }
+        $live = $this->guard->inspect($proof, (string) $target);
+
+        return ($live['status'] ?? '') === 'ready' && $this->dialogTuple($live['dialog'] ?? null, $proof) === $tuple;
     }
 
     public function targetActive(int $targetId): bool
@@ -158,9 +201,9 @@ class EdnaOrganicAttention
         }
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null): bool
     {
-        if (! $this->canTransfer($before, $targetId) || ! $this->validSnapshot($after)) {
+        if (! $this->canTransfer($before, $targetId, $otherInquiry, $verifiedContact) || ! $this->validSnapshot($after)) {
             return false;
         }
         if (! $afterTransfer) {

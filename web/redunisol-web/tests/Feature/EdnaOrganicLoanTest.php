@@ -4,9 +4,11 @@ use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\SendEdnaFlow;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use App\Services\AttributionJourney;
+use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicProfile;
+use App\Services\WebChatContinuity;
 use App\Services\WebFormReceipt;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
@@ -45,6 +47,8 @@ class OrganicLoanProfileFake extends EdnaOrganicProfile
 
     public ?Closure $beforeResolve = null;
 
+    public ?Closure $beforeStillCurrent = null;
+
     public function __construct()
     {
         $this->result = ['status' => 'reusable', 'reason' => 'complete_recent_profile_confirmed',
@@ -64,6 +68,15 @@ class OrganicLoanProfileFake extends EdnaOrganicProfile
         }
 
         return $this->result;
+    }
+
+    public function stillCurrent(object $menu, array $answer, array $provenance, array $nativeSnapshot): bool
+    {
+        if ($this->beforeStillCurrent) {
+            ($this->beforeStillCurrent)($menu);
+        }
+
+        return parent::stillCurrent($menu, $answer, $provenance, $nativeSnapshot);
     }
 }
 
@@ -100,7 +113,7 @@ class OrganicLoanAttentionFake extends EdnaOrganicAttention
         return $this->native + ['fingerprint' => hash('sha256', json_encode($this->native, JSON_THROW_ON_ERROR))];
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null): bool
     {
         $this->transferComparisons++;
         throw new RuntimeException('A credit inquiry must not apply Tincho transfer eligibility.');
@@ -151,6 +164,96 @@ function organicLoanAck(object $menu, array $changes = []): array
     return array_replace(['ok' => true, 'contract' => EdnaOrganicLoan::CONTRACT, 'case_id' => $menu->request_id,
         'write_attempted' => true, 'action' => 'queued', 'lead_id' => '700', 'contact_id' => '800'], $changes);
 }
+
+function organicLoanContinuityCutover(int $entryAfter = 0): void
+{
+    DB::table('edna_intake_cutovers')->insert(['name' => WebChatContinuity::NAME,
+        'entry_id_after' => $entryAfter, 'starts_at' => now()->subMinutes(10)]);
+}
+
+function organicLoanCaptureWebContext(): int
+{
+    $input = ['celular' => '3510000000', 'cuil' => '20301234563', '_journey_links' => ['submission_id' => (string) Str::uuid()]];
+    $reference = app(WebFormReceipt::class)->register($input);
+    $receipt = DB::table('web_form_receipts')->find($input['_journey_links']['submission_id']);
+    $anchor = organicLoanEvent(['receivedAt' => now()->toIso8601String(),
+        'messageContent' => ['text' => '(solicitud: '.$reference.')']]);
+    $contextId = app(WebChatContinuity::class)->captureReference($anchor, $receipt);
+    expect($contextId)->toBeInt();
+
+    return $contextId;
+}
+
+test('a newly referenced web context before loan preparation prevents profile work and any replacement Flow', function () {
+    organicLoanContinuityCutover();
+    $menu = organicLoanMenu();
+    organicLoanCaptureWebContext();
+    $service = organicLoanService($profile);
+    $service->prepare($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id))->toMatchObject([
+        'state' => 'preserved', 'reason' => 'web_continuity_priority', 'flow_send_id' => null,
+    ])->and($profile->calls)->toBe(0)->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Queue::assertNotPushed(SubmitEdnaOrganicLoan::class);
+    Http::assertNothingSent();
+});
+
+test('a web reference arriving during profile resolution prevents the V3 fallback', function () {
+    organicLoanContinuityCutover();
+    $menu = organicLoanMenu();
+    $service = organicLoanService($profile);
+    $profile->result = ['status' => 'missing', 'reason' => 'complete_recent_profile_unavailable'];
+    $profile->beforeResolve = fn () => organicLoanCaptureWebContext();
+    $service->prepare($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id))->toMatchObject([
+        'state' => 'preserved', 'reason' => 'web_continuity_priority', 'flow_send_id' => null,
+    ])->and($profile->calls)->toBe(1)->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Queue::assertNotPushed(SubmitEdnaOrganicLoan::class);
+    Http::assertNothingSent();
+});
+
+test('a web reference arriving during the final profile reread prevents the business POST', function () {
+    organicLoanContinuityCutover();
+    $menu = organicLoanMenu();
+    $service = organicLoanService($profile);
+    $service->prepare($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('submission_pending');
+    $profile->beforeStillCurrent = fn () => organicLoanCaptureWebContext();
+    $service->submit($menu->id);
+    $service->submit($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id))->toMatchObject([
+        'state' => 'preserved', 'reason' => 'web_continuity_priority', 'flow_send_id' => null,
+    ])->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Http::assertNothingSent();
+});
+
+test('the new routing policy belongs only to an original postcutover entry', function (bool $fresh) {
+    if ($fresh) {
+        organicLoanContinuityCutover();
+    }
+    $menu = organicLoanMenu();
+    if (! $fresh) {
+        organicLoanContinuityCutover((int) $menu->choice_event_id);
+    }
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $body = null;
+    Http::fake(function ($request) use ($menu, &$body) {
+        $body = $request->data();
+
+        return Http::response(organicLoanAck($menu));
+    });
+    $service->submit($menu->id);
+    Http::assertSentCount(1);
+    if ($fresh) {
+        expect($body['routing_policy'] ?? null)->toBe(WebChatContinuity::NAME);
+    } else {
+        expect($body)->not->toHaveKey('routing_policy');
+    }
+    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+})->with([true, false]);
 
 test('preparing a complete recent profile freezes a separate business contract without inventing a Flow', function () {
     $menu = organicLoanMenu();
@@ -401,4 +504,59 @@ test('changing the authenticated entry identity after preparation blocks the bus
     $service->submit($menu->id);
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('review');
     Http::assertNothingSent();
+});
+
+test('benefits continuity prevents profile reuse and a fallback V3', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService($profile);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+
+    $service->prepare($menu->id);
+
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved')
+        ->and($profile->calls)->toBe(0)->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Http::assertNothingSent();
+});
+
+test('benefits identified after preparation prevents the business POST', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->once()->andReturn(['state' => 'preserved', 'reason' => 'benefits_routing']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+
+    $service->submit($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('a delayed benefits decision after a no-write acknowledgement resumes fallback without another business POST', function () {
+    $menu = organicLoanMenu();
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $benefits = Mockery::mock(EdnaBenefitsRouting::class);
+    $benefits->shouldReceive('check')->times(3)->andReturn(null, null,
+        ['state' => 'waiting', 'reason' => 'benefits_case_reads_pending']);
+    app()->instance(EdnaBenefitsRouting::class, $benefits);
+    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu,
+        ['action' => 'reused_not_valid', 'write_attempted' => false]))]);
+
+    $service->submit($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('fallback_pending');
+    $service->submit($menu->id);
+    Http::assertSentCount(1);
+    $ready = Mockery::mock(EdnaBenefitsRouting::class);
+    $ready->shouldReceive('check')->once()->andReturn(null);
+    app()->instance(EdnaBenefitsRouting::class, $ready);
+    $this->travel(2)->minutes();
+    $service->prepare($menu->id);
+
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('flow_scheduled')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    Http::assertSentCount(1);
 });

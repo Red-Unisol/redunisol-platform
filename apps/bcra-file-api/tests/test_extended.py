@@ -176,6 +176,63 @@ class BundleTests(unittest.TestCase):
             current = self.request(client, '/centraldedeudores/v1.0/Deudas/' + CUIL).json()
             self.assertEqual(current['results']['periodos'][0]['entidades'][0]['situacion'], 1)
 
+    def test_historical_only_entities_keep_debts_names_and_effective_corrections(self):
+        old = archives(rows=base(period='202607'))
+        old['DEUDORES'].members['maeent.txt'] += '55386' + 'NOMBRE DEL MAESTRO'.ljust(70) + '\r\n'
+        import_snapshot(self.manager.database, old, {**manifest(), 'period': '202607'}, 1)
+        self.fixtures = extended_archives(
+            historical=history() + history(OTHER, '10082', {1: (5, '321,5', 2)}),
+            full=rect(OTHER, 1, '20,0', '202607', '55386') + rect(OTHER, 2, '30,0', '202607', '00009')
+                 + rect(OTHER, 1, '42,0', '202607', '00010'),
+            partial=rect(OTHER, 0, '0,0', '202607', '00010'))
+        self.fixtures['24DSF'].members['24dsf_control.txt'] = '7    123,0\n10082123,0\n'
+        self.refresh()
+        labels = active_bundle(self.root)['historical_entities']
+        self.assertEqual(labels, {'00009': None, '10082': None,
+                                  '55386': {'name': 'NOMBRE DEL MAESTRO', 'period': '202607'}})
+        body = json.loads(compatibility_response(self.manager, OTHER, historical=True).body)
+        self.assertEqual(body['results']['periodos'], [{'periodo': '202607', 'entidades': [
+            {'entidad': 'Entidad BCRA 00009 · nombre pendiente', 'situacion': 2, 'monto': 30.0,
+             'enRevision': None, 'procesoJud': None},
+            {'entidad': 'Entidad BCRA 10082 · nombre pendiente', 'situacion': 5, 'monto': 321.5,
+             'enRevision': True, 'procesoJud': False},
+            {'entidad': 'NOMBRE DEL MAESTRO', 'situacion': 1, 'monto': 20.0,
+             'enRevision': None, 'procesoJud': None}]}])
+        self.assertEqual(compatibility_response(self.manager, OTHER).status_code, 404)
+        # Retiring the legacy master cannot erase a verified name on the next update.
+        self.manager.database.unlink()
+        self.revisions['PADRON'] = 'new'
+        self.refresh()
+        self.assertEqual(active_bundle(self.root)['historical_entities'], labels)
+
+    def test_official_register_names_historical_only_entity_and_yields_to_newer_master(self):
+        self.fixtures = extended_archives(historical=history(OTHER, '10917', {2: (3, '18,5', 1)}))
+        self.fixtures['24DSF'].members['24dsf_control.txt'] = '10917123,0\n'
+        self.refresh()
+        source = active_bundle(self.root)['historical_entities']['10917']
+        self.assertTrue(source['source'].endswith('enf022024.pdf#page=333'))
+        history_body = json.loads(compatibility_response(self.manager, OTHER, historical=True).body)
+        self.assertEqual(history_body['results']['periodos'], [{'periodo': '202606', 'entidades': [
+            {'entidad': 'FF CFA CRÉDITOS II', 'situacion': 3, 'monto': 18.5,
+             'enRevision': False, 'procesoJud': True}]}])
+        self.assertEqual(compatibility_response(self.manager, OTHER).status_code, 404)
+
+        old = archives(rows=base(period='202607'))
+        old['DEUDORES'].members['maeent.txt'] += '10917' + 'DENOMINACIÓN ACTUALIZADA'.ljust(70) + '\r\n'
+        import_snapshot(self.manager.database, old, {**manifest(), 'period': '202607'}, 1)
+        prior_version = active_bundle(self.root)['version']
+        self.assertEqual(self.refresh()['action'], 'updated')
+        self.assertNotEqual(active_bundle(self.root)['version'], prior_version)
+        self.assertEqual(active_bundle(self.root)['historical_entities']['10917'],
+                         {'name': 'DENOMINACIÓN ACTUALIZADA', 'period': '202607'})
+
+    def test_current_entity_validation_stays_strict(self):
+        self.fixtures = extended_archives(current=base(entity='10082'))
+        with self.assertRaisesRegex(SourceError, 'absent from the master'):
+            self.refresh()
+        self.assertIsNone(active_current(self.root))
+        self.assertIsNone(active_bundle(self.root))
+
     def test_missing_initial_history_is_unavailable_and_invalid_ids_keep_official_error_shape(self):
         import_snapshot(self.manager.database, archives(), manifest(), 1)
         with TestClient(create_app(self.config)) as client:
@@ -510,6 +567,7 @@ class BundleTests(unittest.TestCase):
         self.revisions['DEUDORES'] = 'new-entity-master'
         self.fixtures['DEUDORES'] = FakeArchive({'deudores.txt': base(entity='00008', situation=5),
             'maeent.txt': '00008' + 'OTRO BANCO'.ljust(70) + '\r\n'})
+        self.fixtures['24DSF'].members['24dsf_control.txt'] = '8    123,0\n'
         with self.assertRaisesRegex(SourceError, 'entity absent'):
             self.refresh()
         self.assertTrue(old_database.is_file())

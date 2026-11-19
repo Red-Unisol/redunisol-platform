@@ -36,6 +36,17 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 self.assertTrue(expected.issubset(environment), expected.difference(environment))
         self.assertEqual(compose['services']['php-fpm']['environment']['EDNA_INTAKE_ENABLED'], '${EDNA_INTAKE_ENABLED:-false}')
 
+    def test_web_linker_worker_consumes_fresh_before_retry_work(self):
+        compose = yaml.safe_load((ROOT / 'web/redunisol-web/deploy/docker-compose.vps.yml').read_text())
+        command = compose['services']['edna-web-worker']['command']
+        # One argv value: an unquoted comma in YAML flow syntax splits this argument.
+        queues = [arg for arg in command if arg.startswith('--queue=')]
+        self.assertEqual(queues, ['--queue=edna-web-new,edna-web-reconcile,edna-rejection-close'])
+        self.assertNotIn('edna-web-reconcile', command)
+        self.assertNotIn('edna-rejection-close', command)
+        for service in ['php-fpm', 'edna-worker', 'edna-web-worker', 'scheduler']:
+            self.assertEqual(compose['services'][service]['environment']['EDNA_REJECTION_CLOSE_ENABLED'], '${EDNA_REJECTION_CLOSE_ENABLED:-true}')
+
     def test_kestra_runtime_propagates_the_intake_gates(self):
         compose = yaml.safe_load((ROOT / 'kestra/platform/infra/docker-compose.yml').read_text())
         environment = compose['services']['kestra']['environment']
@@ -60,13 +71,32 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 result = subprocess.run([self.bash, '-n'], input=script, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_web_continuity_activates_only_after_runtime_and_http_health(self):
+        for environment, script in self.scripts.items():
+            with self.subTest(environment=environment):
+                activation = script.index('artisan edna:web-chat-continuity activate')
+                self.assertGreater(activation, script.index('for runtime_service in '))
+                self.assertGreater(activation, script.index('curl '))
+                self.assertEqual(script.count('artisan edna:web-chat-continuity activate'), 1)
+                self.assertNotIn('replay', script[:activation])
+
+    def test_benefits_cutover_activates_after_runtime_health_and_poll_is_scheduled(self):
+        for environment, script in self.scripts.items():
+            with self.subTest(environment=environment):
+                activation = script.index('artisan edna:benefits-chats activate')
+                self.assertGreater(activation, script.index('for runtime_service in '))
+                self.assertGreater(activation, script.index('curl '))
+                self.assertEqual(script.count('artisan edna:benefits-chats activate'), 1)
+        schedule = (ROOT / 'web/redunisol-web/routes/console.php').read_text()
+        self.assertIn("Schedule::command('edna:benefits-chats poll')->everyMinute()", schedule)
+
     def test_attached_commands_cannot_swallow_the_remaining_deploy_script(self):
         mock = 'set -eu\ndocker() { cat > /dev/null; }\n'
         for environment, script in self.scripts.items():
             commands = [line.strip() for line in script.splitlines()
                         if line.strip().startswith('docker compose')
                         and (' run ' in line or ' exec ' in line)]
-            self.assertEqual(len(commands), 3)
+            self.assertGreaterEqual(len(commands), 3)
             for command in commands:
                 with self.subTest(environment=environment, command=command):
                     setup = 'compose_project_name=test; staging_dir=/test\n'

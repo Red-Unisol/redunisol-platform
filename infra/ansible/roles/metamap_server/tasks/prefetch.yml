@@ -1,0 +1,88 @@
+---
+- name: Pull the missing reviewed image using existing target authentication
+  ansible.builtin.command:
+    argv: [docker, --host, "unix:///var/run/docker.sock", image, pull, "{{ metamap_image }}"]
+  changed_when: true
+  when: metamap_registry_auth_file == ''
+
+- name: Pull the missing reviewed image using only transient private registry authentication
+  when: metamap_registry_auth_file | length > 0
+  block:
+    - name: Read the selected private controller registry configuration only for this missing image
+      ansible.builtin.set_fact:
+        metamap_registry_auth_config: "{{ lookup('ansible.builtin.file', metamap_registry_auth_file, rstrip=false) | from_json }}"
+        cacheable: false
+      no_log: true
+
+    - name: Require an exclusive GHCR basic-auth configuration without credential helpers
+      ansible.builtin.assert:
+        that:
+          - metamap_registry_auth_config is mapping
+          - metamap_registry_auth_config.keys() | list == ['auths']
+          - metamap_registry_auth_config.auths is mapping
+          - metamap_registry_auth_config.auths.keys() | list == ['ghcr.io']
+          - metamap_registry_auth_config.auths['ghcr.io'] is mapping
+          - metamap_registry_auth_config.auths['ghcr.io'].keys() | list == ['auth']
+          - metamap_registry_auth_config.auths['ghcr.io'].auth is string
+          - metamap_registry_auth_config.auths['ghcr.io'].auth is match('^[A-Za-z0-9+/]+={0,2}$')
+          - >-
+            (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode | b64encode) ==
+            metamap_registry_auth_config.auths['ghcr.io'].auth
+          - (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode).split(':', 1) | length == 2
+          - (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode).split(':', 1)[0] | length > 0
+          - (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode).split(':', 1)[1] | length > 0
+          - (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode).splitlines() | length == 1
+          - >-
+            (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode | trim) ==
+            (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode)
+          - (metamap_registry_auth_config.auths['ghcr.io'].auth | b64decode) is not search('\x00')
+        fail_msg: Supply only auths.ghcr.io.auth from a private controller file; helper stores and unrelated registries are forbidden.
+      no_log: true
+
+    - name: Create an independent private transient Docker config directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: /run
+        prefix: metamap-ghcr-
+      register: metamap_registry_auth_stage
+      changed_when: false
+      no_log: true
+
+    - name: Write only the validated GHCR auth into the private temporary client config
+      ansible.builtin.copy:
+        content: "{{ metamap_registry_auth_config | to_json }}\n"
+        dest: "{{ metamap_registry_auth_stage.path }}/config.json"
+        mode: "0600"
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Pull only the immutable image with the isolated transient Docker config
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --config
+          - "{{ metamap_registry_auth_stage.path }}"
+          - --host
+          - unix:///var/run/docker.sock
+          - image
+          - pull
+          - "{{ metamap_image }}"
+      changed_when: true
+      no_log: true
+  always:
+    - name: Remove this operation's temporary registry config even when pull fails
+      ansible.builtin.file:
+        path: "{{ metamap_registry_auth_stage.path }}"
+        state: absent
+      when:
+        - metamap_registry_auth_stage is defined
+        - metamap_registry_auth_stage.path is defined
+      changed_when: false
+      no_log: true
+
+    - name: Discard the transient credential fact without persisting it
+      ansible.builtin.set_fact:
+        metamap_registry_auth_config: null
+        cacheable: false
+      no_log: true

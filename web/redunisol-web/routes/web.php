@@ -99,6 +99,7 @@ Route::get('/{slug?}', function ($slug = null) {
 
     return Inertia::render('welcome', [
         'landingSlug' => $slug,
+        'formAtBottom' => $slug === '/prestamos-para-jubilados/jubilados-cordoba/form-abajo',
         'sections' => $page->sections,
         'title' => $page->title,
         'meta_title' => $page->meta_title,

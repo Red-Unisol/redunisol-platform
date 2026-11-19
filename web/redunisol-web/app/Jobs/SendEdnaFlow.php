@@ -4,9 +4,11 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\TracksJourney;
 use App\Services\EdnaApi;
+use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFlowTransport;
 use App\Services\EdnaIntake;
+use App\Services\EdnaMessageBinding;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicTransport;
 use App\Services\EdnaPaidFlowGuard;
@@ -84,6 +86,10 @@ class SendEdnaFlow implements ShouldQueue
                 return;
             }
             $organic = $this->routingContext($send);
+            $benefits = $this->benefitsContext($send, $organic, $deadline);
+            if ($benefits === false || ! $this->benefitsReady($send, $benefits, $deadline)) {
+                return;
+            }
             if ($organic === false) {
                 $this->cancelOrganic($send, 'organic_flow_context_changed');
 
@@ -128,11 +134,21 @@ class SendEdnaFlow implements ShouldQueue
                         ? 'Completá tu solicitud acá en WhatsApp. Necesitamos tu CUIL; el email es opcional.'
                         : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.')]],
             ];
+            // Cascade reads may overlap a newly linked benefits case.
+            // Reuse the exact native message proof; never perform this read in the claim transaction.
+            if (! $this->benefitsReady($send, $benefits, $deadline)) {
+                return;
+            }
             if ($organic !== null && (! $this->organicReady($send, $organic, $deadline)
                 || microtime(true) + 13 >= $deadline)) {
                 if (microtime(true) + 13 >= $deadline) {
                     $this->deferOrganic($send, 'organic_preflight_budget_elapsed');
                 }
+
+                return;
+            }
+            if ($benefits !== null && microtime(true) + 13 >= $deadline) {
+                $this->deferOrganic($send, 'benefits_preflight_budget_elapsed');
 
                 return;
             }
@@ -175,6 +191,98 @@ class SendEdnaFlow implements ShouldQueue
                 // Expiry releases a lost lock; it cannot authorize another POST.
             }
         }
+    }
+
+    /** Null keeps the old contract; false defers evidence without sending a question. */
+    private function benefitsContext(object $send, array|false|null $routing, float $deadline): array|false|null
+    {
+        if (($send->intake_test ?? false) || $routing === false
+            || (is_array($routing) && ($routing['status'] ?? 'ready') !== 'ready')) {
+            // Paid binding discovery already has its own worker and benefits hook.
+            // Its waiting/invalid receipt keeps the established gate in control.
+            return null;
+        }
+        $benefits = app(EdnaBenefitsRouting::class);
+        $event = DB::table('edna_incoming_events')->find($send->entry_event_id);
+        $proof = is_array($routing) ? ($routing['proof'] ?? null) : null;
+        if (! $event || ! $benefits->eligibleEntry($event)) {
+            // A new organic choice has its own immutable source; it cannot turn
+            // its predeployment entry into a new event by changing the timestamp.
+            $choice = is_array($proof) && is_array($proof['choice_proof'] ?? null)
+                ? DB::table('edna_incoming_events')->find($proof['choice_proof']['entry_event_id'] ?? 0) : null;
+            if (! $choice || ! $benefits->eligibleEntry($choice) || ! $this->organicProof($proof['choice_proof'], $choice)) {
+                return null;
+            }
+            $event = $choice;
+            $proof = $proof['choice_proof'];
+        }
+        if (! is_array($proof) || ! $this->organicProof($proof, $event)) {
+            if (microtime(true) + 35 >= $deadline) {
+                $this->deferOrganic($send, 'benefits_preflight_budget_elapsed');
+
+                return false;
+            }
+            try {
+                $payload = json_decode(Crypt::decryptString($event->payload ?? ''), true, 32, JSON_THROW_ON_ERROR);
+                $proof = is_array($payload) ? app(EdnaMessageBinding::class)->resolveCurrent($event, $payload) : null;
+            } catch (Throwable) {
+                $proof = null;
+            }
+            if (! is_array($proof) || ! $this->organicProof($proof, $event)) {
+                $this->deferOrganic($send, 'benefits_native_message_pending');
+
+                return false;
+            }
+        }
+
+        return ['event' => $event, 'proof' => $proof, 'legacy' => $routing === null];
+    }
+
+    private function benefitsReady(object $send, ?array $context, float $deadline): bool
+    {
+        if ($context === null) {
+            return true;
+        }
+        if (microtime(true) + 35 >= $deadline) {
+            $this->deferOrganic($send, 'benefits_preflight_budget_elapsed');
+
+            return false;
+        }
+        try {
+            $decision = app(EdnaBenefitsRouting::class)->check($context['event'], $context['proof']);
+        } catch (Throwable) {
+            $this->deferOrganic($send, 'benefits_preflight_unavailable');
+
+            return false;
+        }
+        if ($decision !== null) {
+            if (($decision['state'] ?? '') === 'waiting') {
+                $this->deferOrganic($send, substr((string) ($decision['reason'] ?? 'benefits_evidence_pending'), 0, 64));
+            } else {
+                $this->cancelOrganic($send, ($decision['reason'] ?? '') === 'benefits_routing'
+                    ? 'benefits_case_routing' : 'benefits_case_preserved');
+            }
+
+            return false;
+        }
+        // Legacy sends have no paid/organic guard. New sources still retain live
+        // human attention protection when they enter the benefits preflight.
+        if ($context['legacy']) {
+            $attention = app(EdnaOrganicAttention::class)->inspectWelcome($context['proof']);
+            if (($attention['status'] ?? '') === 'waiting') {
+                $this->deferOrganic($send, 'benefits_attention_pending');
+
+                return false;
+            }
+            if (($attention['status'] ?? '') !== 'ready'
+                || (string) ($attention['session_id'] ?? '') !== (string) $context['proof']['session_id']) {
+                $this->cancelOrganic($send, 'organic_human_attention_preserved');
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Null means legacy; false means an organic context exists but cannot authorize a send. */

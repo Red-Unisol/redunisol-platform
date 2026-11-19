@@ -1,6 +1,9 @@
 import { Button } from "@/shared/components/ui/button";
 import type { LinkedLoanStatus } from "../services/linked-loan-status-api";
 import { LoanGenerationRecoveryControl } from "./loan-generation-recovery-control";
+import { useMutation } from "@tanstack/react-query";
+import { apiClient } from "@/shared/services/http/api-client";
+import type { LoanGenerationCheck } from "../services/linked-loan-status-api";
 
 const money = (value: string | number | null) =>
   value === null
@@ -33,6 +36,24 @@ export function LinkedLoanStatusBanner({
   // El monto bloqueado solo importa al editar: ahi se avisa como error.
   editing?: boolean;
 }) {
+  const check = useMutation({
+    mutationFn: (recovery: NonNullable<LinkedLoanStatus["recovery"]>) =>
+      apiClient.post<LoanGenerationCheck>(
+        `/solicitudes/${solicitudId}/loan-generation/check`,
+        {
+          requestId: recovery.requestId,
+          expectedUpdatedAt: recovery.expectedUpdatedAt,
+        },
+        120000,
+      ),
+    retry: false,
+    onError: () => retry(),
+  });
+  const checked =
+    check.data?.requestId === data?.recovery?.requestId &&
+    check.data?.expectedUpdatedAt === data?.recovery?.expectedUpdatedAt
+      ? check.data
+      : undefined;
   const prestamo = (loanId: string | null) =>
     loanId && cuenta?.loanId === loanId
       ? `Nº ${cuenta.nroCuenta}`
@@ -53,17 +74,47 @@ export function LinkedLoanStatusBanner({
           {data?.reason ??
             "No pudimos comprobar el préstamo en Vimarx. La edición del monto y el avance quedan bloqueados hasta verificarlo."}
         </p>
-        <Button variant="outline" size="sm" onClick={retry} className="mt-2">
-          Volver a comprobar
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={check.isPending}
+          onClick={() => {
+            if (!failed && data?.recovery && solicitudId)
+              check.mutate(data.recovery);
+            else retry();
+          }}
+          className="mt-2 min-h-11"
+        >
+          {check.isPending ? "Consultando Vimarx…" : "Volver a comprobar"}
         </Button>
-        {!failed && canRecover && data?.recovery && solicitudId && (
-          <LoanGenerationRecoveryControl
-            key={data.recovery.requestId}
-            solicitudId={solicitudId}
-            recovery={data.recovery}
-            onRecovered={onRecovered}
-          />
+        {check.isPending && (
+          <p role="status" className="mt-2">
+            Buscando préstamos del socio en Vimarx…
+          </p>
         )}
+        {!check.isPending && check.error && (
+          <p role="alert" className="mt-2">
+            {check.error.message}
+          </p>
+        )}
+        {!check.isPending && checked && (
+          <p role="status" className="mt-2">
+            {checked.reason}
+          </p>
+        )}
+        {!failed &&
+          !check.isPending &&
+          canRecover &&
+          data?.recovery &&
+          checked &&
+          solicitudId && (
+            <LoanGenerationRecoveryControl
+              key={`${checked.requestId}-${checked.checkedAt}`}
+              solicitudId={solicitudId}
+              check={checked}
+              onRecovered={onRecovered}
+            />
+          )}
       </div>
     );
   if (!data || data.status === "none") return null;
