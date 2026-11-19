@@ -48,6 +48,7 @@ class SubmitFormToKestra
             'utm_term' => $this->normalizeString($input['utm_term'] ?? null),
             'utm_content' => $this->normalizeString($input['utm_content'] ?? null),
             'submission_channel' => 'redunisol-web',
+            'form_received_at' => $input['_form_received_at'] ?? null,
             'prequalification_available' => $prequalification['available'] ?? null,
             'prequalified' => $prequalification['prequalified'] ?? null,
             'route_to_whatsapp' => $prequalification['route_to_whatsapp'] ?? null,

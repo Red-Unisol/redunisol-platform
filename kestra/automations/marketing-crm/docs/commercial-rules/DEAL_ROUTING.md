@@ -1,6 +1,6 @@
 # Buckets De Distribucion De Negociaciones
 
-Versión: `2026-11-04`.
+Versión: `2026-11-19`.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
 compartido de aprobación se documentan en [`README.md`](README.md).
@@ -170,6 +170,23 @@ su provincia. Un caso no elegible conserva su rechazo correspondiente.
 
 ## Fuera De Horario
 
+Para ingresos nuevos desde el 19/11/2026 a las 11:00 ART se usa el calendario
+diario de Ventas, incluidos fines de semana y feriados configurados. Cuando
+la evaluación ya resolvió el grupo y corresponde distribuir entre varios vendedores,
+se conserva la decisión en la cola hasta la próxima apertura. El cierre del
+viernes también conserva el turno en la cola. Al retomar, se comprueban los
+responsables y la atención del chat antes de asignar. Un grupo con un único
+habilitado sigue teniendo destino directo. Los rechazos y los grupos pausados
+conservan sus motivos específicos.
+
+El formulario web registra el ingreso antes de encolarlo y crea el prospecto
+con responsable provisional. En el v3 se reconoce al receptor inicial cuando
+la entrada, la sesión nativa y el prospecto coinciden y la sesión sigue sin
+atención humana. Una reasignación, una respuesta o una transferencia humana
+conserva la atención existente. La evidencia ambigua queda para revisión.
+
+### Ingresos anteriores al corte
+
 Fuera de la ventana continua que comienza el lunes a las 00:00 inclusive y termina
 el viernes a las 17:00 exclusive, Kestra conserva y aplica la decision comercial,
 las negociaciones distribuibles de pools de varios vendedores o pools vacios
@@ -184,7 +201,7 @@ Zona horaria: `America/Argentina/Cordoba`.
 
 ## Cola Temporal Por Falta De Vendedor
 
-Si una negociacion creada y procesada dentro de la ventana semanal pertenece a un
+Si una negociacion elegible dentro de su ventana de reparto pertenece a un
 pool de varios habilitados sin vendedores online, queda con Maru en
 `COLA DE DISTRIBUCION KESTRA`. Los pools vacios conservan la pausa explicita;
 los pools con un unico habilitado reciben asignacion directa.
@@ -203,11 +220,11 @@ los pools con un unico habilitado reciben asignacion directa.
 - si hay responsables distintos entre esos registros, el caso sale a revision
   manual conservando todos los responsables y sin transferir chats. Los chats
   cerrados o de lineas no comerciales no determinan el responsable comercial;
-- el viernes a las 17:00, todo remanente sale definitivamente de la cola y queda en
+- para ingresos anteriores al corte, el viernes a las 17:00 el remanente sale definitivamente de la cola y queda en
   `REVISION MANUAL KESTRA` con Maru;
-- el remanente no vuelve a entrar automaticamente el lunes.
+- para los ingresos nuevos que esperan apertura, se usa la siguiente fecha hábil del calendario.
 
-Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola;
+Con la política anterior al corte, las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola;
 si tienen un unico vendedor habilitado se asignan directamente.
 Un pool explícitamente vacío significa **grupo pausado**, incluso si un vendedor
 anterior sigue conectado. Sus casos distribuibles salen de Pendiente de calificación
@@ -215,7 +232,7 @@ y entran a la cola temporal con motivo `routing_pool_paused`; conservan la decis
 comercial, línea y etapa destino. No se usa un vendedor de fallback ni otro bucket,
 y no se transfiere el chat durante la pausa. La cola registra espera normal, permite
 avanzar a otros grupos y retoma el caso cuando haya vendedores habilitados y online.
-Se conserva el cierre semanal y el tratamiento fuera de horario ya definidos.
+El tratamiento al cierre depende de la política aplicable al ingreso.
 
 Los rechazos se aplican directamente, sin buscar vendedor, asignar, transferir chat
 ni ingresar a la cola. Los casos de revision comercial o de enrutamiento mantienen

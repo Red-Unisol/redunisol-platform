@@ -22,6 +22,7 @@ class FormSubmissionController extends Controller
     public function __invoke(FormSubmissionRequest $request): JsonResponse
     {
         $input = (new AttributionJourney)->resolveForm($request, $request->validated());
+        $input['_form_received_at'] = now()->toIso8601String();
         $input['_journey_links'] = app(JourneyLedger::class)->context($request) + [
             'submission_id' => (string) Str::uuid(),
             'phone_hash' => (new AttributionJourney)->phoneHash((string) ($input['celular'] ?? '')),

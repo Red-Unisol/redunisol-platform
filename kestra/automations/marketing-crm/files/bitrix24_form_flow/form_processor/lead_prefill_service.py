@@ -6,6 +6,7 @@ from typing import Any
 
 from ..lead_test_markers import test_title
 
+from ._initial_receiver import prefill_receipt, pristine_receiver
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
@@ -193,7 +194,7 @@ def prefill_lead(
             lead_id_int,
             {"STATUS_ID": config.lead_statuses.preclassification},
         )
-        return _result(
+        result = _result(
             action="advanced_partial",
             lead_id=lead_id_int,
             lead_status=config.lead_statuses.preclassification,
@@ -204,6 +205,14 @@ def prefill_lead(
                 "y se avanza a PRECLASIFICACION."
             ),
         )
+        if pristine_receiver(lead):
+            # The stage-only update is already committed. Missing evidence never retries it.
+            try:
+                after = get_lead(client, lead_id_int, active_logger)
+                result["initial_receiver_revision"] = prefill_receipt(lead, after, config.lead_statuses.preclassification)
+            except Exception:
+                active_logger.info("No se pudo acreditar la revision inicial del prospecto.")
+        return result
 
     if previous_attempts >= max_attempts:
         completed_fields = {

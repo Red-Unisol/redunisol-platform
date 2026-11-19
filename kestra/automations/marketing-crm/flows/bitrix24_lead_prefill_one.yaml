@@ -154,6 +154,14 @@ tasks:
     BITRIX24_TIMEOUT_SECONDS: '{{ envs.bitrix24_timeout_seconds }}'
   commands:
   - python -m bitrix24_form_flow.kestra_lead_prefill_entrypoint
+- id: guardar_responsable_inicial
+  type: io.kestra.plugin.core.kv.Set
+  runIf: "{{ (outputs.completar_backfill.vars.initial_receiver_revision ?? '') != '' }}"
+  key: 'routing.initial-owner.{{ inputs.lead_id }}'
+  value: '{{ outputs.completar_backfill.vars.initial_receiver_revision }}'
+  kvType: STRING
+  ttl: P7D
+  allowFailure: true
 outputs:
 - id: ok
   type: BOOL

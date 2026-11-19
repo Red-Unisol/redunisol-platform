@@ -2,11 +2,14 @@
 
 use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
+use App\Services\EdnaIntake;
 use App\Services\EdnaMessageBinding;
 use App\Services\JourneyLedger;
 use App\Services\WebChatContinuity;
 use App\Services\WebFormChatGuard;
 use App\Services\WebFormChatLinker;
+use App\Services\WebFormChatRetryPolicy;
+use App\Services\WebFormChatRouting;
 use App\Services\WebFormReceipt;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -217,7 +220,7 @@ function webChatLinkerFixture(): object
 {
     $submission = (string) Str::uuid();
     $input = ['celular' => '3510000000', 'cuil' => '20301234563', '_journey_links' => ['submission_id' => $submission]];
-    app(WebFormReceipt::class)->register($input);
+    $reference = app(WebFormReceipt::class)->register($input);
     app(WebFormReceipt::class)->result($input, ['ok' => true, 'lead_id' => '700', 'contact_id' => '710'], true);
     $event = webChatLinkerEvent();
     webChatLinkerRoute($event, $submission);
@@ -226,7 +229,7 @@ function webChatLinkerFixture(): object
     $binding->proof = webChatLinkerProof($event);
     $guard = new WebChatLinkerGuardFake($crm);
 
-    return (object) ['event' => $event, 'submission' => $submission, 'crm' => $crm, 'binding' => $binding, 'guard' => $guard,
+    return (object) ['event' => $event, 'submission' => $submission, 'reference' => $reference, 'crm' => $crm, 'binding' => $binding, 'guard' => $guard,
         'linker' => new WebFormChatLinker($crm, $binding, $guard)];
 }
 
@@ -249,14 +252,14 @@ class WebChatLinkerContinuityFake extends WebChatContinuity
 
     public array $decision = ['status' => 'bound', 'reason' => 'web_context_session_verified', 'context_id' => 101];
 
-    public function eligibleEntry(object $event): bool
+    public function eligibleEntry(object $event, int $salesCredit = 0): bool
     {
         $this->eligibilityCalls++;
 
         return $this->eligible;
     }
 
-    public function bind(int $entryId, array $proof): array
+    public function bind(int $entryId, array $proof, int $salesCredit = 0): array
     {
         $this->binds[] = [$entryId, $proof];
         if ($this->beforeBind) {
@@ -1025,3 +1028,122 @@ test('a proved message is reused on retry while commercial ownership is checked 
     expect($f->linker->process($f->event->id)['reason'])->toBe('contact_responsible_preserved')
         ->and($f->binding->calls)->toBe(1)->and($f->crm->transferCalls)->toBe(0);
 });
+
+test('a proven sales hold sleeps to the supplied opening across a holiday weekend then rechecks human attention', function (bool $taken) {
+    $this->travelTo(CarbonImmutable::parse('2026-11-20T20:05:00Z'));
+    $f = webChatLinkerFixture();
+    $open = CarbonImmutable::parse('2026-11-24T12:00:00Z');
+    $salesDeal = $f->crm->deal;
+    $f->crm->deal = array_replace($salesDeal, ['ASSIGNED_BY_ID' => '57', 'STAGE_ID' => 'C1:KESTRA_QUEUE',
+        'DATE_CREATE' => now()->toIso8601String(),
+        'UF_CRM_KQ_REASON' => 'waiting_for_sales_opening|2026-11-20T20:00:00+00:00|2026-11-24T12:00:00+00:00|anses_approved']);
+
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'waiting_for_sales_opening']);
+    $row = webChatLinkerRow($f);
+    expect($row->attempts)->toBe(0)->and($row->deal_id)->toBe('900')
+        ->and(CarbonImmutable::parse($row->available_at)->eq($open))->toBeTrue()
+        ->and(CarbonImmutable::parse($row->retry_expires_at)->eq($open->addHours(8)))->toBeTrue();
+    $this->travelTo($open->subSecond());
+    $routing = new WebFormChatRouting;
+    expect($routing->poll())->toBe(0)->and($f->linker->process($f->event->id))->toBe(['state' => 'not_claimed'])
+        ->and(webChatLinkerRow($f)->attempts)->toBe(0)->and($f->crm->transferCalls)->toBe(0);
+    $this->travelTo($open);
+    $f->crm->deal = $salesDeal;
+    if ($taken) {
+        $f->guard->status = 'preserved';
+        $f->crm->dialog['owner'] = 74827;
+    }
+    expect($routing->poll())->toBe(1)
+        ->and($f->linker->process($f->event->id)['state'])->toBe($taken ? 'preserved' : 'routed')
+        ->and($f->crm->transferCalls)->toBe($taken ? 0 : 1)
+        ->and(webChatLinkerRow($f)->attempts)->toBe(1)->and($f->binding->calls)->toBe(1);
+})->with([false, true]);
+
+test('only a post-cutover entry and a queue marker for its exact deal earn sales waiting time', function (string $scenario) {
+    $this->travelTo(CarbonImmutable::parse($scenario === 'old_entry' ? '2026-11-19T13:59:30Z' : '2026-11-20T21:00:00Z'));
+    $f = webChatLinkerFixture();
+    $f->crm->deal = array_replace($f->crm->deal, ['ASSIGNED_BY_ID' => '57',
+        'DATE_CREATE' => $scenario === 'old_deal' ? '2026-11-18T12:00:00Z' : now()->toIso8601String(),
+        'STAGE_ID' => $scenario === 'other_stage' ? 'C1:KESTRA_ROUTE_REVIEW' : 'C1:KESTRA_QUEUE',
+        'UF_CRM_KQ_REASON' => $scenario === 'paused_pool' ? 'routing_pool_paused|anses_approved'
+            : 'waiting_for_sales_opening|2026-11-19T13:00:00Z|2026-11-24T12:00:00Z|anses_approved']);
+    if ($scenario === 'other_deal') {
+        DB::table('web_form_chat_routes')->update(['deal_id' => '777']);
+    }
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_seller_not_ready')
+        ->and(webChatLinkerRow($f)->retry_expires_at)->toBeNull()->and(webChatLinkerRow($f)->attempts)->toBe(1);
+    $this->travel(8)->hours();
+    expect((new WebFormChatRouting)->expireDue())->toBe(1)->and(webChatLinkerRow($f)->state)->toBe('expired');
+})->with(['old_entry', 'old_deal', 'other_stage', 'paused_pool', 'other_deal']);
+
+test('the final in-hours seller retry reads only its queued deal when a closing overlaps the eight-hour deadline', function (bool $closed) {
+    $this->travelTo(CarbonImmutable::parse('2026-11-20T12:01:00Z'));
+    $f = webChatLinkerFixture();
+    $f->crm->deal = array_replace($f->crm->deal, ['ASSIGNED_BY_ID' => '57', 'STAGE_ID' => 'C1:KESTRA_QUEUE',
+        'DATE_CREATE' => now()->toIso8601String(), 'UF_CRM_KQ_REASON' => 'assignment_queued|anses_approved']);
+    expect($f->linker->process($f->event->id)['reason'])->toBe(WebFormChatRetryPolicy::QUEUED_SELLER);
+    $this->travel(8)->hours();
+    if ($closed) {
+        $f->crm->deal['UF_CRM_KQ_REASON'] = 'waiting_for_sales_opening|2026-11-20T20:00:00Z|2026-11-24T12:00:00Z|anses_approved';
+    }
+    $routing = new WebFormChatRouting;
+    $f->crm->calls = [];
+    expect($routing->expireDue())->toBe(0)->and($routing->poll())->toBe(1)
+        ->and($f->linker->process($f->event->id)['reason'])->toBe($closed ? 'waiting_for_sales_opening' : 'retry_window_expired')
+        ->and(array_column($f->crm->calls, 0))->toBe(['crm.deal.get'])->and($f->crm->transferCalls)->toBe(0);
+    if ($closed) {
+        expect(CarbonImmutable::parse(webChatLinkerRow($f)->retry_expires_at)->toIso8601String())->toBe('2026-11-24T12:01:00+00:00');
+    }
+})->with([false, true]);
+
+test('a sleeping context still discriminates the same session, a replacement and overlapping submissions across a weekend', function (string $scenario) {
+    $this->travelTo(CarbonImmutable::parse('2026-11-20T21:00:00Z'));
+    DB::table('edna_intake_cutovers')->insert(['name' => WebChatContinuity::NAME,
+        'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    $f = webChatLinkerFixture();
+    $context = app(WebChatContinuity::class);
+    $anchorPayload = json_decode(Crypt::decryptString($f->event->payload), true);
+    $anchorPayload['messageContent']['text'] = '(solicitud: '.$f->reference.')';
+    $f->event->payload = Crypt::encryptString(json_encode($anchorPayload));
+    DB::table('edna_incoming_events')->where('id', $f->event->id)->update(['payload' => $f->event->payload]);
+    $id = $context->captureReference($f->event, DB::table('web_form_receipts')->find($f->submission));
+    $f->crm->web['PHONE'] = [['VALUE' => '5493510000000']];
+    $salesDeal = $f->crm->deal;
+    $f->crm->deal = array_replace($salesDeal, ['ASSIGNED_BY_ID' => '57', 'STAGE_ID' => 'C1:KESTRA_QUEUE',
+        'DATE_CREATE' => now()->toIso8601String(),
+        'UF_CRM_KQ_REASON' => 'waiting_for_sales_opening|2026-11-20T20:00:00Z|2026-11-24T12:00:00Z|anses_approved']);
+    expect($f->linker->process($f->event->id)['reason'])->toBe('waiting_for_sales_opening')
+        ->and(DB::table('web_chat_contexts')->find($id)->sales_expires_at)->toBe('2026-11-24 20:00:00');
+    $this->travel(2)->days();
+    $event = webChatLinkerEvent();
+    $payload = json_decode(Crypt::decryptString($event->payload), true);
+    $proof = webChatLinkerProof($event, $scenario === 'replacement' ? 502 : 501);
+    expect($context->receive($event, $payload))->toMatchArray(['context_id' => $id, 'state' => 'ready']);
+    if ($scenario === 'replacement') {
+        $intake = Mockery::mock(EdnaIntake::class);
+        $intake->shouldReceive('receiveEntry')->once()->andReturn(true);
+        app()->instance(EdnaIntake::class, $intake);
+        expect($context->blocksOutbound($event, $proof))->toBeFalse()
+            ->and($context->bind($event->id, $proof))->toMatchArray(['status' => 'released', 'rerouted' => true]);
+    } elseif ($scenario === 'another_request') {
+        $other = webChatLinkerFixture();
+        $fresh = json_decode(Crypt::decryptString($other->event->payload), true);
+        $fresh['messageContent']['text'] = '(solicitud: '.$other->reference.')';
+        $other->event->payload = Crypt::encryptString(json_encode($fresh));
+        DB::table('edna_incoming_events')->where('id', $other->event->id)->update(['payload' => $other->event->payload]);
+        $context->captureReference($other->event, DB::table('web_form_receipts')->find($other->submission));
+        expect($context->bind($event->id, $proof))->toMatchArray(['status' => 'review', 'reason' => 'web_context_multiple_submissions']);
+        $this->travelTo(CarbonImmutable::parse('2026-11-24T12:00:00Z'));
+        expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'review', 'reason' => 'web_context_multiple_submissions']);
+    } else {
+        expect($context->blocksOutbound($event, $proof))->toBeTrue()
+            ->and($context->bind($event->id, $proof))->toMatchArray(['status' => 'bound', 'context_id' => $id]);
+        $this->travelTo(CarbonImmutable::parse('2026-11-24T12:00:00Z'));
+        $f->crm->deal = $salesDeal;
+        $f->guard->status = 'preserved';
+        $f->crm->dialog['owner'] = 74827;
+        expect($f->linker->process($f->event->id)['state'])->toBe('preserved')
+            ->and(DB::table('web_chat_contexts')->find($id)->state)->toBe('preserved');
+    }
+    expect($f->crm->transferCalls)->toBe(0);
+})->with(['same', 'replacement', 'another_request']);

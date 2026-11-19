@@ -5,8 +5,11 @@ use App\Models\User;
 use App\Support\BitrixRoutingConfig;
 
 test('it exposes the current seller pools when no custom configuration exists', function () {
-    $this->getJson('/api/internal/bitrix-routing')
+    $this->getJson('/api/internal/bitrix-routing?include=sales_calendar')
         ->assertOk()
+        ->assertJsonPath('sales_calendar.open', '09:00')
+        ->assertJsonPath('sales_calendar.weekdays', [1, 2, 3, 4, 5])
+        ->assertJsonMissingPath('sales_calendar.managed_text')
         ->assertJsonPath('catamarca_general.0', 68579)
         ->assertJsonPath('policia_federal_caba', [])
         ->assertJsonPath('cordoba_unc', [53121]);

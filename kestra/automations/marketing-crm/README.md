@@ -30,7 +30,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
   Los campos vacios de Bitrix representados como `false`, directamente o dentro de una lista, se tratan como datos faltantes. Si faltan datos obligatorios, el resultado es `waiting_for_update` / `missing_required_field`: no se completa el banco ni se modifica el lead, y el receptor espera un nuevo aviso.
 - `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca, Cordoba, ANSES, Santa Fe y Neuquen; conserva el ID historico.
-- `flows/bitrix24_deal_assignment_queue.yaml`: reintenta por bucket las negociaciones sin vendedor y cierra el remanente semanal con Maru.
+- `flows/bitrix24_deal_assignment_queue.yaml`: retoma por grupo las negociaciones que esperan vendedor y conserva la próxima apertura para ingresos nuevos.
 - `flows/bitrix24_deal_chat_response.yaml`: mueve Presentación/Revisión Manual a Respuesta ante una sesión WhatsApp activa de Ventas y decisión comercial explícita no rechazada. [Campo, operación y concurrencia](docs/technical/ACTIVE_SALES_CHAT_RESPONSE.md).
 - `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
 - `flows/bitrix24_bcra_backfill.yaml` y `flows/bitrix24_credixsa_employer_backfill.yaml`: schedulers legacy deshabilitados y reemplazados por el prefill unificado.

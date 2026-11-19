@@ -10,10 +10,11 @@ import re
 from uuid import UUID
 
 from edna_incoming.intake import LEGACY_GROUPED_FLOW_IDS, normalize_answer
+from ._initial_receiver import receiver_revision
 from .attribution import normalize_attribution
 from .bitrix_client import BitrixClient
 from .config import load_config
-from .intake_bound import _preserve_acquisition, _profile_conflict, _revision
+from .intake_bound import _preserve_acquisition, _profile_conflict, _revision, _unattended_initial_receiver
 from .intake_context import validate_channel_context
 from .intake_crm_client import IntakeCrmClient
 from .lead_service import _resolve_enum_id
@@ -456,13 +457,18 @@ def process(payload, *, env=None, client=None):
         _source_profile(api, config, payload, answer)
         lead_id = str(target["ID"]) if target else str(api.call("crm.lead.add", {"fields": fields}))
         if target:
+            if not rejected and _unattended_initial_receiver(api, payload, fresh_native, phone, source.get("INITIAL_RECEIVER_REVISION")):
+                final = _record(api, "lead", lead_id)
+                if _revision(fresh_native, config) != _revision(final, config) or receiver_revision(fresh_native) != receiver_revision(final):
+                    raise Review("native_inquiry_changed")
+                fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
             api.call("crm.lead.update", {"id": lead_id, "fields": fields})
         written = _record(api, "lead", lead_id)
         if (written.get("UF_CRM_WA_ASSISTANCE_ID") != case_id or written.get("UF_CRM_WA_SUBFLOW") != SUBFLOW
                 or _cuil(written, config.fields.lead_cuil) != answer["cuil"] or not _same_phone(written, phone)
                 or str(written.get("CONTACT_ID") or "") != str(fields.get("CONTACT_ID") or "")
                 or _date(written.get("UF_CRM_WA_TIMESTAMP")) != _date(evidence["confirmed_at"])
-                or target and written.get("ASSIGNED_BY_ID") != target.get("ASSIGNED_BY_ID")):
+                or target and str(written.get("ASSIGNED_BY_ID")) != str(fields.get("ASSIGNED_BY_ID", target.get("ASSIGNED_BY_ID")))):
             raise RuntimeError("Organic inquiry write requires reconciliation.")
         return {**result, "action": "rejected" if rejected else "queued", "reason": reason or "ready",
                 "lead_id": lead_id, "contact_id": str(written.get("CONTACT_ID") or ""), "write_attempted": True}

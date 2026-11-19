@@ -1,8 +1,13 @@
 """Enrich the proven channel lead; never create a fallback lead for V2."""
+from datetime import datetime
 import json
 
+from ._routing_cutover import new_routing_enabled
+from ._initial_receiver import CRM_INTEGRATION, SALES_RECEIVER, pristine_receiver, receiver_revision
 from .catalogs import BANCOS, PROVINCIAS, SITUACIONES_LABORALES
+from .deal_service import _unattended_sales_session
 from .lead_service import _resolve_enum_id
+from .normalization import normalize_whatsapp
 from .whatsapp_assistance import _merge, _same_phone
 from .attribution import CRM_FIELDS
 from .whatsapp_intake_crm import (
@@ -50,6 +55,35 @@ def _revision(lead, config):
               config.fields.lead_source, config.fields.lead_processing_policy, config.fields.lead_rejection_reason,
               "UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN", "UTM_CONTENT", "UTM_TERM", *CRM_FIELDS}
     return {field: lead.get(field) for field in fields}
+
+
+def _unattended_initial_receiver(api, payload, lead, phone, prefill_revision):
+    """Treat the native receiver as provisional only on first, proven enrichment."""
+    entry, binding = payload["entry_context"], payload["crm_binding"]
+    created = lead.get("DATE_CREATE")
+    if (not new_routing_enabled(entry["received_at"]) or not new_routing_enabled(created)
+            or str(lead.get("CREATED_BY_ID")) != SALES_RECEIVER or str(lead.get("ASSIGNED_BY_ID")) != SALES_RECEIVER):
+        return False
+    if not (pristine_receiver(lead) or (str(lead.get("MODIFY_BY_ID")) == CRM_INTEGRATION
+            and prefill_revision == receiver_revision(lead))):
+        return False
+    try:
+        dialog = api.call("imopenlines.dialog.get", {"CHAT_ID": int(binding["chat_id"])})
+        channel = str(dialog["entity_id"]).split("|")
+        source_phone, subject = channel[2].split("@")
+        session = str(dialog["entity_data_1"]).split("|")
+        links = str(dialog["entity_data_2"]).split("|")
+        entities = dict(zip(links[::2], links[1::2], strict=True))
+        created_epoch = datetime.fromisoformat(str(created).replace("Z", "+00:00")).timestamp()
+        if (channel[:2] != ["whatsappbyedna", "1"] or subject != entry["subject_id"]
+                or normalize_whatsapp(source_phone) != phone or session[5] != binding["session_id"]
+                or abs(int(session[6]) - created_epoch) > 60 or len(entities) * 2 != len(links)
+                or entities.get("LEAD") != str(lead["ID"]) or entities.get("DEAL") not in (None, "", "0")):
+            return False
+        ready, _ = _unattended_sales_session(api, int(binding["chat_id"]), dialog, entry_binding=binding)
+        return ready
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+        return False
 
 
 def _same_revision_or_forward_stage(before, after, config):
@@ -184,7 +218,7 @@ def persist_bound(payload, answer, *, env, api, config, review_status, result, p
     fields = _lead_fields(api, config, payload, answer, env, case_id, phone, contact, lead, status, state, reason, related)
     if not _preserve_acquisition(lead, fields, payload, config):
         return _review(result, lead, "bound_attribution_conflict")
-    # An intake is enrichment of this record, not a second assignment/cutover.
+    # Preserve the responsible unless first-time native ownership is proven below.
     fields.pop("ASSIGNED_BY_ID", None)
     if automatic:
         if lead["STATUS_ID"] == GUEST_STATUS:
@@ -229,6 +263,11 @@ def persist_bound(payload, answer, *, env, api, config, review_status, result, p
     if _rows(api, "crm.lead.list", {"filter": {"=UF_CRM_WA_ASSISTANCE_ID": case_id},
                                     "select": ["ID", "UF_CRM_WA_ASSISTANCE_ID"]}):
         return _review(result, fresh, "bound_case_conflict")
+    if automatic and _unattended_initial_receiver(api, payload, fresh, phone, env.get("INITIAL_RECEIVER_REVISION")):
+        current = _read_lead(api, lead_id)
+        if _revision(fresh, config) != _revision(current, config) or receiver_revision(fresh) != receiver_revision(current):
+            return _review(result, current, "bound_lead_changed")
+        fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
     api.call("crm.lead.update", {"id": lead_id, "fields": fields})
     verified = _read_lead(api, lead_id)
     if (verified.get("UF_CRM_WA_ASSISTANCE_ID") != case_id or not _same_phone(verified, phone)

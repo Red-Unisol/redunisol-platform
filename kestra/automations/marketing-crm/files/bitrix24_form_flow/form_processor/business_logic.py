@@ -44,6 +44,7 @@ from .qualification import (
     haberes_cuad_referral_result,
 )
 from .result import failure_result, intake_success_result, skipped_result, success_result
+from ._routing_cutover import new_routing_enabled
 from .vimarx_service import (
     build_birthdate_field_from_value,
     resolve_arca_birthdate,
@@ -146,7 +147,16 @@ def ingest_submission(
         contact = upsert_contact(client, config, submission, active_logger)
         contact_id = contact.contact_id
         effective_submission = replace(submission, full_name=contact.effective_full_name)
-        lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
+        fresh_web_form = payload.get("submission_channel") == "redunisol-web" and new_routing_enabled(
+            payload.get("form_received_at")
+        )
+        # During a rolling namespace update an older lead_service may still be loaded.
+        # Its existing callers keep the original signature until the intake cutover.
+        if fresh_web_form:
+            lead_id = create_lead(client, config, effective_submission, contact_id, active_logger,
+                                  provisional_owner=True)
+        else:
+            lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
         return intake_success_result(
             contact_id=contact_id,
             lead_id=lead_id,

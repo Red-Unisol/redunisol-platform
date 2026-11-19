@@ -32,6 +32,12 @@ class WebFormChatLinker
 
     private ?CarbonImmutable $expiresAt = null;
 
+    private int $salesCredit = 0;
+
+    private ?array $salesHold = null;
+
+    private array $entryTimes = [];
+
     private string $phoneHash;
 
     private ?Lock $chatLock = null;
@@ -56,6 +62,8 @@ class WebFormChatLinker
         $this->proof = [];
         $this->chatLock = null;
         $this->expiresAt = null;
+        $this->salesHold = null;
+        $this->entryTimes = [];
         $this->contextual = false;
         $this->convertedNative = false;
         $this->contextId = null;
@@ -64,8 +72,13 @@ class WebFormChatLinker
             return ['state' => 'not_claimed'];
         }
         $this->token = $route->lease_token;
-        $this->expiresAt = (new WebFormChatRetryPolicy)->expiresAt($route);
+        $policy = new WebFormChatRetryPolicy;
+        $this->expiresAt = $policy->expiresAt($route);
+        $this->salesCredit = $policy->creditedSeconds($route);
         try {
+            if ($policy->expired($route) && $route->reason === WebFormChatRetryPolicy::QUEUED_SELLER) {
+                return $this->checkClosingAtDeadline($route);
+            }
             if (! config('edna.enabled') || ! config('edna.intake_crm_enabled')) {
                 $this->decide('waiting', 'crm_routing_disabled');
             }
@@ -80,10 +93,11 @@ class WebFormChatLinker
                 $this->decide('review', 'authenticated_entry_mismatch');
             }
             $this->phoneHash = $phoneHash;
+            $this->entryTimes = [$entry->created_at, $payload['receivedAt'] ?? null];
             $continuation = DB::table('web_form_continuations')->where('entry_event_id', $entryEventId)->first();
             if (($continuation->context_id ?? null) !== null) {
                 if (! $this->id($continuation->context_id) || $continuation->proof_source !== 'web_context'
-                    || ! app(WebChatContinuity::class)->eligibleEntry($entry)) {
+                    || ! app(WebChatContinuity::class)->eligibleEntry($entry, $this->salesCredit)) {
                     $this->decide('review', 'web_context_entry_not_verified');
                 }
                 $this->contextual = true;
@@ -207,7 +221,7 @@ class WebFormChatLinker
                 }
             }
 
-            $target = $this->target($receipt);
+            $target = $this->target($receipt, $route);
             if ($reentry && ! empty($previousProtection['protected_assignment'])) {
                 if (! $this->id($previousProtection['protected_owner_id'] ?? null)) {
                     $this->decide('review', 'reentry_protection_not_verified');
@@ -343,17 +357,17 @@ class WebFormChatLinker
         if (! $this->contextual) {
             return;
         }
-        $result = app(WebChatContinuity::class)->bind($this->entryId, $this->proof);
+        $result = app(WebChatContinuity::class)->bind($this->entryId, $this->proof, $this->salesCredit);
         if (($result['status'] ?? null) !== 'bound' || (string) ($result['context_id'] ?? '') !== (string) $this->contextId) {
             $status = $result['status'] ?? 'review';
             $this->decide(in_array($status, ['released', 'preserved'], true) ? 'preserved' : 'review',
                 $result['reason'] ?? 'web_context_binding_unverified');
         }
-        $context = DB::table('web_chat_contexts')->where('id', $this->contextId)->first(['expires_at']);
+        $context = DB::table('web_chat_contexts')->where('id', $this->contextId)->first(['expires_at', 'sales_expires_at']);
         if (! $context || ! is_string($context->expires_at)) {
             $this->decide('review', 'web_context_deadline_unavailable');
         }
-        $deadline = CarbonImmutable::parse($context->expires_at);
+        $deadline = CarbonImmutable::parse($context->sales_expires_at ?? $context->expires_at);
         $this->expiresAt = $this->expiresAt?->min($deadline) ?? $deadline;
         $this->assertLease();
     }
@@ -383,12 +397,13 @@ class WebFormChatLinker
         return ($lead['STATUS_ID'] ?? '') === 'CONVERTED' && ($lead['STATUS_SEMANTIC_ID'] ?? '') === 'S';
     }
 
-    private function target(object $receipt): array
+    private function target(object $receipt, ?object $route = null): array
     {
         $lead = $this->call('crm.lead.get', ['id' => $receipt->lead_id]);
         $this->validateLead($lead, $receipt);
         $deals = $this->call('crm.deal.list', ['filter' => ['LEAD_ID' => $receipt->lead_id, 'CATEGORY_ID' => 1],
-            'select' => ['ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID', 'ASSIGNED_BY_ID'], 'start' => -1]);
+            'select' => ['ID', 'LEAD_ID', 'CONTACT_ID', 'CATEGORY_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID',
+                'ASSIGNED_BY_ID', 'DATE_CREATE', 'UF_CRM_KQ_REASON'], 'start' => -1]);
         if (! is_array($deals) || ! array_is_list($deals) || count($deals) >= 50) {
             $this->decide('review', 'commercial_case_not_unique');
         }
@@ -411,6 +426,10 @@ class WebFormChatLinker
             $this->decide('review', 'commercial_case_not_unique');
         }
         $deal = $deals[0];
+        if ($route && (! empty($route->sales_opening_at) || $route->reason === WebFormChatRetryPolicy::QUEUED_SELLER)
+            && (string) $route->deal_id !== (string) $deal['ID']) {
+            $this->decide('review', 'sales_queue_case_changed');
+        }
         $contact = (string) ($lead['CONTACT_ID'] ?? '');
         if ((string) ($deal['LEAD_ID'] ?? '') !== (string) $receipt->lead_id || (int) ($deal['CATEGORY_ID'] ?? 0) !== 1
             || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P' || (string) ($deal['CONTACT_ID'] ?? '') !== $contact) {
@@ -419,6 +438,22 @@ class WebFormChatLinker
         $seller = (string) ($deal['ASSIGNED_BY_ID'] ?? '');
         if (! $this->id($seller) || in_array($seller, ['57', '71283'], true)
             || in_array($deal['STAGE_ID'] ?? '', ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE'], true)) {
+            if ($route) {
+                $policy = new WebFormChatRetryPolicy;
+                $times = [...$this->entryTimes, $receipt->received_at];
+                $this->salesHold = $policy->salesHold($route, $deal, $times);
+                if ($this->salesHold) {
+                    $this->salesHold['deal_id'] = (string) $deal['ID'];
+                    $this->decide('waiting', 'waiting_for_sales_opening');
+                }
+                if (($deal['STAGE_ID'] ?? '') === 'C1:KESTRA_QUEUE' && $seller === '57'
+                    && str_starts_with((string) ($deal['UF_CRM_KQ_REASON'] ?? ''), 'assignment_queued|')
+                    && $policy->newEntry([...$times, $route->created_at, $deal['DATE_CREATE'] ?? null])) {
+                    $this->proof['sales_queue_contact_id'] = $contact;
+                    $this->write(['deal_id' => (string) $deal['ID'], 'proof' => json_encode($this->proof, JSON_THROW_ON_ERROR)]);
+                    $this->decide('waiting', WebFormChatRetryPolicy::QUEUED_SELLER);
+                }
+            }
             $this->decide('waiting', 'commercial_seller_not_ready');
         }
         if ((string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $seller && ! ($this->contextual && $this->converted($lead))) {
@@ -750,7 +785,7 @@ class WebFormChatLinker
                 return null;
             }
             $policy = new WebFormChatRetryPolicy;
-            if ($policy->expired($row)) {
+            if ($policy->expired($row) && $row->reason !== WebFormChatRetryPolicy::QUEUED_SELLER) {
                 DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)
                     ->update($policy->expiration($row) + ['updated_at' => now()]);
 
@@ -767,6 +802,56 @@ class WebFormChatLinker
 
             return DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();
         });
+    }
+
+    /** A retry booked while open may fall at its deadline just after closing. Only read the previously proved deal. */
+    private function checkClosingAtDeadline(object $route): array
+    {
+        $receipt = DB::table('web_form_receipts')->find($route->submission_id);
+        $entry = DB::table('edna_incoming_events')->find($this->entryId);
+        $this->proof = json_decode($route->proof ?? '{}', true, 16, JSON_THROW_ON_ERROR);
+        $contact = $this->proof['sales_queue_contact_id'] ?? null;
+        $continuation = DB::table('web_form_continuations')->where('entry_event_id', $this->entryId)->first();
+        if ($continuation?->context_id && $continuation->proof_source === 'web_context') {
+            $this->contextId = (int) $continuation->context_id;
+            $this->contextual = true;
+            $context = DB::table('web_chat_contexts')->find($this->contextId);
+            if (! $context || $context->state === 'review') {
+                return $this->finish('review', $context ? 'web_context_multiple_submissions' : 'web_context_unavailable');
+            }
+            if (in_array($context->state, ['released', 'expired', 'preserved'], true)) {
+                return $this->finish('preserved', 'web_context_expired_or_ended');
+            }
+            $this->expiresAt = $this->expiresAt->min(CarbonImmutable::parse($context->sales_expires_at ?? $context->expires_at));
+        }
+        if ($receipt && $entry && $receipt->state === 'synced' && $receipt->phone_hash === $route->phone_hash
+            && $this->id($route->deal_id) && $this->id($receipt->lead_id) && $this->id($contact)
+            && (! $receipt->contact_id || (string) $receipt->contact_id === $contact)
+            && ! isset($this->proof['transfer_intent']) && $route->transfer_state === 'pending') {
+            $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
+            $this->validateProof($entry);
+            if ((string) ($payload['id'] ?? '') !== (string) $entry->message_id
+                || (string) ($payload['subjectId'] ?? '') !== (string) $entry->subject_id
+                || (string) $entry->subject_id !== (string) config('edna.subject_id')
+                || (new AttributionJourney)->phoneHash((string) ($payload['subscriber']['identifier'] ?? '')) !== $route->phone_hash) {
+                return $this->finish('expired', 'retry_window_expired');
+            }
+            $deal = $this->crm->call('crm.deal.get', ['id' => (int) $route->deal_id]);
+            if (is_array($deal) && (string) ($deal['ID'] ?? '') === (string) $route->deal_id
+                && (string) ($deal['LEAD_ID'] ?? '') === (string) $receipt->lead_id
+                && (string) ($deal['CONTACT_ID'] ?? '') === $contact
+                && (string) ($deal['CATEGORY_ID'] ?? '') === '1' && ($deal['STAGE_SEMANTIC_ID'] ?? '') === 'P') {
+                $this->salesHold = (new WebFormChatRetryPolicy)->salesHold($route, $deal,
+                    [$entry->created_at, $payload['receivedAt'] ?? null, $receipt->received_at]);
+                if ($this->salesHold) {
+                    $this->salesHold['deal_id'] = (string) $route->deal_id;
+
+                    return $this->finish('waiting', 'waiting_for_sales_opening');
+                }
+            }
+        }
+
+        return $this->finish('expired', 'retry_window_expired');
     }
 
     private function assertLease(): void
@@ -815,7 +900,14 @@ class WebFormChatLinker
         $policy = new WebFormChatRetryPolicy;
         $deadline = $this->expiresAt ?? ($route ? $policy->expiresAt($route) : null);
         $next = null;
-        if ($route && in_array($state, ['waiting', 'unknown', 'expired'], true)
+        if ($route && $state === 'waiting' && $reason === 'waiting_for_sales_opening' && $this->salesHold
+            && $this->salesHold['start']->lt($deadline)) {
+            $next = $this->salesHold['open'];
+            $credit = $next->timestamp - $this->salesHold['start']->timestamp;
+            $fields += ['deal_id' => $this->salesHold['deal_id'], 'sales_opening_at' => $next,
+                'retry_expires_at' => $policy->expiresAt($route)->addSeconds($credit),
+                'attempts' => max(0, $route->attempts - 1)];
+        } elseif ($route && in_array($state, ['waiting', 'unknown', 'expired'], true)
             && ($policy->expired($route) || $deadline?->lessThanOrEqualTo(now()))) {
             $expiration = $policy->expiration($route);
             $state = $expiration['state'];
@@ -829,10 +921,21 @@ class WebFormChatLinker
         if ($state === 'preserved' && ! isset($fields['transfer_state'])) {
             $fields['transfer_state'] = 'preserved';
         }
-        $updated = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->where('lease_token', $this->token)->update($fields + [
-            'state' => $state, 'reason' => $reason, 'lease_token' => null, 'lease_until' => null,
-            'available_at' => $next, 'enqueued_at' => null, 'updated_at' => now(),
-        ]);
+        $updated = DB::transaction(function () use ($fields, $state, $reason, $next, $route) {
+            $receipt = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->where('lease_token', $this->token);
+            if (isset($fields['sales_opening_at'])) {
+                $receipt->where('lease_until', '>', now());
+            }
+            $updated = $receipt->update($fields + [
+                'state' => $state, 'reason' => $reason, 'lease_token' => null, 'lease_until' => null,
+                'available_at' => $next, 'enqueued_at' => null, 'updated_at' => now(),
+            ]);
+            if ($updated === 1 && $this->contextId && isset($fields['sales_opening_at'])) {
+                app(WebChatContinuity::class)->holdForOpening($this->contextId, $route, $this->proof, $this->salesHold['start'], $next);
+            }
+
+            return $updated;
+        });
         if ($updated !== 1) {
             return ['state' => 'superseded', 'reason' => 'routing_lease_superseded'];
         }
@@ -841,6 +944,7 @@ class WebFormChatLinker
                 $row = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->first();
                 $receipt = DB::table('web_form_receipts')->where('id', $row->submission_id)->first(['lead_id', 'contact_id']);
                 app(WebChatContinuity::class)->sync($this->entryId, $state, $reason, [
+                    'sales_credit_seconds' => $policy->creditedSeconds($row),
                     'proof' => $this->proof, 'link_state' => $row->link_state, 'transfer_state' => $row->transfer_state,
                     'deal_id' => $row->deal_id, 'seller_id' => $row->seller_id,
                     'lead_id' => $receipt->lead_id ?? null, 'contact_id' => $receipt->contact_id ?? null,

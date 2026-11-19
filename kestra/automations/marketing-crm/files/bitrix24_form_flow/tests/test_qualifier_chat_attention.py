@@ -116,6 +116,40 @@ class QualifierAttentionTests(unittest.TestCase):
                 self.client.leads[920]["ASSIGNED_BY_ID"] = 57
                 self.client.deals[930]["assignedById"] = 57
 
+    def test_new_queue_uses_actual_crm_ownership_and_unattended_receiver_evidence(self):
+        stamp = "2026-12-01T12:00:00-03:00"
+        for crm_owner, answered, distributed in ((57, False, True), (57, True, False),
+                                                  (71283, False, False), (74827, False, False)):
+            with self.subTest(crm_owner=crm_owner, answered=answered):
+                self.reset_client()
+                self.client.leads[920].update(DATE_CREATE=stamp, ASSIGNED_BY_ID=crm_owner)
+                deal = self.fixture._queued_deal(930, 920, "catamarca_general", stamp)
+                self.client.deals[930] = deal
+                dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777})
+                self.client.open_line_dialogs[777] = {**dialog, "owner": 74827}
+                if answered:
+                    self.client.session_changes["dateOperatorAnswer"] = stamp
+                res = qualify._retry_queued_deal(self.client, qualify.load_config(self.fixture.env), dict(deal),
+                                                 fixtures.SilentLogger(), datetime.fromisoformat(stamp))
+                self.assertEqual(bool(self.client.chat_transfers), distributed)
+                self.assertEqual(res["action"], "queue_distributed" if distributed else "routing_review")
+                self.assertEqual(deal["assignedById"], 68579 if distributed else 57)
+                self.assertEqual(int(self.client.leads[920]["ASSIGNED_BY_ID"]), 68579 if distributed else crm_owner)
+
+    def test_human_change_between_lead_and_deal_assignment_preserves_the_case(self):
+        stamp = "2026-12-01T12:00:00-03:00"
+        self.client.deals[930]["createdTime"] = stamp
+        self.client.leads[920].update(DATE_CREATE=stamp, ASSIGNED_BY_ID=57, UF_CRM_BCRA_CHECKED_AT=stamp)
+        def change(method, body):
+            if method == "crm.lead.update" and body["fields"].get("ASSIGNED_BY_ID") == 68579:
+                self.client.deals[930]["assignedById"] = 90231
+        self.client.before = change
+        result = qualify.qualify_catamarca_deal(930, env=self.fixture.env, bitrix_client=self.client,
+            logger=fixtures.SilentLogger(), now=datetime.fromisoformat(stamp))
+        self.assertEqual(result["reason"], "crm_or_session_changed_before_assignment")
+        self.assertEqual(self.client.deals[930]["assignedById"], 90231)
+        self.assertFalse(self.client.chat_transfers)
+
     def test_attention_during_seller_selection_is_checked_before_first_owner_write(self):
         original = qualify.resolve_round_robin_assignee
         def select(*args, **kwargs):
