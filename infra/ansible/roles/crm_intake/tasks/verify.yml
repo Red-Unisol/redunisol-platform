@@ -21,6 +21,7 @@
       - crm_intake_status.json.mode == 'inactive'
       - crm_intake_status.json.capture_enabled is sameas false
       - crm_intake_status.json.normalization_worker_enabled is sameas false
+      - crm_intake_status.json.prequalification_enabled is sameas false
 
 - name: Verify a synthetic capture is rejected before processing
   ansible.builtin.uri:
