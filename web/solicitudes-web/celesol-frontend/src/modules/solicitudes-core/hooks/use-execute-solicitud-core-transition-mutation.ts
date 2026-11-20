@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { documentReviewKey } from "@/modules/solicitudes-core/services/document-review-api";
 import { executeSolicitudCoreTransition } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import type { ExecuteWorkflowTransitionRequest } from "@/modules/solicitudes/types/solicitudes-core";
@@ -50,7 +51,7 @@ export function useExecuteSolicitudCoreTransitionMutation(
 
       await Promise.all(invalidations);
     },
-    onSuccess: async (response) => {
+    onSuccess: async (response, command) => {
       queryClient.setQueryData(
         solicitudesCoreQueryKeys.detail(solicitudId),
         response.solicitud,
@@ -69,6 +70,14 @@ export function useExecuteSolicitudCoreTransitionMutation(
           queryKey: solicitudesCoreQueryKeys.recientesAll,
         }),
       ];
+
+      if (["enviar_a_liquidada", "finalizar_revision_datos"].includes(command.actionCode)) {
+        // La ficha resuelve permisos y correcciones para el área que está mirando.
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.detail(solicitudId) }),
+          queryClient.invalidateQueries({ queryKey: documentReviewKey(solicitudId) }),
+        );
+      }
 
       if (isHistoryEnabled) {
         invalidations.push(

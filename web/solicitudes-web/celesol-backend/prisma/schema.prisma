@@ -175,6 +175,7 @@ model Socio {
 model Solicitud {
   id                       String                     @id @default(uuid()) @db.Uuid
   loanReplacements SolicitudPrestamoReplacement[]
+  sellerReviewChanges      Json                       @default("[]") @map("seller_review_changes")
   administrativeCoreControl Json? @map("administrative_core_control")
   desestimacionHistorialId String? @map("desestimacion_historial_id") @db.Uuid
   legacyOid                String?                    @unique @map("legacy_oid")
@@ -182,6 +183,7 @@ model Solicitud {
   // mismo alta llega dos veces (doble clic, reintento tras un corte por
   // timeout), se devuelve la solicitud ya creada en vez de crear otra.
   idempotencyKey           String?                    @unique @map("idempotency_key") @db.Uuid
+  sellerReviewStartedAt     DateTime?                  @map("seller_review_started_at")
   analisisFinalizadoAt      DateTime?                  @map("analisis_finalizado_at")
   analisisFinalizadoBy      String?                    @map("analisis_finalizado_by") @db.Uuid
   signatureCycleId          String?                    @map("signature_cycle_id")

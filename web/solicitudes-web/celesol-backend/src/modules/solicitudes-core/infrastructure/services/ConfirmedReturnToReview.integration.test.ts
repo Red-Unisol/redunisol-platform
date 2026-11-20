@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, it } from "node:test";
-import { PrismaClient } from "@prisma/client";
+import { digest } from "../../../document-review/domain";
+import { EXTERNAL_LEGAJO_POLICY_VERSION } from "../../../document-review/external-legajo-policy";
+import { eligibleSignatureCandidates, getSignatureApproval, reviewSource, signatureSourceInclude } from "../../../document-review/signature-workflow";
+import { candidateFixture } from "../../../document-review/fixtures";
+import { assertSignatureLinkFinancialReady } from "./WorkflowFinancialGuard";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { administrativeSource } from "./AdministrativeCorrectionService";
 import { ControlledLoanReplacementService } from "./ControlledLoanReplacementService";
-import { coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
+import type { UpdateSolicitudCorePatch } from "../../domain/repositories/SolicitudesCoreRepository";
+import { SolicitudesCorePrismaDatasource } from "../datasources/SolicitudesCorePrismaDatasource";
+import { coreConditionsFingerprint, coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudWorkflowPrismaDatasource } from "../datasources/SolicitudWorkflowPrismaDatasource";
 import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflowEngine";
 import { actingContext } from "../../../auth/impersonation/context";
@@ -164,3 +171,157 @@ it("two concurrent returns create exactly one normal transition event", { skip: 
     assert.equal(await db.solicitudEstadoHistorial.count({ where: { solicitudId: f.s.id, actionCode: "revisar" } }), 1);
   } finally { await f.clean(); }
 });
+
+async function recordCurrentLoanConditions(tx: Prisma.TransactionClient, id: string) {
+  const source = await administrativeSource(tx, id);
+  assert(source.legacyOid);
+  await tx.solicitud.update({ where: { id }, data: {
+    administrativeCoreControl: { loanId: source.legacyOid, reconciledFingerprint: coreConditionsFingerprint(source) },
+  } });
+}
+
+it("requires a fresh seller confirmation after corrections and rejects direct routes from an open review", { skip: !enabled }, async () => {
+  const f = await fixture();
+  const run = (actionCode: string, seller = false) => f.engine.execute({
+    actionCode, changedBy: seller ? f.seller.id : f.risk.id, workflowOwnerId: seller ? f.sellerOwner.id : f.riskOwner.id,
+    solicitudId: f.s.id, now: new Date(),
+  });
+  try {
+    await recordCurrentLoanConditions(db, f.s.id);
+    const available = async (owner: string) =>
+      (await f.datasource.listAvailableTransitions({ solicitudId: f.s.id, workflowOwnerId: owner })).map(t => t.actionCode);
+    assert((await available(f.riskOwner.id)).includes("liquidar"));
+    await assert.rejects(run("enviar_a_liquidada", true));
+    await run("enviar_a_liquidada");
+    assert.deepEqual(await available(f.sellerOwner.id), ["desestimar", "finalizar_revision_datos"]);
+    assert.equal(String((await administrativeSource(db, f.s.id)).montoAprobadoRiesgo), String(f.s.montoAFinanciar));
+    await assert.rejects(run("verificar_firma", true));
+    await assert.rejects(run("transferir", true));
+    await assert.rejects(run("devolver_revision_datos", true));
+    await assert.rejects(run("finalizar_revision_datos"));
+    // The atomic edit path persists the effective field changes before invoking the engine.
+    await db.solicitud.update({ where: { id: f.s.id }, data: {
+      sellerReviewChanges: [{ field: "titular.email", before: null, after: "seller@example.test" }],
+    } });
+    const corrected = await run("finalizar_revision_datos", true);
+    assert.equal(corrected.solicitud.estadoActual.code, "RevisionRiesgo");
+    assert(corrected.solicitud.sellerReviewStartedAt);
+    await run("confirmar");
+    assert(!(await available(f.riskOwner.id)).includes("liquidar"));
+    await assert.rejects(run("liquidar"));
+    await assert.rejects(run("liquidar_con_firma"));
+    await run("enviar_a_liquidada");
+    const completed = await run("finalizar_revision_datos", true);
+    assert.equal(completed.solicitud.estadoActual.code, "VerificarFirmaYDocumentacion");
+    assert.equal(completed.solicitud.sellerReviewStartedAt, null);
+    const final = await administrativeSource(db, f.s.id);
+    assert.equal(final.analisisFinalizadoBy, f.seller.id);
+    assert.equal(final.assignedToUserId, f.risk.id);
+  } finally { await f.clean(); }
+});
+
+const sellerCorrections = [
+  { field: "solicitud.fechaPrimerVencimiento", patch: { solicitud: { fechaPrimerVencimiento: "2026-12-02" } } },
+  { field: "solicitud.lineaPrestamoLegacyOid", patch: { solicitud: { lineaPrestamoLegacyOid: "56" } } },
+  { field: "solicitud.cuotas", patch: { solicitud: { cuotas: 18 } } },
+  { field: "titular.nroDocumento", patch: { titular: { nroDocumento: "12345679" } } },
+  { field: "titular.cuit", patch: { titular: { cuit: "27123456780" } } },
+  { field: "solicitud.observaciones", patch: { solicitud: { observaciones: "Nota" } } },
+] satisfies Array<{ field: string; patch: UpdateSolicitudCorePatch }>;
+
+for (const { field, patch } of sellerCorrections) {
+  it(`seller correction of ${field} handles earlier signature evidence and the current loan terms`, { skip: !enabled }, async () => {
+    const f = await fixture();
+    const id = f.s.id;
+    const loanId = f.s.legacyOid!;
+    let dueInCore = "2026-12-02";
+    const verifyLoan: typeof assertSignatureLinkFinancialReady = (tx, sourceId) => assertSignatureLinkFinancialReady(tx, sourceId, {
+      lifecycle: async () => ({ id: loanId, account: "100", estado: 0, estadoLabel: "Activa", estadoPrestamo: 0,
+        estadoPrestamoLabel: "Pendiente", vigente: true, saldo: 100 }),
+      loanSnapshot: async () => ({ id: loanId, estado: 0, amount: 600000, cuotas: 12, lineaId: "55",
+        primerVencimiento: dueInCore, cancelacionesCentavos: 0 }),
+      lineResolver: { resolveByPresolicitudOid: async oid => ({ id: oid, codigoMutual: null }) },
+    });
+    const rollback = new Error("Rollback de las evidencias inmutables de prueba");
+    try {
+      await assert.rejects(db.$transaction(async tx => {
+        const engine = new SolicitudWorkflowEngine({
+          repository: new SolicitudWorkflowPrismaDatasource(db, tx, undefined, verifyLoan),
+        });
+        const run = (actionCode: string, seller = false) => engine.execute({
+          actionCode, changedBy: seller ? f.seller.id : f.risk.id, workflowOwnerId: seller ? f.sellerOwner.id : f.riskOwner.id,
+          solicitudId: id, now: new Date(),
+        });
+        const source = () => tx.solicitud.findUniqueOrThrow({ where: { id }, include: signatureSourceInclude });
+        const priorCycleId = randomUUID();
+        await tx.solicitud.update({ where: { id }, data: {
+          fechaPrimerVencimiento: new Date("2026-12-01"), titular: { update: { cuit: "20123456786" } },
+          signatureCycleId: priorCycleId, signatureExcludedVerificationIds: ["previously-excluded"],
+        } });
+        await recordCurrentLoanConditions(tx, id);
+        await run("enviar_a_liquidada");
+        // A legacy review can return corrections to Riesgo even without a saved financial control.
+        if (field === "titular.cuit") await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: Prisma.DbNull } });
+        const beforeEdit = await source();
+        const previous = reviewSource(beforeEdit);
+        const review = await tx.solicitudDocumentReview.create({ data: {
+          solicitudId: id, evaluationKey: randomUUID(), policyVersion: EXTERNAL_LEGAJO_POLICY_VERSION,
+          sourceFingerprint: digest(previous), sourceSnapshot: JSON.parse(JSON.stringify(previous)), providerFingerprint: "external",
+          assessment: { attempts: [{ verificationId: "earlier-attempt" }, { verificationId: "open-attempt" }] }, systemDecision: "not_approve",
+          legajoAdjuntoId: f.adjuntoId, evidencePath: "test/legajo.json",
+        } });
+        const decision = await tx.solicitudDocumentDecision.create({ data: {
+          reviewId: review.id, requestId: randomUUID(), humanDecision: "approve", systemDecision: "not_approve",
+          disagreesWithSystem: true, overridesAttempt: false, reason: "Legajo externo aprobado", decidedBy: f.admin.id,
+          actorName: "Revisor", actingAudit: { evidenceType: "external", confirmed: true, externalDocuments: [{name: "legajo.pdf"}] },
+          legajoAdjuntoId: f.adjuntoId,
+        } });
+        assert((await getSignatureApproval(tx, id)).approved);
+        const updated = await new SolicitudesCorePrismaDatasource(db).update(id, patch, {
+          expectedEstadoActualId: beforeEdit.estadoActualId, enforceMontoAprobadoRiesgo: true, sellerReviewActor: "seller",
+        }, tx);
+        if (field === "titular.cuit") {
+          assert.equal(updated.titular.nroDocumento, beforeEdit.titular?.nroDocumento);
+          assert.equal(updated.titular.cuit, "27123456780");
+          // CUIT alone leaves the signed-source digest unchanged until the new cycle starts.
+          assert.equal(digest(reviewSource(await source())), digest(previous));
+        }
+        await run("finalizar_revision_datos", true);
+        const corrected = await source();
+        assert.equal(corrected.estadoActual.code, "RevisionRiesgo");
+        assert(await tx.solicitudDocumentDecision.findUnique({ where: { id: decision.id } }));
+        const contractual = field !== "solicitud.observaciones";
+        assert.equal((await getSignatureApproval(tx, id)).approved, !contractual);
+        assert.equal(await tx.beexNotification.count({ where: { solicitudId: id, kind: "signature_requested" } }), contractual ? 1 : 0);
+        if (contractual) {
+          assert(corrected.signatureRequestedAt && corrected.signatureCycleId);
+          assert.notEqual(corrected.signatureCycleId, priorCycleId);
+          const excluded = ["previously-excluded", "earlier-attempt", "open-attempt"];
+          assert.deepEqual(corrected.signatureExcludedVerificationIds, excluded);
+          const completeAfterCorrection = (verificationId: string) => ({
+            ...candidateFixture(verificationId), completedAt: new Date(corrected.signatureRequestedAt!.getTime() + 1000).toISOString(),
+          });
+          const fresh = completeAfterCorrection("new-attempt");
+          assert.deepEqual(eligibleSignatureCandidates(corrected, [...excluded.map(completeAfterCorrection), fresh]), [fresh]);
+          const event = await tx.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: id, actionCode: "devolver_revision_datos" } });
+          assert.equal((event.metadata as Record<string, unknown>).signatureCycleId, corrected.signatureCycleId);
+        } else {
+          assert.equal(corrected.signatureCycleId, priorCycleId);
+          assert.deepEqual(corrected.signatureExcludedVerificationIds, ["previously-excluded"]);
+          await run("confirmar");
+          await run("enviar_a_liquidada");
+          // Even a reconciled request must pass the strict check against current Vimarx terms.
+          assert.equal(coreReconciliationPending(await administrativeSource(tx, id)), false);
+          await assert.rejects(run("finalizar_revision_datos", true), /no coincide/);
+          assert.equal((await source()).estadoActual.code, "Liquidada");
+          assert.equal(await tx.solicitudEstadoHistorial.count({ where: { solicitudId: id, actionCode: "transferir" } }), 0);
+          dueInCore = "2026-12-01";
+          assert.equal((await run("finalizar_revision_datos", true)).solicitud.estadoActual.code, "Transferir");
+        }
+        throw rollback;
+      }), error => error === rollback);
+    } finally {
+      await f.clean();
+    }
+  });
+}

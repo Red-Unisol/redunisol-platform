@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS } from "../datasources/SolicitudWorkflowCatalog.test-constants";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { after, it } from "node:test";
@@ -7,6 +8,7 @@ import { SolicitudWorkflowPrismaDatasource } from "../datasources/SolicitudWorkf
 import { SolicitudWorkflowEngine } from "../../domain/workflow/SolicitudWorkflowEngine";
 import { SolicitudWorkflowPlanBuilder } from "../../domain/workflow/SolicitudWorkflowPlanBuilder";
 import { REVERSE_DISMISSAL_ACTION } from "../../domain/workflow/Dismissal";
+import { isAnalysisReady } from "../../../document-review/signature-workflow";
 import { actingContext } from "../../../auth/impersonation/context";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { CoreLoanLifecycle } from "./ControlledLoanReplacementService";
@@ -59,10 +61,14 @@ async function fixture(code = "Confirmada", linked = true) {
     fail: () => { failure = true; } };
 }
 
-it("every active origin dismisses and restores exactly its prior state, without Motor or assignment side effects", { skip: !enabled }, async () => {
-  const origins = await db.workflowState.findMany({ where: { isActive: true, code: { not: "Desestimada" } } });
-  assert.equal(origins.length, 12);
-  for (const state of origins) {
+it("every catalogued dismissal restores its prior state, without Motor or assignment side effects", { skip: !enabled }, async () => {
+  const origins = await db.workflowTransition.findMany({
+    where: { actionCode: "desestimar", isActive: true, fromState: { isActive: true }, toState: { code: "Desestimada" } },
+    select: { fromState: true },
+  });
+  assert.deepEqual(origins.map(t => t.fromState.code).sort(),
+    EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS.filter(t => t.endsWith("|desestimar|Desestimada")).map(t => t.split("|")[0]).sort());
+  for (const { fromState: state } of origins) {
     const f = await fixture(state.code);
     try {
       const result = await f.engine.execute(f.command);
@@ -106,6 +112,31 @@ it("every active origin dismisses and restores exactly its prior state, without 
       await assert.rejects(f.engine.execute(f.reverse));
     } finally { await f.clean(); }
   }
+});
+
+it("restoring a dismissed seller review preserves its pending corrections and cannot finish analysis or advance the signature", { skip: !enabled }, async () => {
+  const f = await fixture("Liquidada");
+  try {
+    const started = new Date("2026-11-19T12:00:00Z");
+    const changes = [{ field: "titular.email", before: null, after: "corregido@example.test" }];
+    await db.solicitud.update({ where: { id: f.s.id }, data: {
+      sellerReviewStartedAt: started, sellerReviewChanges: changes, analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+    } });
+    await f.engine.execute(f.command);
+    assert.equal((await f.current()).estadoActual.code, "Desestimada");
+    await f.engine.execute(f.reverse);
+    const restored = await f.current();
+    assert.equal(restored.estadoActual.code, "Liquidada");
+    assert.equal(restored.sellerReviewStartedAt?.getTime(), started.getTime());
+    assert.deepEqual(restored.sellerReviewChanges, changes);
+    assert.equal(restored.analisisFinalizadoAt, null);
+    assert.equal(isAnalysisReady(restored), false);
+    await assert.rejects(f.engine.execute({ ...f.command, actionCode: "transferir" }));
+    await assert.rejects(f.engine.execute({ ...f.command, actionCode: "verificar_firma" }));
+    const result = await f.engine.execute({ ...f.command, actionCode: "finalizar_revision_datos" });
+    assert.equal(result.solicitud.estadoActual.code, "RevisionRiesgo");
+    assert((await f.current()).sellerReviewStartedAt);
+  } finally { await f.clean(); }
 });
 
 it("a recorded external payment blocks even with an authoritatively cancelled loan", { skip: !enabled }, async () => {

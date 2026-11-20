@@ -3665,7 +3665,10 @@ export function SolicitudesActualDetallePage() {
     linkedLoan.isError ||
     linkedLoan.data?.status === "unavailable" ||
     (Boolean(solicitud?.legacyOid) && linkedLoan.data?.amountEditable !== true);
+  const isSellerReview = solicitud?.estadoActual.code === "Liquidada" && Boolean(solicitud.sellerReviewStartedAt);
   const [isEditing, setIsEditing] = useState(false);
+  const [reviewEditVersion, setReviewEditVersion] = useState<string | null>(null);
+  const [reviewRequest, setReviewRequest] = useState<ExecuteWorkflowTransitionRequest | null>(null);
   const [titularErrors, setTitularErrors] = useState<
     Partial<Record<keyof EditableSolicitudCoreValues["titular"], string>>
   >({});
@@ -3843,9 +3846,8 @@ export function SolicitudesActualDetallePage() {
   const analysisActionLabel = documentReview.data?.signature?.approved
     ? "Mandar a transferir"
     : "Enviar a firmar";
-  const analysisBlockedReason =
-    analysisTransition?.blockedReason ??
-    (linkedLoan.isPending ||
+  const linkedLoanBlockedReason =
+    linkedLoan.isPending ||
     linkedLoan.isError ||
     linkedLoan.data?.status === "unavailable"
       ? "Esperá a que se verifique el préstamo en Vimarx."
@@ -3853,9 +3855,11 @@ export function SolicitudesActualDetallePage() {
         ? "Se requiere un préstamo vigente."
         : !linkedLoan.data.matchesAmount
           ? "El monto del préstamo debe coincidir con la solicitud."
-          : documentReview.isPending || documentReview.isError
-            ? "Esperá a que se compruebe la situación de firma."
-            : null);
+          : null;
+  const analysisBlockedReason = analysisTransition?.blockedReason ?? linkedLoanBlockedReason ??
+    (documentReview.isPending || documentReview.isError
+      ? "Esperá a que se compruebe la situación de firma."
+      : null);
 
   const ultimaNovedad = useMemo(() => {
     const latestHistoryWithComment = [...workflowHistory]
@@ -3902,6 +3906,11 @@ export function SolicitudesActualDetallePage() {
     },
     Boolean(
       isEditing &&
+      (!isSellerReview || cuotaObjetivoTexto !== null ||
+        Number(condicionesEdicion?.cuotas) !== solicitud?.cuotas ||
+        parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== solicitud?.montoAFinanciar ||
+        condicionesEdicion?.lineaPrestamoLegacyOid !== solicitud?.lineaPrestamoLegacyOid ||
+        condicionesEdicion?.fechaPrimerVencimiento !== (solicitud?.fechaPrimerVencimiento?.slice(0, 10) ?? "")) &&
       (cuotaObjetivoTexto === null ||
         parseMoneyValue(cuotaObjetivoTexto) > 0) &&
       lineaEdicion &&
@@ -4051,13 +4060,15 @@ export function SolicitudesActualDetallePage() {
   // Acciones de la barra azul, con la misma regla en todos los estados:
   // principal, secundaria y "Mas acciones" (solicitudes-shared/utils/acciones-de-estado).
   const estadoCode = resolvedSolicitud.estadoActual.code;
-  const accionesDelEstado = ACCIONES_DE_ESTADO[estadoCode];
+  const accionesDelEstado = isSellerReview
+    ? { primaria: "finalizar_revision_datos", secundaria: undefined }
+    : ACCIONES_DE_ESTADO[estadoCode];
   const ocupado =
     isLoadingWorkflowTransitions ||
     workflowTransitionSelectorErrorMessage !== null ||
     executeWorkflowTransitionMutation.isPending;
   const motivoEditando = isEditing
-    ? "Guardá o cancelá los cambios primero."
+    ? isSellerReview ? "Finalizá la revisión o cancelá la edición primero." : "Guardá o cancelá los cambios primero."
     : null;
   // Con la revision de firma activa, transferir lo decide Legajos en su panel.
   const motivoDeTransicion = (transition: WorkflowTransition) =>
@@ -4069,12 +4080,18 @@ export function SolicitudesActualDetallePage() {
     transition: WorkflowTransition,
     icono?: ReactNode,
   ): AccionDeEstado => {
-    const motivo = motivoEditando ?? motivoDeTransicion(transition);
+    const cierraRevision = transition.actionCode === "finalizar_revision_datos";
+    const motivo = (cierraRevision ? null : motivoEditando) ??
+      (transition.actionCode === "liquidar" ? analysisBlockedReason : null) ??
+      (transition.actionCode === "enviar_a_liquidada" ? linkedLoanBlockedReason : null) ??
+      motivoDeTransicion(transition);
 
     return {
       clave: transition.id,
       deshabilitada: ocupado || Boolean(motivo),
-      etiqueta: etiquetaDeAccion(transition.actionCode, transition.actionLabel),
+      etiqueta: transition.actionCode === "liquidar"
+        ? analysisActionLabel
+        : etiquetaDeAccion(transition.actionCode, transition.actionLabel),
       icono,
       motivo,
       onClick: () => handleWorkflowTransitionChange(transition.id),
@@ -4124,14 +4141,6 @@ export function SolicitudesActualDetallePage() {
       icono: <FileSignature className="size-4" />,
       onClick: irARevisionDeFirma,
     };
-  } else if (transicionPrincipal?.actionCode === "liquidar") {
-    const motivo = motivoEditando ?? analysisBlockedReason;
-    accionPrincipal = {
-      ...accionDeTransicion(transicionPrincipal, <Send className="size-4" />),
-      deshabilitada: ocupado || Boolean(motivo),
-      etiqueta: analysisActionLabel,
-      motivo,
-    };
   } else if (transicionPrincipal) {
     const accion = accionDeTransicion(
       transicionPrincipal,
@@ -4154,12 +4163,10 @@ export function SolicitudesActualDetallePage() {
   const accionSecundaria = transicionSecundaria
     ? accionDeTransicion(transicionSecundaria, <Undo2 className="size-4" />)
     : undefined;
-  // El resto, en el orden de la configuracion. "liquidar" va solo como
-  // principal: su nombre y su bloqueo dependen de la firma y del prestamo.
+  // En Confirmada, el cierre directo de Riesgo conserva su destino y sus validaciones.
   const accionesDelMenu = workflowTransitions
     .filter(
       (transition) =>
-        transition.actionCode !== "liquidar" &&
         transition.id !== transicionSecundaria?.id &&
         (puedeGenerarPrestamo || transition.id !== transicionPrincipal?.id),
     )
@@ -4172,7 +4179,7 @@ export function SolicitudesActualDetallePage() {
           workflowHistoryError instanceof Error
         ? workflowHistoryError.message
         : null;
-  const canManageAssignment = canManageSolicitudAssignment({
+  const canManageAssignment = !isSellerReview && canManageSolicitudAssignment({
     canEditSolicitud,
     hasAssignmentOptions: assignmentAgentOptions.length > 0,
     isAssigningToSelf: assignSolicitudToSelfMutation.isPending,
@@ -4196,15 +4203,15 @@ export function SolicitudesActualDetallePage() {
     const linea = lineasSimulador.find(
       (linea) => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid,
     );
-    if (!amountLocked)
-      editValues.solicitud.montoAFinanciar = ajustarMontoTexto(
-        editValues.solicitud.montoAFinanciar,
-        linea,
-      );
-    editValues.solicitud.cuotas = ajustarCuotasTexto(
-      editValues.solicitud.cuotas,
-      linea,
-    );
+    if (!isSellerReview) {
+      if (!amountLocked)
+        editValues.solicitud.montoAFinanciar = ajustarMontoTexto(
+          editValues.solicitud.montoAFinanciar,
+          linea,
+        );
+      editValues.solicitud.cuotas = ajustarCuotasTexto(editValues.solicitud.cuotas, linea);
+    }
+    setReviewEditVersion(isSellerReview ? resolvedSolicitud.updatedAt : null);
     setEditableValues(editValues);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
@@ -4216,6 +4223,7 @@ export function SolicitudesActualDetallePage() {
   }
 
   function handleCancelEditing() {
+    setReviewEditVersion(null);
     setEditableValues(null);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
@@ -4392,7 +4400,7 @@ export function SolicitudesActualDetallePage() {
     setIsGarantiaModalOpen(false);
   }
 
-  async function handleSaveChanges() {
+  function prepareEditedData() {
     if (
       amountLocked &&
       parseMoneyValue(currentValues.solicitud.montoAFinanciar) !==
@@ -4473,6 +4481,14 @@ export function SolicitudesActualDetallePage() {
     if (garantiasDirty && editableGarantias) {
       payload.garantias = editableGarantias;
     }
+
+    return payload;
+  }
+
+  async function handleSaveChanges() {
+    if (reviewEditVersion) return;
+    const payload = prepareEditedData();
+    if (!payload) return;
 
     const currentAssignedTo = resolvedSolicitud.assignedToUserId ?? "";
     const hasAssignmentChange = selectedAssignmentValue !== currentAssignedTo;
@@ -4848,7 +4864,7 @@ export function SolicitudesActualDetallePage() {
 
     try {
       await executeWorkflowTransitionMutation.mutateAsync(payload);
-      toast.success("Acción ejecutada correctamente.", {
+      toast.success(payload.actionCode === "finalizar_revision_datos" ? "Revisión de datos finalizada." : "Acción ejecutada correctamente.", {
         duration: 3500,
         icon: <CircleCheckBig className="size-5" />,
         id: WORKFLOW_TRANSITION_SUCCESS_TOAST_ID,
@@ -4933,6 +4949,15 @@ export function SolicitudesActualDetallePage() {
       null;
 
     executeWorkflowTransitionMutation.reset();
+    if (transition?.actionCode === "finalizar_revision_datos") {
+      const changes = isEditing ? prepareEditedData() : undefined;
+      if (isEditing && !changes) return;
+      setReviewRequest({
+        actionCode: transition.actionCode,
+        expectedUpdatedAt: reviewEditVersion ?? resolvedSolicitud.updatedAt,
+        ...(changes && Object.keys(changes).length > 0 ? { changes } : {}),
+      });
+    }
     setSelectedWorkflowTransition(
       transition && transition.actionCode !== "liquidar"
         ? {
@@ -4984,7 +5009,14 @@ export function SolicitudesActualDetallePage() {
   async function handleConfirmWorkflowTransition(
     payload: ExecuteWorkflowTransitionRequest,
   ) {
-    await handleExecuteWorkflowTransition(payload);
+    if (payload.actionCode === "finalizar_revision_datos") {
+      if (!reviewRequest) return;
+      await handleExecuteWorkflowTransition(reviewRequest);
+      handleCancelEditing();
+      setReviewRequest(null);
+    } else {
+      await handleExecuteWorkflowTransition(payload);
+    }
     setSelectedWorkflowTransition(null);
   }
 
@@ -5092,7 +5124,7 @@ export function SolicitudesActualDetallePage() {
                   // Editar solo cambia la pestaña Solicitud.
                   canEdit={canEnterEditMode && vistaTab === "solicitud"}
                   isEditing={isEditing}
-                  isSaving={patchSolicitudCoreMutation.isPending}
+                  isSaving={patchSolicitudCoreMutation.isPending || executeWorkflowTransitionMutation.isPending}
                   onCancelEdit={handleCancelEditing}
                   isSaveDisabled={
                     patchSolicitudCoreMutation.isPending ||
@@ -5111,7 +5143,7 @@ export function SolicitudesActualDetallePage() {
                   }
                   onOpenSimulador={() => setIsSimuladorOpen(true)}
                   onPreloadSimulador={loadSimuladorPrestamoModal}
-                  onSave={handleSaveToolbarAction}
+                  onSave={isSellerReview || reviewEditVersion ? undefined : handleSaveToolbarAction}
                   onStartEdit={handleStartEditing}
                   attachmentsAction={{
                     count:
@@ -5207,6 +5239,7 @@ export function SolicitudesActualDetallePage() {
                   documento={resolvedSolicitud.titular.nroDocumento}
                   tipoDocumento={resolvedSolicitud.titular.tipoDocumento}
                   cbuSolicitud={currentValues.titular.cbu}
+                  sellerReviewChanges={resolvedSolicitud.sellerReviewChanges}
                   cbuNoHabitual={currentValues.titular.cbuNoHabitual}
                   identityChanged={
                     isEditing && cbuIdentityChanged(resolvedSolicitud.titular, currentValues.titular)

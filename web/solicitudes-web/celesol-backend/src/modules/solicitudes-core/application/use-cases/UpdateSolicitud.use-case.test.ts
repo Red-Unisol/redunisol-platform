@@ -884,6 +884,24 @@ describe("tope del monto aprobado por Riesgo", () => {
   });
 });
 
+it("atribuye las ediciones de Revisar por área autenticada y excluye la primera carga", async () => {
+  const owner = { id: "sales", code: "VENDEDORES", name: "Vendedores" };
+  for (const [state, area, actor] of [
+    ["CargaVendedor", "VENDEDORES", undefined], ["Revisar", "VENDEDORES", "seller"],
+    ["PreAprobada", "RIESGO", "other"],
+  ] as const) {
+    const row = solicitudCore({ estadoActual: { code: state, id: "state-1", name: state, ownerId: owner.id, owner } });
+    const useCase = buildUseCase({
+      findById: async () => row, findWorkflowOwnerCodeById: async () => area,
+    });
+    const { guard } = await useCase.prepare(updateInput({
+      currentUser: { id: "editor", workflowOwnerId: area === "RIESGO" ? "risk" : owner.id },
+      solicitud: { observaciones: "Corregida" },
+    }));
+    assert.equal(guard.sellerReviewActor, actor);
+  }
+});
+
 function buildUseCase(overrides?: {
   linkedLoanReader?: LinkedLoanReader;
   fieldAccessRulesRepository?: SolicitudFieldAccessRulesRepository;

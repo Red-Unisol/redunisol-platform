@@ -12,6 +12,25 @@ import {
 import { GetSolicitudByIdUseCase } from "./GetSolicitudById.use-case";
 
 describe("GetSolicitudByIdUseCase", () => {
+  it("entrega el resumen recibido solo a Riesgo y administración, incluso por acceso directo", async () => {
+    const sellerReviewChanges = [{ field: "titular.celular", before: null, after: "1111" }];
+    const repository = repositoryReturning({ sellerReviewChanges });
+    repository.findWorkflowOwnerCodeById = async ownerId => ownerId;
+    const detail = new GetSolicitudByIdUseCase({
+      repository, fieldAccessRulesRepository: buildFieldAccessRulesRepository(),
+    });
+    for (const [owner, admin, visible] of [
+      ["RIESGO", false, true], ["VENDEDORES", false, false],
+      ["LEGAJOS_DIGITALES", false, false], [null, true, true],
+    ] as const) {
+      const response = await detail.execute({ id: "sol-1", currentUser: {
+        id: "viewer", workflowOwnerId: owner, isSystemAdmin: admin,
+      } });
+      assert.equal(Object.hasOwn(response, "sellerReviewChanges"), visible);
+      if (visible) assert.deepEqual(response.sellerReviewChanges, sellerReviewChanges);
+    }
+  });
+
   it("expone Editar para Riesgo en Vendedores conservando el catálogo de campos", async () => {
     const repository = repositoryReturning({ estadoActual: { id: "state-1", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });
     repository.findWorkflowOwnerCodeById = async () => "RIESGO";

@@ -20,12 +20,15 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "CargaVendedor|enviar|Motor",
   "CargaVendedor|vencer|Vencida",
   "Confirmada|desestimar|Desestimada",
+  "Confirmada|enviar_a_liquidada|Liquidada",
   "Confirmada|liquidar|VerificarFirmaYDocumentacion",
   "Confirmada|liquidar_con_firma|Transferir",
   "Confirmada|paso_por_vimarx|Desestimada",
   "Confirmada|revisar|Revisar",
   "EvaluacionExterna|volver_a_revision_riesgo|RevisionRiesgo",
   "Liquidada|desestimar|Desestimada",
+  "Liquidada|devolver_revision_datos|RevisionRiesgo",
+  "Liquidada|finalizar_revision_datos|VerificarFirmaYDocumentacion",
   "Liquidada|transferir|Transferir",
   "Liquidada|verificar_firma|VerificarFirmaYDocumentacion",
   "Motor|desestimar|Desestimada",
@@ -60,6 +63,18 @@ export const LEGACY_WORKFLOW_STATE_CODES = [
 ] as const;
 
 export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
+  "Confirmada|enviar_a_liquidada|Liquidada": {
+    actionLabel: "Enviar a liquidada", defaultComment: "Pendiente de revisión de datos por Vendedores.",
+    description: null, requiresComment: false, sortOrder: 15,
+  },
+  "Liquidada|devolver_revision_datos|RevisionRiesgo": {
+    actionLabel: "Devolución a Revisión de Riesgo", defaultComment: "El vendedor corrigió datos de la solicitud.",
+    description: null, requiresComment: false, sortOrder: 16,
+  },
+  "Liquidada|finalizar_revision_datos|VerificarFirmaYDocumentacion": {
+    actionLabel: "Finalizar revisión de datos", defaultComment: "Datos confirmados sin cambios. Análisis finalizado.",
+    description: null, requiresComment: false, sortOrder: 15,
+  },
   "RevisionRiesgo|evaluacion_externa|EvaluacionExterna": {
     actionLabel: "Enviar a Evaluación Externa",
     defaultComment: "Evaluación externa solicitada",

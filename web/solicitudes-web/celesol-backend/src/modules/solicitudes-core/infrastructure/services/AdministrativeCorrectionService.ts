@@ -66,6 +66,7 @@ export async function applyAdministrativeCorrection(db: Prisma.TransactionClient
     where: { id: s.id },
     data: {
       estadoActualId: target.id,
+      sellerReviewChanges: [],
       montoAprobadoRiesgo: s.montoAFinanciar,
       ...(s.legacyOid ? { administrativeCoreControl: {
         correctionId: correction.requestId, loanId: s.legacyOid,

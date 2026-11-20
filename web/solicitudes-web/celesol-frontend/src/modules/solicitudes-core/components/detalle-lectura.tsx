@@ -1,7 +1,14 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { MonthlyCutoffNotice } from "@/modules/monthly-cutoffs/MonthlyCutoffNotice";
 
-import type { SolicitudCoreResponse } from "@/modules/solicitudes/types/solicitudes-core";
+import {
+  getFieldAccessFieldLabel,
+  getFieldAccessGroupLabel,
+} from "../utils/field-access-admin-labels";
+import type {
+  SellerReviewChange,
+  SolicitudCoreResponse,
+} from "@/modules/solicitudes/types/solicitudes-core";
 import { calculateAge } from "@/modules/solicitudes-editor/utils/calculate-age";
 import { sexoLegible } from "@/modules/solicitudes-editor/constants/legacy-options";
 import { cn } from "@/shared/utils/cn";
@@ -9,6 +16,8 @@ import { cn } from "@/shared/utils/cn";
 import { formatLegacyDate } from "../utils/legacy-date-format";
 import { formatMontoLista } from "../utils/lista-solicitudes-formato";
 import { LinkFirmaDigital } from "./link-firma-digital";
+import { CampoRevisado } from "./campo-revisado";
+import { formatReviewValue } from "../utils/seller-review-value";
 
 // Detalle en modo lectura: los datos como texto, ordenados igual que Nueva
 // solicitud (titular a la izquierda, prestamo y gestion a la derecha). Al
@@ -21,6 +30,52 @@ export const TITULO_SECCION =
 
 type Valor = ReactNode | string | number | null | undefined;
 
+const reviewFieldLabels: Record<string, string> = {
+  "titular.nombre": "Nombre",
+  "titular.apellidoDenominacion": "Apellido",
+  "titular.cuit": "CUIT",
+  "titular.fechaNacimiento": "Nacimiento",
+  "titular.sexo": "Sexo",
+  "titular.estadoCivil": "Estado civil",
+  "titular.nacionalidad": "Nacionalidad",
+  "titular.celular": "Celular",
+  "titular.telefonoFijo": "Teléfono fijo",
+  "titular.email": "Email",
+  "titular.domicilioCalle": "Calle y número",
+  "titular.localidad": "Localidad",
+  "titular.personaExpuestaPoliticamente": "Persona expuesta políticamente",
+  "datosLaborales.empleador": "Empleador",
+  "datosLaborales.fechaIngresoLaboral": "Ingreso laboral",
+  "datosLaborales.montoRecibo": "Monto del recibo",
+  "titular.cbu": "CBU",
+  "titular.cbuNoHabitual": "CBU cuenta no habitual",
+  "solicitud.lineaPrestamoLegacyOid": "Línea",
+  "solicitud.montoAFinanciar": "Monto a financiar",
+  "solicitud.cuotas": "Cuotas",
+  "solicitud.cupoTitular": "Cupo del titular",
+  "solicitud.firmaDigitalmente": "Firma digital",
+  "solicitud.fechaPrimerVencimiento": "Primer vencimiento",
+  "solicitud.nroOperacion": "Nro. de operación",
+  "solicitud.motivo": "Motivo",
+  "solicitud.linkFirmaDigital": "Link de firma digital",
+  "solicitud.observaciones": "Observaciones",
+  "titular.nroDocumento": "Documento",
+};
+const fieldGroup: Record<string, string> = {
+  "titular.tipoDocumento": "titular.nroDocumento",
+  "titular.nroPuerta": "titular.domicilioCalle",
+};
+const SellerChanges = createContext<ReadonlyMap<string, SellerReviewChange[]>>(
+  new Map(),
+);
+
+function labelForChange(field: string) {
+  const [group, index, key] = field.split(".");
+  if (group === "garantias" && key)
+    return `Garantía ${Number(index) + 1} · ${getFieldAccessFieldLabel(`garantias.${key}`)}`;
+  return `${getFieldAccessGroupLabel(group)} · ${getFieldAccessFieldLabel(field)}`;
+}
+
 function vacio(value: Valor) {
   return (
     value === null ||
@@ -31,16 +86,30 @@ function vacio(value: Valor) {
 
 function Campo({
   className,
+  field,
+  changes: suppliedChanges,
   label,
   value,
 }: {
   className?: string;
-  label: string;
+  field?: string;
+  changes?: SellerReviewChange[];
+  label?: string;
   value: Valor;
 }) {
+  const changesByField = useContext(SellerChanges);
+  const changes = suppliedChanges ?? changesByField.get(field ?? "");
   return (
-    <div className={cn("min-w-0", className)}>
-      <dt className="text-xs text-foreground-secondary">{label}</dt>
+    <CampoRevisado
+      changes={changes}
+      className={className}
+      compound={
+        field === "titular.nroDocumento" || field === "titular.domicilioCalle"
+      }
+    >
+      <dt className="text-xs text-foreground-secondary">
+        {label ?? reviewFieldLabels[field ?? ""]}
+      </dt>
       <dd
         className={cn(
           "mt-0.5 text-sm break-words",
@@ -49,7 +118,7 @@ function Campo({
       >
         {vacio(value) ? "Sin cargar" : value}
       </dd>
-    </div>
+    </CampoRevisado>
   );
 }
 
@@ -131,56 +200,79 @@ export function DetalleLectura({
     .filter(Boolean)
     .join(" ");
   const cuota = pesos(solicitud.cuotaResultante);
+  const groupedChanges = new Map<string, SellerReviewChange[]>();
+  const otherChanges: SellerReviewChange[] = [];
+  for (const change of solicitud.sellerReviewChanges ?? []) {
+    const field = fieldGroup[change.field] ?? change.field;
+    if (!(field in reviewFieldLabels)) {
+      otherChanges.push(change);
+    } else {
+      groupedChanges.set(field, [...(groupedChanges.get(field) ?? []), change]);
+    }
+  }
 
-  return (
+  const detail = (
     <div className="space-y-3">
       {/* Titular y Prestamo, del mismo alto. */}
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <Tarjeta extra={situacionSocio} title="Titular">
           {titularEditable ?? (
             <dl className={COLUMNAS_TITULAR}>
-              <Campo label="Nombre" value={titular.nombre} />
-              <Campo label="Apellido" value={titular.apellidoDenominacion} />
+              <Campo field="titular.nombre" value={titular.nombre} />
               <Campo
+                field="titular.apellidoDenominacion"
+                value={titular.apellidoDenominacion}
+              />
+              <Campo
+                field="titular.nroDocumento"
                 label={titular.tipoDocumento?.trim() || "Documento"}
                 value={titular.nroDocumento}
               />
-              <Campo label="CUIT" value={titular.cuit} />
+              <Campo field="titular.cuit" value={titular.cuit} />
 
               <Campo
-                label="Nacimiento"
+                field="titular.fechaNacimiento"
                 value={
                   nacimiento && nacimiento !== "-"
                     ? `${nacimiento}${edad ? ` (${edad} años)` : ""}`
                     : null
                 }
               />
-              <Campo label="Sexo" value={sexoLegible(titular.sexo)} />
-              <Campo label="Estado civil" value={titular.estadoCivil} />
-              <Campo label="Nacionalidad" value={titular.nacionalidad} />
+              <Campo field="titular.sexo" value={sexoLegible(titular.sexo)} />
+              <Campo field="titular.estadoCivil" value={titular.estadoCivil} />
+              <Campo
+                field="titular.nacionalidad"
+                value={titular.nacionalidad}
+              />
 
-              <Campo label="Celular" value={titular.celular} />
-              <Campo label="Teléfono fijo" value={titular.telefonoFijo} />
+              <Campo field="titular.celular" value={titular.celular} />
+              <Campo
+                field="titular.telefonoFijo"
+                value={titular.telefonoFijo}
+              />
               <Campo
                 className="lg:col-span-2"
-                label="Email"
+                field="titular.email"
                 value={titular.email}
               />
 
               <Campo
                 className="lg:col-span-2"
-                label="Calle y número"
+                field="titular.domicilioCalle"
                 value={domicilio}
               />
-              <Campo label="Localidad" value={titular.localidad} />
+              <Campo field="titular.localidad" value={titular.localidad} />
               <Campo
-                label="Persona expuesta políticamente"
+                field="titular.personaExpuestaPoliticamente"
                 value={siNo(titular.personaExpuestaPoliticamente)}
               />
 
-              <Campo label="Empleador" value={laborales.empleador} />
               <Campo
-                label="Ingreso laboral"
+                field="datosLaborales.empleador"
+                value={laborales.empleador}
+              />
+              <Campo
+                field="datosLaborales.fechaIngresoLaboral"
                 value={
                   laborales.fechaIngresoLaboral
                     ? formatLegacyDate(laborales.fechaIngresoLaboral)
@@ -189,7 +281,7 @@ export function DetalleLectura({
               />
               <Campo
                 className="lg:col-span-2"
-                label="Monto del recibo"
+                field="datosLaborales.montoRecibo"
                 value={pesos(laborales.montoRecibo)}
               />
 
@@ -197,12 +289,12 @@ export function DetalleLectura({
                 <>
                   <Campo
                     className="lg:col-span-2"
-                    label="CBU"
+                    field="titular.cbu"
                     value={titular.cbu}
                   />
                   <Campo
                     className="lg:col-span-2"
-                    label="CBU cuenta no habitual"
+                    field="titular.cbuNoHabitual"
                     value={titular.cbuNoHabitual}
                   />
                 </>
@@ -213,20 +305,23 @@ export function DetalleLectura({
         </Tarjeta>
 
         <Tarjeta title="Préstamo">
-          <MonthlyCutoffNotice lineId={solicitud.lineaPrestamoLegacyOid} hasLoan={Boolean(solicitud.legacyOid)} />
+          <MonthlyCutoffNotice
+            lineId={solicitud.lineaPrestamoLegacyOid}
+            hasLoan={Boolean(solicitud.legacyOid)}
+          />
           {prestamoEditable ?? (
             <>
               <dl className={DOS_COLUMNAS}>
                 <Campo
                   className="col-span-2"
-                  label="Línea"
+                  field="solicitud.lineaPrestamoLegacyOid"
                   value={solicitud.lineaPrestamoDescripcion}
                 />
                 <Campo
-                  label="Monto a financiar"
+                  field="solicitud.montoAFinanciar"
                   value={pesos(solicitud.montoAFinanciar)}
                 />
-                <Campo label="Cuotas" value={solicitud.cuotas} />
+                <Campo field="solicitud.cuotas" value={solicitud.cuotas} />
                 <Campo
                   label="Cuota por mes"
                   value={
@@ -236,15 +331,15 @@ export function DetalleLectura({
                   }
                 />
                 <Campo
-                  label="Cupo del titular"
+                  field="solicitud.cupoTitular"
                   value={pesos(solicitud.cupoTitular)}
                 />
                 <Campo
-                  label="Firma digital"
+                  field="solicitud.firmaDigitalmente"
                   value={siNo(solicitud.firmaDigitalmente)}
                 />
                 <Campo
-                  label="Primer vencimiento"
+                  field="solicitud.fechaPrimerVencimiento"
                   value={
                     solicitud.fechaPrimerVencimiento
                       ? formatLegacyDate(solicitud.fechaPrimerVencimiento)
@@ -260,30 +355,34 @@ export function DetalleLectura({
                 {ejecutivo !== undefined ? (
                   <Campo label="Ejecutivo" value={ejecutivo} />
                 ) : null}
-                {solicitud.nroOperacion ? (
+                {solicitud.nroOperacion ||
+                groupedChanges.has("solicitud.nroOperacion") ? (
                   <Campo
-                    label="Nro. de operación"
+                    field="solicitud.nroOperacion"
                     value={solicitud.nroOperacion}
                   />
                 ) : null}
-                {solicitud.motivo ? (
-                  <Campo label="Motivo" value={solicitud.motivo} />
+                {solicitud.motivo || groupedChanges.has("solicitud.motivo") ? (
+                  <Campo field="solicitud.motivo" value={solicitud.motivo} />
                 ) : null}
-                {solicitud.linkFirmaDigital ? (
+                {solicitud.linkFirmaDigital ||
+                groupedChanges.has("solicitud.linkFirmaDigital") ? (
                   <Campo
                     className="col-span-2"
-                    label="Link de firma digital"
+                    field="solicitud.linkFirmaDigital"
                     value={
-                      <LinkFirmaDigital
-                        conWhatsapp={false}
-                        url={solicitud.linkFirmaDigital}
-                      />
+                      solicitud.linkFirmaDigital && (
+                        <LinkFirmaDigital
+                          conWhatsapp={false}
+                          url={solicitud.linkFirmaDigital}
+                        />
+                      )
                     }
                   />
                 ) : null}
                 <Campo
                   className="col-span-2"
-                  label="Observaciones"
+                  field="solicitud.observaciones"
                   value={solicitud.observaciones}
                 />
               </dl>
@@ -291,7 +390,26 @@ export function DetalleLectura({
           )}
         </Tarjeta>
       </div>
+      {otherChanges.length > 0 && (
+        <Tarjeta title="Otros datos modificados por Vendedores">
+          <dl className={COLUMNAS_TITULAR}>
+            {otherChanges.map((change) => (
+              <Campo
+                key={change.field}
+                label={labelForChange(change.field)}
+                changes={[change]}
+                value={formatReviewValue(change.field, change.after)}
+              />
+            ))}
+          </dl>
+        </Tarjeta>
+      )}
       {firmaLegajo}
     </div>
+  );
+  return (
+    <SellerChanges.Provider value={groupedChanges}>
+      {detail}
+    </SellerChanges.Provider>
   );
 }

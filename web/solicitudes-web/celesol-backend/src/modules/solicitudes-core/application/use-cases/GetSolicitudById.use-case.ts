@@ -26,7 +26,7 @@ export class GetSolicitudByIdUseCase {
   }
 
   async execute(input: GetSolicitudByIdInput) {
-    const solicitud = await this.repository.findById(input.id);
+    const solicitud = await this.repository.findById(input.id, { withSellerReviewChanges: true });
 
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
@@ -39,6 +39,7 @@ export class GetSolicitudByIdUseCase {
     const fieldAccessRule =
       await this.fieldAccessRulesRepository.findByWorkflowStateId(
         solicitud.estadoActual.id,
+        solicitud.estadoActual.code === "Liquidada" && Boolean(solicitud.sellerReviewStartedAt),
       );
 
     // El área autenticada determina las excepciones de edición y workflow.
@@ -55,8 +56,11 @@ export class GetSolicitudByIdUseCase {
       ...(workflowOwnerCode ? { workflowOwnerCode } : {}),
     };
 
+    const { sellerReviewChanges, ...detail } = solicitud;
+    const canViewChanges = input.currentUser.isSystemAdmin || workflowOwnerCode === "RIESGO";
     return {
-      ...solicitud,
+      ...detail,
+      ...(canViewChanges && sellerReviewChanges?.length ? { sellerReviewChanges } : {}),
       appearance: buildSolicitudAppearance(
         solicitud,
         fieldAccessRule,

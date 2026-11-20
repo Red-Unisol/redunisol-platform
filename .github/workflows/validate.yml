@@ -72,6 +72,8 @@ jobs:
           src/modules/solicitudes-core/infrastructure/services/EditarSocioMutualGateway.test.ts
           src/modules/solicitudes-core/infrastructure/services/AdministrativeCorrection.integration.test.ts
           src/modules/solicitudes-core/infrastructure/services/ConfirmedReturnToReview.integration.test.ts
+          src/modules/solicitudes-core/infrastructure/services/CompleteSellerReview.integration.test.ts
+          src/modules/solicitudes-core/infrastructure/services/SellerReviewChanges.integration.test.ts
           src/modules/solicitudes/infrastructure/services/CoreReconciliationSnapshot.test.ts
       - name: Test refinancing concurrency and charge reconciliation on PostgreSQL
         run: >-

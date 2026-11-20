@@ -92,31 +92,33 @@ Notas:
 
 ### `Confirmada`
 
-Salidas permitidas:
-- `desestimar` -> `Desestimada`
-- `liquidar` -> `Liquidada`
+Riesgo puede elegir **Enviar a liquidada** (`enviar_a_liquidada`) para solicitar el control del vendedor.
+En **Más acciones**, el cierre directo conserva las rutas `liquidar` hacia verificación y
+`liquidar_con_firma` hacia transferencia, según la aprobación vigente. Ambas opciones de entrega
+requieren socio y un préstamo vigente con monto coincidente. Si el préstamo vinculado carece
+de registro de conciliación en Beex, se bloquean tanto el envío a Liquidada como el cierre directo.
+Tras una corrección del vendedor en Liquidada, Riesgo reenvía la solicitud al vendedor para
+completar el control pendiente.
 
-Notas:
-- la accion `liquidar` (unico actionCode que saca una solicitud de `Confirmada`) requiere que el titular ya exista como socio en base de datos;
-- una solicitud puede llegar a `Confirmada` y quedarse ahi sin socio — `confirmar` (desde `RevisionRiesgo` o `PreAprobada`) nunca requiere socio;
-- si el socio no existe, el backend sigue devolviendo la transicion `liquidar` en el listado (no la oculta), pero anotada con `blockedReason` (mensaje de `SolicitudTitularSocioRequiredForWorkflowError`) via `AnnotateSolicitudTransitionsBlockedReason` — usado tanto en `ListSolicitudTransitionsUseCase` como en el resultado de `ChangeSolicitudStateUseCase`. Si se intenta ejecutar igual, se rechaza, dejando la solicitud bloqueada en `Confirmada` hasta que el socio se cree;
-- el resto de las transiciones no requieren que el socio exista.
+También siguen disponibles las acciones de devolución a Revisar, desestimación y pase por Vimarx.
 
 ### `Liquidada`
 
-Salidas permitidas:
-- `desestimar` -> `Desestimada`
-- `verificar_firma` -> `VerificarFirmaYDocumentacion`
+El vendedor usa **Finalizar revisión de datos** (`finalizar_revision_datos`). Si guardó cambios,
+el servidor registra `devolver_revision_datos` hacia **Revisión de Riesgo**. Si confirma los datos,
+pasa a **Verificar firma y documentación**. Una aprobación vigente permite el pase consecutivo
+a **Transferir**. **Desestimar** sigue disponible como acción separada.
+
+Si falta el registro de conciliación, se bloquea el cierre sin cambios. El vendedor puede
+guardar una corrección y devolver la solicitud a Riesgo. Si cambia la cantidad de cuotas,
+la línea, el primer vencimiento, el DNI o el CUIT del titular, se solicita una nueva firma.
+
+Los expedientes que ya estaban en Liquidada antes de introducir la revisión conservan sus salidas históricas.
 
 ### `VerificarFirmaYDocumentacion`
 
-Salidas permitidas:
-- `devolver_a_liquidada` -> `Liquidada`
-- `transferir` -> `Transferir`
-
-Notas:
-- tiene exactamente dos salidas activas;
-- unifica los antiguos estados `VerificacionDocumentacion` y `VerificarFirma` (2026-07-08). Ambos quedaron desactivados (`is_active=false`) pero no se borraron, para no romper la FK restrictiva desde `solicitud_estado_historial` / `solicitud_field_access_rule_audit`. El historial de solicitudes que pasaron por esos estados sigue mostrando sus nombres originales via snapshot.
+Legajos Digitales revisa la firma. Con aprobación vigente y análisis terminado se habilita
+el pase a **Transferir**. Ver el [circuito de revisión documental](../document-review.md).
 
 ### `Transferir`
 
@@ -178,9 +180,7 @@ Si el estado de la solicitud es Pre Aprobada:
 	Pre Aprobada -> Confirmada (OWNER RIESGO) 
 Si el estado de la solicitud es CONFIRMADA 
 	sin acciones para vendedor 
-Si el estado de la solicitud es LIQUIDADA 
-	Liquidada -> desestimar (OWNER HISTORIAL) 
-	Liquidada -> Verificar Firma y Documentacion (OWNER RIESGO) 
+En Liquidada aplican las salidas del control del vendedor descritas arriba.
 
 	
 ________________________________________________________
@@ -194,13 +194,11 @@ Si el estado de la solicitud es REVISION RIESGO
 	Revision Riesgo -> Pre Aprobada (OWNER VENDEDORES)
 	Revision Riesgo -> Confirmada (OWNER RIESGO) 
 
-si el estado de la solicitud es CONFIRMADA: 
-	Confirmada -> desestimar (OWNER HISTORIAL)
-	Confirmada -> liquidada (OWNER VENDEDORES) 
+En Confirmada, Riesgo elige el control opcional de Vendedores o el cierre directo según las reglas anteriores.
 
-si el estado de la solicitud es VERIFICAR FIRMA Y DOCUMENTACION 
-	Verificar Firma y Documentacion -> Liquidada (OWNER VENDEDORES) 
-	Verificar Firma y Documentacion -> Para Transferir (OWNER TESORERIA) 
+OWNER LEGAJOS DIGITALES
+
+En Verificar firma y documentación, Legajos revisa la firma y da paso a Tesorería cuando corresponde.
 
 	 
 

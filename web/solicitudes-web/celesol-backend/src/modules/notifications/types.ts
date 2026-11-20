@@ -5,5 +5,6 @@ export type SignatureNotificationEvent = {
   cycleId: string;
   verificationId?: string;
   reason?: string;
+  contractChanged?: boolean;
   requestId?: string;
 };

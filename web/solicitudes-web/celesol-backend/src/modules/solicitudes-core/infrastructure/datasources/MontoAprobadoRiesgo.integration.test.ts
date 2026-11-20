@@ -101,6 +101,21 @@ describe("guardado atomico del monto aprobado por Riesgo", { skip: !databaseUrl,
     assert.equal(row.observaciones, "original");
   });
 
+  it("una Liquidada nueva conserva el tope de Riesgo incluso si el préstamo anulado admite editar su monto", async () => {
+    const id = await fixture();
+    const liquidada = await prisma.workflowState.findUniqueOrThrow({ where: { code: "Liquidada" } });
+    const loan = randomUUID();
+    await prisma.solicitud.update({ where: { id }, data: {
+      estadoActualId: liquidada.id, legacyOid: loan, sellerReviewStartedAt: new Date(),
+    } });
+    const guard = { expectedEstadoActualId: liquidada.id, cancelledLoanId: loan, enforceMontoAprobadoRiesgo: true };
+    await assert.rejects(prisma.$transaction(tx => datasource.update(id,
+      { solicitud: { montoAFinanciar: 510000 } }, guard, tx)), MontoSuperaAprobadoRiesgoError);
+    const saved = await prisma.$transaction(tx => datasource.update(id, { solicitud: { montoAFinanciar: 490000 } }, guard, tx));
+    assert.equal(saved.montoAFinanciar, 490000);
+    assert.equal(saved.montoAprobadoRiesgo, 500000);
+  });
+
   it("relee el tope despues de esperar el bloqueo de otro escritor", async () => {
     const id = await fixture();
     const locked = deferred();
