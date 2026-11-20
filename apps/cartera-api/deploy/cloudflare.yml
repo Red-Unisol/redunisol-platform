@@ -1,0 +1,29 @@
+---
+# Estado deseado en Cloudflare para cartera-api (mismo esquema que infra/cloudflare/metamap-origin.yml).
+schema_version: 1
+apply_status: applied_and_verified  # 20/11/2026: cert de origen, Apache, regla SSL strict, cache bypass y DNS proxied; responde 503 hasta el primer deploy
+zone: redunisol.com.ar
+dns_record:
+  type: A
+  name: cartera-api.redunisol.com.ar
+  content: 66.97.34.158  # VPS Principal
+  proxied: true
+  ttl: auto
+origin_tls:
+  authority: cloudflare-origin-ca
+  hostnames:
+    - cartera-api.redunisol.com.ar
+  server_paths:
+    certificate: /opt/apache/ssl/cloudflare-origin/cartera-api.redunisol.com.ar.pem
+    private_key: /opt/apache/ssl/cloudflare-origin/cartera-api.redunisol.com.ar.key
+  key_custody: solo en el servidor; nunca en Git
+  expires_at: "2041-11-16T15:32:00Z"
+configuration_rule:
+  name: cartera-api - strict TLS
+  expression: '(http.host eq "cartera-api.redunisol.com.ar")'
+  ssl: strict
+global_ssl_mode_changed: false
+cache_rule:
+  name: cartera-api - sin cache
+  expression: '(http.host eq "cartera-api.redunisol.com.ar")'
+  cache: bypass

@@ -1,0 +1,28 @@
+# cartera-api en la VPS Principal. Lo despliega .github/workflows/deploy-cartera-api-prod.yml
+# en ${TARGET_DIR}, con el .env descifrado de deploy/cartera-api.prod.env.enc.
+services:
+  cartera-api:
+    image: ${APP_IMAGE}
+    pull_policy: always
+    container_name: cartera-api
+    ports:
+      # Solo en loopback: desde afuera se llega únicamente por Apache (y Apache solo acepta Cloudflare).
+      - "${APP_BIND}"
+    environment:
+      VIMARX_EVAL_BASE_URL: ${VIMARX_EVAL_BASE_URL}
+      CARTERA_API_TOKEN: ${CARTERA_API_TOKEN}
+      CARTERA_DB_PATH: /data/cartera/cartera.sqlite
+      CARTERA_SYNC_HORA: ${CARTERA_SYNC_HORA:-05:00}
+      CARTERA_SYNC_ACTIVA: ${CARTERA_SYNC_ACTIVA:-1}
+      CARTERA_LIMITE_POR_MINUTO: ${CARTERA_LIMITE_POR_MINUTO:-120}
+      CARTERA_IPS_PERMITIDAS: ""  # decidido: solo token, sin lista de IPs
+    volumes:
+      - ${TARGET_DIR}/data:/data/cartera
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    mem_limit: ${CARTERA_MEM_LIMIT:-768m}
+    restart: unless-stopped

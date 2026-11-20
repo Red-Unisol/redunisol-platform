@@ -130,6 +130,12 @@ jobs:
       - name: Build and test BCRA file POC image
         run: docker build --target test -t bcra-file-poc:test apps/bcra-file-api
 
+      - name: Run Cartera API tests
+        run: |
+          python -m venv "$RUNNER_TEMP/cartera-api-venv"
+          "$RUNNER_TEMP/cartera-api-venv/bin/python" -m pip install -r apps/cartera-api/requirements-dev.txt
+          cd apps/cartera-api && "$RUNNER_TEMP/cartera-api-venv/bin/python" -m pytest -q
+
       - name: Validate BCRA POC Compose
         run: docker compose --env-file apps/bcra-file-api/deploy/.env.example -f apps/bcra-file-api/deploy/docker-compose.yml config -q
 
