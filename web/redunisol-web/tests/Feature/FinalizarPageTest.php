@@ -245,6 +245,24 @@ it('normalizes the old finalizar terms url to the hosted pdf path', function () 
         );
 });
 
+it('uses the hosted AMEJUCA terms for the requested line', function (string $line, string $termsUrl) {
+    SiteSetting::set('finalizar_terms_url', '/terminos-generales.pdf');
+
+    $this->assertFileExists(public_path(ltrim($termsUrl, '/')));
+
+    foreach (['/finalizar', '/finalizar.php'] as $path) {
+        $this->get("{$path}?linea={$line}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('finalizar')
+                ->where('settings.terms_url', $termsUrl)
+            );
+    }
+})->with([
+    'amejuca celesol' => ['amejuca', '/terminos-y-condiciones-amejuca-celesol.pdf'],
+    'amejuca red unisol' => ['amejuca-redunisol', '/terminos-y-condiciones-amejuca-red-unisol.pdf'],
+]);
+
 it('keeps the finalizar visual and identity verification contract', function () {
     $page = file_get_contents(resource_path('js/pages/finalizar.tsx'));
     $conventionCard = file_get_contents(resource_path('js/components/convenio-card.tsx'));
@@ -360,7 +378,7 @@ it('keeps the legacy routes pointing at vimarx', function () {
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'solicitudes.example.test'));
 });
 
-it('ignores the linea in the url and uses the one that comes with the loan', function (string $line, string $flowId, string $docId) {
+it('ignores the linea in the url and uses the one that comes with the loan', function (string $line, string $urlLine, string $flowId, string $docId, string $termsUrl) {
     // El nucleo del asunto: la linea decide que documento de Metamap firma el
     // socio. Mientras salga de la query, cualquiera que edite el link elige que
     // contrato firma y nada lo delata. En la ruta nueva la linea viaja con el
@@ -378,18 +396,18 @@ it('ignores the linea in the url and uses the one that comes with the loan', fun
         ], 200),
     ]);
 
-    // Se pide MUDON en la URL, pero el prestamo es de AMEJUCA.
-    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+    $this->get("/finalizar-nvo?sol=440327&ntrans=0&linea={$urlLine}")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
+            ->where('settings.terms_url', $termsUrl)
             ->where('finalizar.linea', $line)
             ->where('finalizar.metamap.flow_id', $flowId)
             ->where('finalizar.metamap.doc_id', $docId)
             ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey.documents', [$docId])
         );
 })->with([
-    'amejuca' => ['amejuca', '6453eb1ed9e6ce001d5b3858', '4f4a8d2a-f361-49b5-9532-0528a83516e2'],
-    'amejuca red unisol' => ['amejuca-redunisol', '6aede26a429fb127ae3a5b58', '858aee1c-c167-453b-b9b4-8ac127df8b4c'],
+    'amejuca' => ['amejuca', 'amejuca-redunisol', '6453eb1ed9e6ce001d5b3858', '4f4a8d2a-f361-49b5-9532-0528a83516e2', '/terminos-y-condiciones-amejuca-celesol.pdf'],
+    'amejuca red unisol' => ['amejuca-redunisol', 'amejuca', '6aede26a429fb127ae3a5b58', '858aee1c-c167-453b-b9b4-8ac127df8b4c', '/terminos-y-condiciones-amejuca-red-unisol.pdf'],
 ]);
 
 it('falls back to the url linea when the loan does not carry one', function () {
