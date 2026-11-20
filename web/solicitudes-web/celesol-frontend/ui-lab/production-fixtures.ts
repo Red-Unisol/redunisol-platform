@@ -24,6 +24,7 @@ export type ProductionFixtureOptions = {
   role?: ProductionRole;
   externalPayment?: boolean;
   allowEdit?: boolean;
+  cutoffScenario?: "confirmed" | "pending";
   cbuScenario?: CbuScenario;
   padronesScenario?: PadronesScenario;
   workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
@@ -353,6 +354,37 @@ const evaluation: EvaluacionRiesgo = {
 export type ProductionFixtureResult =
   | { found: true; body: unknown }
   | { found: false };
+
+const debtHistoryMonths = [
+  "Oct", "Sep", "Ago", "Jul", "Jun", "May", "Abr", "Mar", "Feb", "Ene", "Dic", "Nov",
+];
+const debtHistory = {
+  anios: [
+    { anio: "2026", span: 10 },
+    { anio: "2025", span: 12 },
+    { anio: "2024", span: 2 },
+  ],
+  meses: [...debtHistoryMonths, ...debtHistoryMonths],
+  filas: [
+    {
+      activa: true,
+      entidad: "Banco de ejemplo",
+      situaciones: Array<string>(24).fill("1"),
+      ultimo_monto_informado: "$ 200.000",
+    },
+    {
+      activa: true,
+      entidad: "Cooperativa de ejemplo",
+      situaciones: [
+        "2", "3", "4", "2",
+        ...Array<string>(12).fill("1"),
+        ...Array<string>(8).fill(""),
+      ],
+      ultimo_monto_informado: "$ 50.000",
+    },
+  ],
+};
+
 export function productionFixture(
   pathname: string,
   options: ProductionFixtureOptions = {},
@@ -385,12 +417,41 @@ export function productionFixture(
       canChangeState: options.role !== "vendedor",
     },
   } : PRODUCTION_SOLICITUD;
-  const solicitud = options.cbuScenario ? {
+  const solicitud = {
     ...baseSolicitud,
-    titular: { ...baseSolicitud.titular, ...solicitudCbuFixture(options.cbuScenario) },
-  } : baseSolicitud;
+    ...(options.cbuScenario && {
+      titular: { ...baseSolicitud.titular, ...solicitudCbuFixture(options.cbuScenario) },
+    }),
+    ...(options.cutoffScenario && {
+      legacyOid: null,
+      lineaPrestamoDescripcion: "AMEJUCA ESPECIAL",
+      lineaPrestamoLegacyOid: "2519",
+    }),
+  };
+  const cutoffPeriod =
+    options.cutoffScenario &&
+    pathname.match(/^\/api\/monthly-cutoffs\/amejuca\/(\d{4}-\d{2})$/)?.[1];
   let body: unknown;
-  if (pathname === "/auth/me") body = productionSession(options.role);
+  if (cutoffPeriod) {
+    const confirmed = options.cutoffScenario === "confirmed";
+    body = {
+      group: "AMEJUCA",
+      period: cutoffPeriod,
+      status: confirmed ? "confirmed" : "estimated",
+      record: confirmed
+        ? {
+            period: cutoffPeriod,
+            cutoffDate: `${cutoffPeriod}-05`,
+            note: null,
+            version: 1,
+            updatedAt: timestamp,
+            updatedBy: "Analista de ejemplo",
+          }
+        : null,
+      history: [],
+      canManage: options.role !== "vendedor",
+    };
+  } else if (pathname === "/auth/me") body = productionSession(options.role);
   else if (pathname === "/auth/users") body = { users: USERS_FIXTURE };
   else if (pathname === "/auth/workflow-owners") body = { workflowOwners: USERS_WORKFLOW_OWNERS };
   else if (pathname === "/auth/impersonation") body = { context: null };
@@ -574,6 +635,8 @@ export function productionFixture(
         ok: true,
         status: "found",
         error: null,
+        nombre: HEADER_SAMPLE.name,
+        cuit: HEADER_SAMPLE.cuit,
         cacheHit: true,
         cachedAt: timestamp,
         informe: {
@@ -585,6 +648,14 @@ export function productionFixture(
             domicilio: "Domicilio de ejemplo",
           },
           bcra: {
+            fuente: "BCRA",
+            consultado_en: timestamp,
+            deudas_24_meses: debtHistory,
+            deudas_vigentes: [
+              { entidad: "Banco de ejemplo", monto: "$ 200.000", periodo: "10/2026", situacion: "1" },
+              { entidad: "Cooperativa de ejemplo", monto: "$ 50.000", periodo: "10/2026", situacion: "2" },
+            ],
+            deuda_situacion_negativa_total: "$ 50.000",
             resumen: {
               color: "Normal",
               detalle: "Situación ficticia sin observaciones",

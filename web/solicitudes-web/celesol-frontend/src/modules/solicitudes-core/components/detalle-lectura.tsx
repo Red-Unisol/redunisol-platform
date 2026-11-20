@@ -23,11 +23,6 @@ import { formatReviewValue } from "../utils/seller-review-value";
 // solicitud (titular a la izquierda, prestamo y gestion a la derecha). Al
 // editar se usan los formularios de siempre.
 
-// Titulo de cada seccion del detalle (Titular, Prestamo, pestanas de Mas
-// informacion): la letra y el marino de la marca.
-export const TITULO_SECCION =
-  "font-marca text-[1.0625rem] font-bold tracking-[-0.01em] text-marino";
-
 type Valor = ReactNode | string | number | null | undefined;
 
 const reviewFieldLabels: Record<string, string> = {
@@ -137,15 +132,17 @@ function Tarjeta({
   return (
     <section
       className={cn(
-        "rounded-lg border border-border bg-surface p-4",
+        "rounded-lg border border-border bg-surface",
         className,
       )}
     >
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border-soft pb-2">
-        <h2 className={TITULO_SECCION}>{title}</h2>
+      <header className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-t-[inherit] bg-marino px-4 py-2 text-white">
+        <h2 className="font-marca text-[1.0625rem] font-bold tracking-[-0.01em]">
+          {title}
+        </h2>
         {extra}
-      </div>
-      {children}
+      </header>
+      <div className="min-w-0 p-4">{children}</div>
     </section>
   );
 }
