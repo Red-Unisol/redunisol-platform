@@ -213,13 +213,11 @@ function Panel({
   titulo: string;
 }) {
   return (
-    <section className="rounded-md border border-border bg-surface">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h3 className="text-xs font-medium uppercase text-foreground-secondary">
-          {titulo}
-        </h3>
+    <section className="min-w-0 rounded-md border border-border bg-surface">
+      <header className="flex flex-wrap items-center justify-between gap-2 rounded-t-[inherit] bg-marino px-3 py-2 text-white">
+        <h3 className="text-xs font-semibold uppercase">{titulo}</h3>
         {etiqueta && (
-          <span className="rounded-full border border-border px-2 py-0.5 text-xs text-foreground-secondary">
+          <span className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5 text-xs text-white">
             {etiqueta}
           </span>
         )}

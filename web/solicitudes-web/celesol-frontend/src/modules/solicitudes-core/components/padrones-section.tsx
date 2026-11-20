@@ -107,52 +107,57 @@ export function PadronesSection({
   return (
     <section
       aria-label="Padrones de empleados"
-      className="m-3 min-w-0 space-y-3 rounded-xl border border-border bg-surface p-3 text-foreground md:m-4"
+      className="mx-3 mb-3 min-w-0 rounded-md border border-border bg-surface text-foreground md:mx-4 md:mb-4"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">Padrones de empleados</h2>
+      <header className="flex flex-wrap items-center justify-between gap-2 rounded-t-[inherit] bg-marino px-3 py-2 text-white">
+        <div className="min-w-0 space-y-1">
+          <h2 className="text-sm font-semibold">Padrones de empleados</h2>
+          {!query.isError && result?.status === "available" && (
+            <p className="text-xs text-marino-foreground-secondary">
+              Documento consultado: {result.document} · Consulta del{" "}
+              {loadedDate(result.queried_at)}
+            </p>
+          )}
+        </div>
         <Button
+          className="min-h-11 border-white/25 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/60 sm:min-h-7 dark:hover:bg-white/10"
           size="sm"
-          variant="outline"
+          variant="ghost"
           disabled={query.isFetching}
           onClick={() => void query.refetch()}
         >
           Actualizar padrones
         </Button>
-      </div>
-      {query.isLoading ? (
-        <p role="status" className="text-sm">
-          Consultando padrones...
-        </p>
-      ) : query.isError || result?.status === "unavailable" ? (
-        <p role="alert" className="text-sm">
-          No pudimos consultar los padrones. Podés volver a intentarlo.
-        </p>
-      ) : result?.status === "not_configured" ? (
-        <p className="text-sm">Los padrones todavía no están disponibles.</p>
-      ) : result?.status === "missing_document" ? (
-        <p className="text-sm">
-          El titular no tiene un DNI o CUIL válido para consultar.
-        </p>
-      ) : result?.status === "available" ? (
-        <>
-          <p className="text-xs text-foreground-secondary">
-            Documento consultado: {result.document} · Consulta del{" "}
-            {loadedDate(result.queried_at)}
+      </header>
+      <div className="space-y-3 p-3">
+        {query.isLoading ? (
+          <p role="status" className="text-sm">
+            Consultando padrones...
           </p>
-          {result.sources.length ? (
+        ) : query.isError || result?.status === "unavailable" ? (
+          <p role="alert" className="text-sm">
+            No pudimos consultar los padrones. Podés volver a intentarlo.
+          </p>
+        ) : result?.status === "not_configured" ? (
+          <p className="text-sm">Los padrones todavía no están disponibles.</p>
+        ) : result?.status === "missing_document" ? (
+          <p className="text-sm">
+            El titular no tiene un DNI o CUIL válido para consultar.
+          </p>
+        ) : result?.status === "available" ? (
+          result.sources.length ? (
             result.sources.map((source) => (
               <Source key={source.id} source={source} />
             ))
           ) : (
             <p className="text-sm">Todavía no hay fuentes registradas.</p>
-          )}
-        </>
-      ) : null}
-      <p className="text-xs text-foreground-secondary">
-        Estas fuentes complementan el análisis. No aparecer en un padrón no
-        demuestra ausencia de empleo.
-      </p>
+          )
+        ) : null}
+        <p className="text-xs text-foreground-secondary">
+          Estas fuentes complementan el análisis. No aparecer en un padrón no
+          demuestra ausencia de empleo.
+        </p>
+      </div>
     </section>
   );
 }

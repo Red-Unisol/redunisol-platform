@@ -3501,18 +3501,16 @@ function SolicitanteSection({
     </>
   );
 
-  // En lectura: tarjeta blanca como Titular y Prestamo, siempre abierta; la
-  // pestana activa es el titulo (en verde).
   if (soloComplementos) {
     return (
       <section
-        className="rounded-lg border border-border bg-surface p-4"
+        className="rounded-lg border border-border bg-surface"
         id="solicitante-prestamos"
         tabIndex={-1}
       >
         <div
           aria-label="Más información"
-          className="mb-3 flex flex-wrap gap-x-6 gap-y-1 border-b border-border-soft"
+          className="flex flex-wrap gap-x-3 rounded-t-[inherit] bg-marino px-3 sm:gap-x-5 sm:px-4"
           role="tablist"
         >
           {pestanas.map((tab) => {
@@ -3520,10 +3518,10 @@ function SolicitanteSection({
             return (
               <button
                 aria-selected={activa}
-                className={`-mb-px border-b-[3px] pb-2 font-marca text-[0.9375rem] tracking-[-0.01em] transition-colors ${
+                className={`min-h-11 rounded-t-sm border-b-[3px] px-1 pt-[3px] font-marca text-sm tracking-[-0.01em] transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-inset focus-visible:outline-none sm:min-h-10 ${
                   activa
-                    ? "border-verde font-bold text-marino"
-                    : "border-transparent font-semibold text-foreground-secondary hover:text-marino"
+                    ? "border-white font-bold text-white"
+                    : "border-transparent font-semibold text-marino-foreground-secondary hover:text-white"
                 }`}
                 key={tab.value}
                 onClick={() => cambiarPestana(tab.value)}
@@ -3535,7 +3533,7 @@ function SolicitanteSection({
             );
           })}
         </div>
-        {contenido}
+        <div className="min-w-0 p-4">{contenido}</div>
       </section>
     );
   }
