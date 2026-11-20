@@ -1,11 +1,6 @@
 # Rangos de Cloudflare (https://www.cloudflare.com/ips-v4 y ips-v6), bajados el 2026-11-20.
-# Lo usa solo 31-cartera-api-redunisol.conf. Si Cloudflare publica rangos nuevos, actualizar acá.
-# La extensión .inc evita que IncludeOptional conf.d/*.conf lo cargue como un sitio.
-#
-# Se compara CONN_REMOTE_ADDR (la IP de la conexión TCP) y NO "Require ip": en la VPS,
-# 15-remoteip.conf (mod_remoteip) reemplaza la IP del cliente por CF-Connecting-IP para todo
-# Apache, y "Require ip" vería la IP real del cliente y bloquearía a todos.
-# Varias líneas Require = alcanza con que cumpla una (RequireAny).
+# Lo usa solo 31-cartera-api-redunisol.conf. Se compara CONN_REMOTE_ADDR (la conexión TCP) y no
+# "Require ip", porque 15-remoteip.conf reemplaza la IP del cliente por CF-Connecting-IP.
 Require expr "%{CONN_REMOTE_ADDR} -ipmatch '173.245.48.0/20'"
 Require expr "%{CONN_REMOTE_ADDR} -ipmatch '103.21.244.0/22'"
 Require expr "%{CONN_REMOTE_ADDR} -ipmatch '103.22.200.0/22'"
