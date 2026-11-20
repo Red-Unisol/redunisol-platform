@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../auth/domain/workflow-areas";
 /**
  * Que solicitudes ve un usuario de Vendedores, por quien las creo.
  *
@@ -15,6 +16,7 @@ export type VisibilidadVendedorResolver = {
 export function esUsuarioVendedor(usuario: {
   isSystemAdmin: boolean;
   workflowOwner?: { code: string } | null;
+  workflowOwners?: { code: string }[];
 }) {
-  return !usuario.isSystemAdmin && usuario.workflowOwner?.code === "VENDEDORES";
+  return !usuario.isSystemAdmin && hasWorkflowArea(usuario, "VENDEDORES");
 }

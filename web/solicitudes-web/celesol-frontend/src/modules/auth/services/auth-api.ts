@@ -22,6 +22,7 @@ export type AuthUser = {
   state: number;
   workflowOwnerId: string | null;
   workflowOwner: AuthWorkflowOwner | null;
+  workflowOwners?: AuthWorkflowOwner[];
 };
 
 export type LoginResponse = {

@@ -218,3 +218,7 @@ restaura los datos ficticios.
 
 `node ui-lab/seller-review.browser-test.mjs` recorre las acciones y comprueba los
 destinos en escritorio y móvil. `UI_LAB_OUTPUT_DIR` permite guardar capturas.
+
+## Áreas internas combinadas
+
+En `/production?list=recientes&role=tesoreria-legajos` o `role=analisis-legajos` se puede abrir «Mis áreas», la campana y la bandeja de firmas con un usuario ficticio sin administración. `/production?list=usuarios&role=admin&areas=edit` permite guardar las áreas en memoria y revisar las solicitudes de ejemplo pendientes de reasignación. Con el laboratorio activo, `node ui-lab/internal-areas.browser-test.mjs` verifica ambos recorridos a 1365 y 390 px y guarda las capturas en `.local/ui-internal-areas/`.

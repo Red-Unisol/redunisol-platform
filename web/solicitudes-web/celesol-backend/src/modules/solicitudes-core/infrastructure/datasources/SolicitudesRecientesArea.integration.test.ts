@@ -63,6 +63,12 @@ it("Recientes filtra por área antes de paginar e incorpora cambios de estado, c
     assert.equal(searched[0].estadoActual.ownerId, byArea[0].ownerId);
     assert.equal((await datasource.listRecientes({ ...query, search: "Ramiro", creadoPorIn: [], limit: 100 })).length, 0);
 
+    const internalAreas = [byArea[0].ownerId, byArea[2].ownerId];
+    const both = await datasource.listRecientes({ ...query, limit: 100, estadoOwnerId: internalAreas });
+    const singleAreaResults = await Promise.all(internalAreas.map(estadoOwnerId =>
+      datasource.listRecientes({ ...query, limit: 100, estadoOwnerId })));
+    assert.deepEqual(both.map(row => row.id).sort(), singleAreaResults.flat().map(row => row.id).sort());
+    assert(both.length > 0 && both.every(row => internalAreas.includes(row.estadoActual.ownerId!)));
     assert.equal((await datasource.listRecientes({ ...query, limit: 100, creadoPorIn: [] })).length, 0);
     await tx.solicitud.update({ where: { id: ids[0] }, data: { estadoActualId: byArea[1].id } });
     assert.equal((await datasource.listRecientes({ ...query, limit: 100, estadoOwnerId: byArea[0].ownerId })).length, 1);

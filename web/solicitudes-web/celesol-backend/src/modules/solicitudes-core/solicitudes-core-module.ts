@@ -1,3 +1,4 @@
+import { userWorkflowAreas, workflowAreaInclude } from "../auth/domain/workflow-areas";
 import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
 import { addLoanReliquidationRoutes } from "./presentation/LoanReliquidationRoutes";
 import { LoanReliquidationService } from "./infrastructure/services/LoanReliquidationService";
@@ -391,9 +392,9 @@ export function createSolicitudesCoreRouter(
     linkedLoanReader, initialGeneration,
     diagnostics: loanDiagnostics,
     replaceCancelledLoan: async (input, solicitud) => {
-      const actor = await prisma.user.findUniqueOrThrow({ where: { id: input.currentUser.id }, include: { workflowOwner: true } });
+      const actor = await prisma.user.findUniqueOrThrow({ where: { id: input.currentUser.id }, include: workflowAreaInclude });
       const source = await administrativeSource(prisma, solicitud.id);
-      await replacementService.replace(solicitud.id, actor, {
+      await replacementService.replace(solicitud.id, { ...actor, workflowOwners: userWorkflowAreas(actor) }, {
         requestId: randomUUID(), expectedUpdatedAt: source.updatedAt.toISOString(),
         previousLoanId: source.legacyOid!, reason: "Regeneración de préstamo anulado desde Generar préstamo.",
         convenio: input.convenio,

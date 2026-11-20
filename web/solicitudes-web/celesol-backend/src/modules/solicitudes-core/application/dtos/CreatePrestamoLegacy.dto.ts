@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type { ConvenioSocioEdicion } from "../../domain/services/ConvenioSocioGateway";
 
 export type CreatePrestamoLegacyInput = {
@@ -9,6 +10,7 @@ export type CreatePrestamoLegacyInput = {
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string;
   };
   solicitudId: string;

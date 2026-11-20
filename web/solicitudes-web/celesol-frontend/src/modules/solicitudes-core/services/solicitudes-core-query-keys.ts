@@ -67,7 +67,7 @@ export const solicitudesCoreQueryKeys = {
     search?: string;
     vista?: "mi-area" | "todas";
     userId?: string;
-    workflowOwnerId?: string | null;
+    workflowOwnerIds?: string[];
     createdFrom: string;
     createdTo: string;
     excludeEstado?: string;

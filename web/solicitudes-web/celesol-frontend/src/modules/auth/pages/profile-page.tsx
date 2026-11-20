@@ -1,3 +1,4 @@
+import { areaName, userAreas } from "@/modules/auth/utils/auth-user";
 import {
   CircleAlert,
   CircleCheck,
@@ -299,6 +300,9 @@ export function ProfilePage() {
         <h2 className="text-lg font-semibold text-foreground">
           Datos personales
         </h2>
+        <p className="mt-2 text-sm text-foreground-secondary">
+          Áreas asignadas: {userAreas(user).map(areaName).join(", ") || "Sin área"}
+        </p>
         <form
           className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2"
           noValidate

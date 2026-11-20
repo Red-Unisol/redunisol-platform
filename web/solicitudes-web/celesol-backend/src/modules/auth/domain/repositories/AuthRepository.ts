@@ -1,5 +1,7 @@
 import type { AuthUser, PersistedAuthUser } from "../entities/User.entity";
 
+import type { AssignWorkflowOwnerInput, PendingAreaAssignment } from "../workflow-areas";
+
 export type AuthRepository = {
   findById(userId: string): Promise<AuthUser | null>;
   findByIdWithPasswordHash(userId: string): Promise<PersistedAuthUser | null>;
@@ -19,7 +21,7 @@ export type AuthRepository = {
     userId: string;
     passwordHash: string;
   }): Promise<void>;
-  listUsers(): Promise<AuthUser[]>;
+  listUsers(): Promise<Array<AuthUser & { pendingAssignments?: PendingAreaAssignment[] }>>;
   listPendingAreaUsers(): Promise<AuthUser[]>;
   listActiveWorkflowOwners(): Promise<
     Array<{
@@ -37,10 +39,9 @@ export type AuthRepository = {
     state?: number;
     workflowOwnerId?: string | null;
   }): Promise<AuthUser>;
-  assignWorkflowOwner(input: {
-    userId: string;
-    workflowOwnerId: string | null;
-  }): Promise<AuthUser>;
+  assignWorkflowOwner(input: AssignWorkflowOwnerInput): Promise<AuthUser & {
+    pendingAssignments?: PendingAreaAssignment[];
+  }>;
   deleteById(userId: string): Promise<void>;
   findActiveById(userId: string): Promise<AuthUser | null>;
   findActiveByIdentifier(identifier: string): Promise<PersistedAuthUser | null>;

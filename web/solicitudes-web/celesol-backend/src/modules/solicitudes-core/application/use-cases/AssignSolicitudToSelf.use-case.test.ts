@@ -40,6 +40,7 @@ describe("AssignSolicitudToSelfUseCase", () => {
     assert.deepEqual(receivedInput, {
       actorUserId: "operator-1",
       allowReassignment: true,
+      requiredAreaId: "owner-riesgo",
       assignedToUserId: "operator-1",
       solicitudId: "sol-1",
     });
@@ -253,6 +254,7 @@ describe("AssignSolicitudToSelfUseCase", () => {
     assert.deepEqual(receivedInput, {
       actorUserId: "operator-1",
       allowReassignment: true,
+      requiredAreaId: "owner-riesgo",
       assignedToUserId: "operator-1",
       solicitudId: "sol-1",
     });

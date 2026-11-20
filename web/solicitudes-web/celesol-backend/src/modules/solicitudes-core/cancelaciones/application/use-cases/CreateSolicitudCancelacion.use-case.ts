@@ -34,7 +34,7 @@ export class CreateSolicitudCancelacionUseCase {
     }
 
     const workflowOwnerCode =
-      input.currentUser.workflowOwnerId &&
+      input.currentUser.workflowOwners === undefined && input.currentUser.workflowOwnerId &&
       this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
         ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(
             input.currentUser.workflowOwnerId,

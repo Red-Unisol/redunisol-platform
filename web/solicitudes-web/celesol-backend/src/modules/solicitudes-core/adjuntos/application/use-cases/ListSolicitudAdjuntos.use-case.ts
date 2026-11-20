@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../../auth/domain/workflow-areas";
 import type { ListSolicitudAdjuntosInput } from "../dtos/ListSolicitudAdjuntos.dto";
 import type { SolicitudAdjunto } from "../../domain/entities/SolicitudAdjunto.entity";
 import type { SolicitudAdjuntoRepository } from "../../domain/repositories/SolicitudAdjuntoRepository";
@@ -39,8 +40,8 @@ export class ListSolicitudAdjuntosUseCase {
     const generatedReview = (adjunto: SolicitudAdjunto) => adjunto.tipoAdjunto === "Legajo Digital" &&
       Boolean(adjunto.archivoPath?.includes("/revision-documental/"));
     if (!visible.some(generatedReview) || input.currentUser.isSystemAdmin) return visible;
-    const ownerCode = input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+    const ownerCode = input.currentUser.workflowOwners === undefined && input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
       ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId) : null;
-    return ownerCode === "LEGAJOS_DIGITALES" ? visible : visible.filter(adjunto => !generatedReview(adjunto));
+    return hasWorkflowArea({ ...input.currentUser, workflowOwnerCode: ownerCode }, "LEGAJOS_DIGITALES") ? visible : visible.filter(adjunto => !generatedReview(adjunto));
   }
 }

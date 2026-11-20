@@ -1,3 +1,4 @@
+import { workflowAreaInclude } from "../auth/domain/workflow-areas";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { MinioAdjuntosObjectStorage } from "../solicitudes-core/adjuntos/infrastructure/services/MinioAdjuntosObjectStorage";
@@ -17,7 +18,7 @@ export function createTransferenciasIntegrationRouter() {
     findUser: (id) =>
       prisma.user.findUnique({
         where: { id },
-        include: { workflowOwner: true },
+        include: workflowAreaInclude,
       }),
     service: new TransferenciasService({
       db: prisma,

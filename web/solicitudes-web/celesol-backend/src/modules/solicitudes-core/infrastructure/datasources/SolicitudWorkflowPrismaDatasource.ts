@@ -1,3 +1,5 @@
+import { canActOnWorkflowState } from "../../domain/workflow/SolicitudTransitionPolicy";
+import { activeWorkflowAreaWhere, hasWorkflowArea, hasWorkflowAreaId, userWorkflowAreaIds, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { readSellerReviewChanges, sellerReviewHandoff } from "../../application/services/SellerReviewChanges";
 import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
 import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
@@ -266,6 +268,15 @@ export class SolicitudWorkflowPrismaDatasource {
           });
           throw new WorkflowExecutionPlanStateConflictError();
         }
+        if (input.plan.command.workflowOwners !== undefined) {
+          const actor = await tx.user.findFirst({
+            where: { id: input.plan.command.changedBy, state: 1, deletedAt: null },
+            include: workflowAreaInclude,
+          });
+          if (!actor || (!actor.isSystemAdmin && !canActOnWorkflowState(
+            actor, solicitud.estadoActual.ownerId, solicitud.estadoActual.code, input.plan.command.actionCode,
+          ))) throw new ForbiddenSolicitudAccessError();
+        }
         let updatedSolicitud = await this.loadSolicitudCoreById(
           executor,
           solicitud.id,
@@ -336,9 +347,9 @@ export class SolicitudWorkflowPrismaDatasource {
           if (step.actionCode === "enviar_a_liquidada" || step.actionCode === "finalizar_revision_datos") {
             const actor = await tx.user.findFirst({
               where: { id: input.plan.command.changedBy, state: 1, deletedAt: null },
-              select: { workflowOwnerId: true, isSystemAdmin: true },
+              include: workflowAreaInclude,
             });
-            if (!actor || (!actor.isSystemAdmin && actor.workflowOwnerId !== solicitud.estadoActual.ownerId))
+            if (!actor || (!actor.isSystemAdmin && !hasWorkflowAreaId(actor, solicitud.estadoActual.ownerId)))
               throw new ForbiddenSolicitudAccessError();
             const source = await administrativeSource(tx, solicitud.id);
             if (source.archivedAt || source.pagoExterno || source.desembolso)
@@ -604,7 +615,7 @@ export class SolicitudWorkflowPrismaDatasource {
         deletedAt: null,
         recibeAsignacionAutomatica: true,
         state: 1, // USER_STATE.ACTIVE
-        workflowOwnerId: ownerId,
+        ...activeWorkflowAreaWhere({ id: ownerId }),
       },
       select: {
         firstName: true,
@@ -833,17 +844,21 @@ export class SolicitudWorkflowPrismaDatasource {
     // owner actual (TESORERIA). No aplica a ningun otro estado.
     const isRiesgoTransferirException =
       solicitud.estadoActual.code === "Transferir" &&
-      input.workflowOwnerCode === "RIESGO";
+      hasWorkflowArea(input, "RIESGO");
 
-    if (!input.isSystemAdmin && !isRiesgoTransferirException) {
-      this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
+    const isLegajosTransferirException = solicitud.estadoActual.code === "Liquidada" &&
+      hasWorkflowArea(input, "LEGAJOS_DIGITALES");
+    if (!input.isSystemAdmin && !isRiesgoTransferirException && !isLegajosTransferirException) {
+      this.validateWorkflowOwner(input, solicitud);
     }
 
     if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
     const transitions = await this.loadActiveTransitions(this.db, solicitud);
     const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
       ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
-    return transitions.filter(t => t.actionCode !== "liquidar_con_firma").map(t => {
+    return transitions.filter(t => t.actionCode !== "liquidar_con_firma" &&
+      (input.isSystemAdmin || canActOnWorkflowState(input, solicitud.estadoActual.ownerId, solicitud.estadoActual.code, t.actionCode))
+    ).map(t => {
       const missingControl = solicitud.estadoActual.code === "Confirmada" && missingAnalysisControlReason(solicitud, t.actionCode);
       if (missingControl) return { ...t, blockedReason: missingControl };
       if (isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code) && returnBlocked)
@@ -986,14 +1001,14 @@ export class SolicitudWorkflowPrismaDatasource {
   }
 
   private validateWorkflowOwner(
-    workflowOwnerId: string | null | undefined,
+    user: Parameters<SolicitudWorkflowRepository["listAvailableTransitions"]>[0],
     solicitud: SolicitudWithOwner,
   ) {
-    if (!workflowOwnerId) {
+    if (!userWorkflowAreaIds(user).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
-    if (solicitud.estadoActual.ownerId !== workflowOwnerId) {
+    if (!hasWorkflowAreaId(user, solicitud.estadoActual.ownerId)) {
       throw new ForbiddenSolicitudAccessError();
     }
   }

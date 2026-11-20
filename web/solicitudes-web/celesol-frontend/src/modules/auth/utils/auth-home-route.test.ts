@@ -126,3 +126,52 @@ describe("resolveDashboardVariant", () => {
     assert.equal(variantResolver(buildUser()), "vendedor");
   });
 });
+
+describe("áreas internas combinadas", () => {
+  const tesoreria = { id: "tes", code: "TESORERIA", name: "Tesorería" };
+  const legajos = {
+    id: "leg",
+    code: "LEGAJOS_DIGITALES",
+    name: "Legajos Digitales",
+  };
+  const riesgo = { id: "riesgo", code: "RIESGO", name: "Riesgo" };
+
+  it("Tesorería y Legajos abren la bandeja combinada y revisan firmas sin permisos de administración", () => {
+    const user = buildUser({
+      workflowOwner: tesoreria,
+      workflowOwnerId: tesoreria.id,
+      workflowOwners: [tesoreria, legajos],
+    });
+    assert.equal(
+      authUserModule.getDefaultAuthenticatedRoute(user),
+      "/solicitudes/core/recientes",
+    );
+    assert.equal(authUserModule.canReviewSignatures(user), true);
+    assert.equal(authUserModule.canAccessRiesgoTools(user), false);
+    assert.equal(authUserModule.canManageUsers(user), false);
+  });
+
+  it("Análisis junto a Legajos conserva las herramientas de ambos y la carga permitida por Legajos", () => {
+    for (const workflowOwners of [
+      [riesgo, legajos],
+      [legajos, riesgo],
+    ]) {
+      const user = buildUser({
+        workflowOwner: workflowOwners[0],
+        workflowOwnerId: workflowOwners[0].id,
+        workflowOwners,
+      });
+      assert.equal(
+        authUserModule.getDefaultAuthenticatedRoute(user),
+        "/solicitudes/core/recientes",
+      );
+      assert.equal(authUserModule.canReviewSignatures(user), true);
+      assert.equal(authUserModule.canAccessRiesgoTools(user), true);
+      assert.equal(authUserModule.canCreateSolicitud(user), true);
+    }
+    assert.equal(
+      authUserModule.canCreateSolicitud(buildUser({ workflowOwner: riesgo })),
+      false,
+    );
+  });
+});

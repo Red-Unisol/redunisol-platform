@@ -1,3 +1,4 @@
+import { hasWorkflowArea, hasWorkflowAreaId, userWorkflowAreaIds } from "../../../auth/domain/workflow-areas";
 import { ADMIN_CORRECTION_ACTION, AdministrativeCorrectionError } from "./AdministrativeCorrection";
 import { REVERSE_DISMISSAL_ACTION } from "./Dismissal";
 import {
@@ -13,7 +14,17 @@ import type { WorkflowValidationContext } from "./types";
 // puede ejecutar tanto el owner actual (TESORERIA) como cualquier usuario
 // del owner RIESGO, ademas de isSystemAdmin. Ningun otro actionCode tiene
 // este comportamiento.
-const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
+export function canActOnWorkflowState(
+  actor: Parameters<typeof hasWorkflowArea>[0],
+  ownerId: string | null,
+  stateCode: string | undefined,
+  actionCode: string,
+) {
+  if (hasWorkflowAreaId(actor, ownerId)) return true;
+  if (actionCode === "pagar" && stateCode === "Transferir") return hasWorkflowArea(actor, "RIESGO");
+  return actionCode === "transferir" && ["Liquidada", "VerificarFirmaYDocumentacion"].includes(stateCode ?? "") &&
+    hasWorkflowArea(actor, "LEGAJOS_DIGITALES");
+}
 
 export class SolicitudTransitionPolicy {
   validate(context: WorkflowValidationContext) {
@@ -32,19 +43,11 @@ export class SolicitudTransitionPolicy {
     }
 
     if (!context.command.isSystemAdmin) {
-      if (!context.command.workflowOwnerId) {
+      if (!userWorkflowAreaIds(context.command).length) {
         throw new MissingWorkflowOwnerAssignmentError();
       }
 
-      const isOwnerMatch = solicitud.ownerId === context.command.workflowOwnerId;
-      const isRiesgoException =
-        RIESGO_OWNER_ACTION_EXCEPTIONS.has(context.command.actionCode) &&
-        context.command.workflowOwnerCode === "RIESGO";
-      const isLegajosException = context.command.actionCode === "transferir" &&
-        context.command.workflowOwnerCode === "LEGAJOS_DIGITALES" &&
-        ["Liquidada", "VerificarFirmaYDocumentacion"].includes(solicitud.stateCode ?? "");
-
-      if (!isOwnerMatch && !isRiesgoException && !isLegajosException) {
+      if (!canActOnWorkflowState(context.command, solicitud.ownerId, solicitud.stateCode, context.command.actionCode)) {
         throw new ForbiddenSolicitudAccessError();
       }
     }

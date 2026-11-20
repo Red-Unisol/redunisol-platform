@@ -67,6 +67,9 @@ import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
 import {
   canViewPrestamosDelSocio,
   canAccessRiesgoTools,
+  hasArea,
+  onlyArea,
+  userAreas,
   canCreateSocio,
   isVendedor,
 } from "@/modules/auth/utils/auth-user";
@@ -3603,7 +3606,7 @@ export function SolicitudesActualDetallePage() {
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
   // La firma del legajo es de Legajos: a Riesgo solo lo confunde.
   const verFirmaLegajo = !(
-    currentUser?.workflowOwner?.code === "RIESGO" && !currentUser.isSystemAdmin
+    onlyArea(currentUser, "RIESGO") && !currentUser?.isSystemAdmin
   );
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
@@ -3611,9 +3614,7 @@ export function SolicitudesActualDetallePage() {
   // backend vuelve a chequearlo.
   const canGuardarEvaluacion =
     currentUser?.isSystemAdmin === true ||
-    (currentUser?.workflowOwner?.code === "RIESGO" &&
-      Boolean(currentUser.workflowOwnerId) &&
-      currentUser.workflowOwnerId === solicitud?.estadoActual.ownerId &&
+    (userAreas(currentUser).some((area) => area.code === "RIESGO" && area.id === solicitud?.estadoActual.ownerId) &&
       (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],
@@ -5221,9 +5222,7 @@ export function SolicitudesActualDetallePage() {
               resolvedSolicitud.estadoActual.code,
             ) &&
             (currentUser?.isSystemAdmin ||
-              ["TESORERIA", "RIESGO"].includes(
-                currentUser?.workflowOwner?.code ?? "",
-              )) ? (
+              hasArea(currentUser, "TESORERIA") || hasArea(currentUser, "RIESGO")) ? (
               <ExternalPaymentControl
                 key={`external-payment:${solicitudId}`}
                 solicitudId={solicitudId}

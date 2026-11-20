@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId } from "../../../auth/domain/workflow-areas";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type {
@@ -45,8 +46,7 @@ export class GetRevisionPrestamoUseCase {
     // Mismo permiso de área que la generación, sobre la identidad efectiva.
     if (
       !input.currentUser.isSystemAdmin &&
-      (!solicitud.estadoActual.ownerId ||
-        solicitud.estadoActual.ownerId !== input.currentUser.workflowOwnerId)
+      (!hasWorkflowAreaId(input.currentUser, solicitud.estadoActual.ownerId))
     ) {
       throw new ForbiddenSolicitudAccessError();
     }

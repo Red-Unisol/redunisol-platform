@@ -6,19 +6,16 @@ import "./theme.css";
 
 // Dynamic imports are intentional: production API modules may capture fetch.
 const search = new URLSearchParams(window.location.search);
+const role = search.get("role");
+const productionRole = role === "admin" || role === "vendedor" || role === "tesoreria-legajos" || role === "analisis-legajos" ? role : "riesgo";
 const cutoffScenario = search.get("cutoff");
-const productionRole =
-  search.get("role") === "vendedor"
-    ? "vendedor"
-    : search.get("role") === "admin"
-      ? "admin"
-      : "riesgo";
 installUiLabNetworkGuard(
   globalThis,
   (window.location.pathname.startsWith("/production") || window.location.pathname.startsWith("/padrones"))
     ? {
         production: {
           role: productionRole,
+          editAreas: search.get("areas") === "edit",
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
           cutoffScenario:

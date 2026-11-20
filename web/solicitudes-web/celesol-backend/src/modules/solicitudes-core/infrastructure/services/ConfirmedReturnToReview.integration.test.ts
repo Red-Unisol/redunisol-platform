@@ -10,6 +10,14 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { administrativeSource } from "./AdministrativeCorrectionService";
 import { ControlledLoanReplacementService } from "./ControlledLoanReplacementService";
 import type { UpdateSolicitudCorePatch } from "../../domain/repositories/SolicitudesCoreRepository";
+import { CompleteSellerReview } from "./CompleteSellerReview";
+import { SocioRepositoryImpl } from "../../../socios/infrastructure/repositories/SocioRepositoryImpl";
+import { SociosPrismaDatasource } from "../../../socios/infrastructure/datasources/SociosPrismaDatasource";
+import { GetSolicitudByIdUseCase } from "../../application/use-cases/GetSolicitudById.use-case";
+import { UpdateSolicitudUseCase } from "../../application/use-cases/UpdateSolicitud.use-case";
+import { SolicitudesCoreRepositoryImpl } from "../repositories/SolicitudesCoreRepositoryImpl";
+import { SolicitudFieldAccessRulesPrismaDatasource } from "../datasources/SolicitudFieldAccessRulesPrismaDatasource";
+import { SolicitudFieldAccessRulesRepositoryImpl } from "../repositories/SolicitudFieldAccessRulesRepositoryImpl";
 import { SolicitudesCorePrismaDatasource } from "../datasources/SolicitudesCorePrismaDatasource";
 import { coreConditionsFingerprint, coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudWorkflowPrismaDatasource } from "../datasources/SolicitudWorkflowPrismaDatasource";
@@ -180,13 +188,52 @@ async function recordCurrentLoanConditions(tx: Prisma.TransactionClient, id: str
   } });
 }
 
-it("requires a fresh seller confirmation after corrections and rejects direct routes from an open review", { skip: !enabled }, async () => {
-  const f = await fixture();
-  const run = (actionCode: string, seller = false) => f.engine.execute({
-    actionCode, changedBy: seller ? f.seller.id : f.risk.id, workflowOwnerId: seller ? f.sellerOwner.id : f.riskOwner.id,
-    solicitudId: f.s.id, now: new Date(),
+function sellerReviewUseCases() {
+  const repository = new SolicitudesCoreRepositoryImpl(new SolicitudesCorePrismaDatasource(db));
+  const fieldAccessRulesRepository = new SolicitudFieldAccessRulesRepositoryImpl(new SolicitudFieldAccessRulesPrismaDatasource(db));
+  const update = new UpdateSolicitudUseCase({
+    repository, fieldAccessRulesRepository,
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ legacyOid: "55", descripcion: "Línea", vigente: true, montoMaximo: 1000000, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => { throw new Error("Contact changes must not simulate a loan"); } },
   });
+  return { update, detail: new GetSolicitudByIdUseCase({ repository, fieldAccessRulesRepository }) };
+}
+
+it("records a normal seller save in Revisar and delivers the changes to Análisis", { skip: !enabled }, async () => {
+  const f = await fixture();
   try {
+    await f.engine.execute(f.command);
+    const { update, detail } = sellerReviewUseCases();
+    await update.execute({
+      id: f.s.id, currentUser: { id: f.seller.id, workflowOwnerId: f.sellerOwner.id, workflowOwners: [f.sellerOwner] },
+      createdBy: f.seller.id, createdByLegacyUser: f.seller.legacyUser, titular: { celular: "1112345678" },
+    });
+    await f.engine.execute({
+      actionCode: "revisar_reenviar", changedBy: f.seller.id, workflowOwnerId: f.sellerOwner.id, workflowOwners: [f.sellerOwner],
+      comment: "Corregí el celular", solicitudId: f.s.id, now: new Date(),
+    });
+    const riskView = await detail.execute({
+      id: f.s.id, currentUser: { id: f.risk.id, workflowOwnerId: f.riskOwner.id, workflowOwners: [f.riskOwner] },
+    });
+    assert.equal(riskView.estadoActual.code, "RevisionRiesgo");
+    assert.deepEqual(riskView.sellerReviewChanges, [{ field: "titular.celular", before: null, after: "1112345678" }]);
+  } finally { await f.clean(); }
+});
+
+it("lets an analyst with multiple areas request seller review and requires fresh confirmation after corrections", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    const treasury = await db.workflowOwner.findUniqueOrThrow({ where: { code: "TESORERIA" } });
+    await db.$transaction(async tx => {
+      await tx.user.update({ where: { id: f.risk.id }, data: { workflowOwnerId: treasury.id } });
+      await tx.userWorkflowOwner.create({ data: { userId: f.risk.id, workflowOwnerId: f.riskOwner.id } });
+    });
+    const run = (actionCode: string, seller = false) => f.engine.execute({
+      actionCode, changedBy: seller ? f.seller.id : f.risk.id,
+      workflowOwnerId: seller ? f.sellerOwner.id : treasury.id,
+      workflowOwners: seller ? [f.sellerOwner] : [treasury, f.riskOwner],
+      solicitudId: f.s.id, now: new Date(),
+    });
     await recordCurrentLoanConditions(db, f.s.id);
     const available = async (owner: string) =>
       (await f.datasource.listAvailableTransitions({ solicitudId: f.s.id, workflowOwnerId: owner })).map(t => t.actionCode);
@@ -199,12 +246,23 @@ it("requires a fresh seller confirmation after corrections and rejects direct ro
     await assert.rejects(run("transferir", true));
     await assert.rejects(run("devolver_revision_datos", true));
     await assert.rejects(run("finalizar_revision_datos"));
-    // The atomic edit path persists the effective field changes before invoking the engine.
-    await db.solicitud.update({ where: { id: f.s.id }, data: {
-      sellerReviewChanges: [{ field: "titular.email", before: null, after: "seller@example.test" }],
-    } });
-    const corrected = await run("finalizar_revision_datos", true);
+    const { update, detail } = sellerReviewUseCases();
+    const currentUser = { id: f.seller.id, workflowOwnerId: f.sellerOwner.id, workflowOwners: [f.sellerOwner] };
+    const changes = { titular: { celular: "1112345678" } };
+    await assert.rejects(update.execute({
+      ...changes, id: f.s.id, currentUser, createdBy: f.seller.id, createdByLegacyUser: f.seller.legacyUser,
+    }), /Finalizar revisión/);
+    const latest = await db.solicitud.findUniqueOrThrow({ where: { id: f.s.id } });
+    const review = new CompleteSellerReview(db, update, new SocioRepositoryImpl(new SociosPrismaDatasource(db)));
+    const actionCode = "finalizar_revision_datos";
+    const corrected = await review.execute({
+      actionCode, changes, currentUser, solicitudId: f.s.id, expectedUpdatedAt: latest.updatedAt.toISOString(),
+    }, { actionCode, changedBy: f.seller.id, ...currentUser, solicitudId: f.s.id, now: new Date() });
     assert.equal(corrected.solicitud.estadoActual.code, "RevisionRiesgo");
+    const riskView = await detail.execute({
+      id: f.s.id, currentUser: { id: f.risk.id, workflowOwnerId: treasury.id, workflowOwners: [treasury, f.riskOwner] },
+    });
+    assert.deepEqual(riskView.sellerReviewChanges, [{ field: "titular.celular", before: null, after: "1112345678" }]);
     assert(corrected.solicitud.sellerReviewStartedAt);
     await run("confirmar");
     assert(!(await available(f.riskOwner.id)).includes("liquidar"));

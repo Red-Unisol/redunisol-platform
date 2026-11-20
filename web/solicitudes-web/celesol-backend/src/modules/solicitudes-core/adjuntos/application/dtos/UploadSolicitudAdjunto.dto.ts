@@ -1,9 +1,11 @@
+import type { AuthWorkflowOwner } from "../../../../auth/domain/entities/User.entity";
 export type UploadSolicitudAdjuntoInput = {
   solicitudId: string;
   createdBy: string;
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   workflowOwnerId: string;

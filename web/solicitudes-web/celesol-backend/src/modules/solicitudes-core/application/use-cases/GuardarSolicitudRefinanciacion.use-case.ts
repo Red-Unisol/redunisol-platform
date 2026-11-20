@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import { canEditSolicitud } from "../services/SolicitudPermissions";
 import {
   SolicitudCoreNotFoundError,
@@ -37,6 +38,7 @@ export type GuardarSolicitudRefinanciacionInput = {
     id: string;
     isSystemAdmin?: boolean;
     workflowOwnerCode: string | null;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   /** "YYYY-MM-DD", hoy o antes; null = el dia del cobro. */

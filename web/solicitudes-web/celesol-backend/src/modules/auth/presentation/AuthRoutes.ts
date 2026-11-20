@@ -40,6 +40,15 @@ import type { AuthController } from "./AuthController";
  *           type: boolean
  *         state:
  *           type: integer
+ *         workflowOwners:
+ *           type: array
+ *           description: Áreas activas que el usuario puede operar simultáneamente.
+ *           items:
+ *             type: object
+ *             properties:
+ *               id: { type: string, format: uuid }
+ *               code: { type: string }
+ *               name: { type: string }
  *         workflowOwnerId:
  *           type: string
  *           format: uuid

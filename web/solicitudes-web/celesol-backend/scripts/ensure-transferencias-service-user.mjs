@@ -23,9 +23,13 @@ const select = {
   recibeAsignacionAutomatica: true,
   deletedAt: true,
   workflowOwner: { select: { code: true, isActive: true } },
+  workflowOwnerMemberships: { select: { workflowOwner: { select: { code: true, isActive: true } } } },
 };
 
 function verify(user) {
+  const areas = user.workflowOwnerMemberships.length
+    ? user.workflowOwnerMemberships.map(membership => membership.workflowOwner)
+    : [user.workflowOwner];
   if (
     user.email !== identity.email ||
     user.legacyUser !== identity.legacyUser ||
@@ -34,8 +38,7 @@ function verify(user) {
     user.emailVerified ||
     user.recibeAsignacionAutomatica ||
     user.deletedAt ||
-    user.workflowOwner?.code !== "TESORERIA" ||
-    !user.workflowOwner.isActive
+    !areas.some(area => area?.code === "TESORERIA" && area.isActive)
   ) {
     throw new ServiceIdentityError("Service identity conflicts with required permissions; no existing user was modified.");
   }

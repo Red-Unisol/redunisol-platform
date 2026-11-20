@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../auth/domain/workflow-areas";
 import type { Router } from "express";
 import type { GetCurrentUserUseCase } from "../../auth/application/use-cases/GetCurrentUser.use-case";
 import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
@@ -21,7 +22,7 @@ export function addDatosRapidosRoutes(
         const user = await dependencies.getCurrentUserUseCase.execute(
           req.cookies?.[ACCESS_TOKEN_COOKIE],
         );
-        if (parte === "mora" && !user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        if (parte === "mora" && !user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES")) {
           throw new ForbiddenSolicitudAccessError();
         }
         const params = solicitudByIdParamsSchema.safeParse(req.params);
@@ -31,6 +32,7 @@ export function addDatosRapidosRoutes(
           id: params.data.id,
           currentUser: {
             id: user.id,
+            ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
             workflowOwnerId: user.workflowOwnerId,
             isSystemAdmin: user.isSystemAdmin,
           },

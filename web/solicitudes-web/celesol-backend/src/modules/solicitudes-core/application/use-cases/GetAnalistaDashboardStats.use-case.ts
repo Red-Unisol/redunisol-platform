@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type {
   AnalistaDashboardStatsResult,
   GetSolicitudesStatsInput,
@@ -9,6 +10,7 @@ type GetAnalistaDashboardStatsInput = GetSolicitudesStatsInput & {
   conRetrabajo?: "con" | "sin";
   umbralDias: number;
   vista: "mis_casos" | "sin_asignar" | "ambos";
+  workflowOwners?: AuthWorkflowOwner[];
   workflowOwnerId: string | null;
 };
 
@@ -22,8 +24,8 @@ export class GetAnalistaDashboardStatsUseCase {
   async execute(
     input: GetAnalistaDashboardStatsInput,
   ): Promise<AnalistaDashboardStatsResult> {
-    const { workflowOwnerId, ...rest } = input;
-    const areaOwnerCode = workflowOwnerId
+    const { workflowOwnerId, workflowOwners, ...rest } = input;
+    const areaOwnerCode = workflowOwners ? workflowOwners.map(area => area.code) : workflowOwnerId
       ? ((await this.repository.findWorkflowOwnerCodeById!(workflowOwnerId)) ?? "")
       : "";
 

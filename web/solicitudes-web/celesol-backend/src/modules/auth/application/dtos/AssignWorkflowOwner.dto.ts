@@ -1,4 +1,1 @@
-export type AssignWorkflowOwnerInput = {
-  userId: string;
-  workflowOwnerId: string | null;
-};
+export type { AssignWorkflowOwnerInput } from "../../domain/workflow-areas";

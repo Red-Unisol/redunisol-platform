@@ -1,4 +1,6 @@
-﻿import { useMemo, useState } from "react";
+﻿import { WorkflowAreaSelector } from "./workflow-area-selector";
+import { userAreaIds } from "@/modules/auth/utils/auth-user";
+import { useMemo, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 
 import {
@@ -9,6 +11,7 @@ import type { StyledSelectOption } from "@/modules/solicitudes-editor/types";
 import type {
   UpdateAdminUserRequest,
   UsersAdminUser,
+  WorkflowOwner,
 } from "@/modules/users-admin/services/users-admin-api";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -23,7 +26,7 @@ import { Input } from "@/shared/components/ui/input";
 
 export type AdminUserEditSubmission = {
   areaChanged: boolean;
-  nextWorkflowOwnerId: string | null;
+  nextWorkflowOwnerIds: string[];
   userPayload: UpdateAdminUserRequest;
 };
 
@@ -35,7 +38,7 @@ type AdminUserEditDialogProps = {
   user: UsersAdminUser | null;
   /** Id del area Riesgo: solo ahi tiene sentido el reparto por turno. */
   riesgoWorkflowOwnerId: string | null;
-  workflowOwnerOptions: StyledSelectOption[];
+  workflowOwners: WorkflowOwner[];
 };
 
 function isValidEmail(email: string) {
@@ -53,7 +56,7 @@ export function AdminUserEditDialog({
   open,
   user,
   riesgoWorkflowOwnerId,
-  workflowOwnerOptions,
+  workflowOwners,
 }: AdminUserEditDialogProps) {
   return (
     <DialogRoot onOpenChange={onOpenChange} open={open}>
@@ -65,7 +68,7 @@ export function AdminUserEditDialog({
           onSubmit={onSubmit}
           user={user}
           riesgoWorkflowOwnerId={riesgoWorkflowOwnerId}
-          workflowOwnerOptions={workflowOwnerOptions}
+          workflowOwners={workflowOwners}
         />
       ) : null}
     </DialogRoot>
@@ -78,7 +81,7 @@ function AdminUserEditForm({
   onSubmit,
   user,
   riesgoWorkflowOwnerId,
-  workflowOwnerOptions,
+  workflowOwners,
 }: {
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
@@ -86,7 +89,7 @@ function AdminUserEditForm({
   user: UsersAdminUser;
   /** Id del area Riesgo: solo ahi tiene sentido el reparto por turno. */
   riesgoWorkflowOwnerId: string | null;
-  workflowOwnerOptions: StyledSelectOption[];
+  workflowOwners: WorkflowOwner[];
 }) {
   const stateOptions = useMemo<StyledSelectOption[]>(
     () => [
@@ -105,9 +108,8 @@ function AdminUserEditForm({
   );
   const [state, setState] = useState<0 | 1>(user.state === 0 ? 0 : 1);
   const [stateTouched, setStateTouched] = useState(false);
-  const [workflowOwnerId, setWorkflowOwnerId] = useState(
-    user.workflowOwnerId ?? "",
-  );
+  const initialAreaIds = userAreaIds(user);
+  const [workflowOwnerIds, setWorkflowOwnerIds] = useState(initialAreaIds);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const emailTrimmed = email.trim();
@@ -120,14 +122,13 @@ function AdminUserEditForm({
   const lastNameChanged = lastNameTrimmed !== (user.lastName ?? "");
   const legacyUserChanged = legacyUserTrimmed !== user.legacyUser;
   const adminChanged = isSystemAdmin !== user.isSystemAdmin;
-  // El reparto por turno solo toma usuarios del area a la que le toca la
-  // solicitud, y solo Riesgo reparte asi: fuera de Riesgo no se ofrece y,
-  // si el usuario sale de Riesgo, se apaga.
-  const esAreaRiesgo =
-    riesgoWorkflowOwnerId !== null && workflowOwnerId === riesgoWorkflowOwnerId;
-  const recibeAsignacionEfectiva = esAreaRiesgo && recibeAsignacionAutomatica;
+  const mantieneAnalisis =
+    riesgoWorkflowOwnerId !== null &&
+    initialAreaIds.includes(riesgoWorkflowOwnerId) &&
+    workflowOwnerIds.includes(riesgoWorkflowOwnerId);
   const asignacionAutomaticaChanged =
-    recibeAsignacionEfectiva !== user.recibeAsignacionAutomatica;
+    mantieneAnalisis &&
+    recibeAsignacionAutomatica !== user.recibeAsignacionAutomatica;
 
   const canCompareStateDirectly = user.state !== 2;
   const stateChanged = canCompareStateDirectly
@@ -136,7 +137,9 @@ function AdminUserEditForm({
 
   const areaEditAllowed = user.state !== 0;
   const areaChanged =
-    areaEditAllowed && workflowOwnerId !== (user.workflowOwnerId ?? "");
+    areaEditAllowed &&
+    (initialAreaIds.length !== workflowOwnerIds.length ||
+      initialAreaIds.some((id) => !workflowOwnerIds.includes(id)));
 
   const hasChanges =
     emailChanged ||
@@ -203,7 +206,7 @@ function AdminUserEditForm({
     }
 
     if (asignacionAutomaticaChanged) {
-      userPayload.recibeAsignacionAutomatica = recibeAsignacionEfectiva;
+      userPayload.recibeAsignacionAutomatica = recibeAsignacionAutomatica;
     }
 
     if (stateChanged) {
@@ -215,8 +218,7 @@ function AdminUserEditForm({
     try {
       await onSubmit({
         areaChanged,
-        nextWorkflowOwnerId:
-          workflowOwnerId.length > 0 ? workflowOwnerId : null,
+        nextWorkflowOwnerIds: workflowOwnerIds,
         userPayload,
       });
     } catch (error) {
@@ -230,7 +232,7 @@ function AdminUserEditForm({
   }
 
   return (
-    <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[760px] flex-col overflow-hidden p-0">
+    <DialogContent className="grid max-h-[calc(100dvh-3rem)] max-w-[760px] grid-rows-[auto_minmax(0,1fr)] overflow-clip p-0">
       <div className="border-b border-border bg-muted/30 px-4 py-3">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface">
@@ -251,8 +253,11 @@ function AdminUserEditForm({
         </div>
       </div>
 
-      <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <form
+        className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]"
+        onSubmit={handleSubmit}
+      >
+        <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ModalField label="Email">
               <Input
@@ -337,22 +342,13 @@ function AdminUserEditForm({
               ) : null}
             </ModalField>
 
-            <ModalField label="Área">
-              <StyledSelect
-                disabled={isSubmitting || !areaEditAllowed}
-                emptyOptionLabel="Sin área"
-                onChange={setWorkflowOwnerId}
-                options={workflowOwnerOptions}
-                placeholder="Sin área"
-                value={workflowOwnerId}
-              />
-              {!areaEditAllowed ? (
-                <span className="text-xs text-foreground-secondary">
-                  Los usuarios inactivos no pueden cambiar su área desde este
-                  formulario.
-                </span>
-              ) : null}
-            </ModalField>
+            <WorkflowAreaSelector
+              owners={workflowOwners}
+              selected={workflowOwnerIds}
+              initialSelection={initialAreaIds}
+              onChange={setWorkflowOwnerIds}
+              disabled={isSubmitting || !areaEditAllowed}
+            />
 
             <ModalField label="Admin de sistema">
               <label className="flex h-10 items-center gap-2 text-sm text-foreground">
@@ -367,7 +363,7 @@ function AdminUserEditForm({
               </label>
             </ModalField>
 
-            {esAreaRiesgo ? (
+            {mantieneAnalisis ? (
               <ModalField label="Asignación automática">
                 <label className="flex h-10 items-center gap-2 text-sm text-foreground">
                   <Checkbox

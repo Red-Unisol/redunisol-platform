@@ -9,7 +9,7 @@ import { buildRecientesDateRange } from "@/modules/solicitudes-core/utils/recien
 type UseSolicitudesCoreRecientesQueryOptions = {
   vista: "mi-area" | "todas";
   userId?: string;
-  workflowOwnerId?: string | null;
+  workflowOwnerIds?: string[];
   search?: string;
   page: number;
   pageSize: number;
@@ -18,7 +18,7 @@ type UseSolicitudesCoreRecientesQueryOptions = {
 export function useSolicitudesCoreRecientesQuery({
   vista,
   userId,
-  workflowOwnerId,
+  workflowOwnerIds,
   search,
   page,
   pageSize,
@@ -44,7 +44,7 @@ export function useSolicitudesCoreRecientesQuery({
     queryKey: solicitudesCoreQueryKeys.recientes({
       vista,
       userId,
-      workflowOwnerId,
+      workflowOwnerIds,
       createdFrom,
       createdTo,
       excludeEstado: "CargaVendedor",

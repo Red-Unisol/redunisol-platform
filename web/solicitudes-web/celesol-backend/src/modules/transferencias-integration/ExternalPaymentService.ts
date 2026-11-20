@@ -1,3 +1,5 @@
+import { UserMapper } from "../auth/infrastructure/mappers/User.mapper";
+import { hasWorkflowArea } from "../auth/domain/workflow-areas";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 import type { AdjuntosObjectStorage } from "../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
@@ -61,22 +63,20 @@ export class ExternalPaymentService {
     },
   ) {}
 
-  private async authorize(user: AuthUser) {
-    const owner = user.workflowOwnerId
-      ? await this.deps.db.workflowOwner.findUnique({
-          where: { id: user.workflowOwnerId },
-        })
-      : null;
-    if (
-      user.state !== 1 ||
-      (!user.isSystemAdmin &&
-        (!owner?.isActive || !["TESORERIA", "RIESGO"].includes(owner.code)))
-    )
-      fail(
+  private async authorize(user: AuthUser, db: Db = this.deps.db) {
+    const row = await db.user.findFirst({
+      where: { id: user.id, state: 1, deletedAt: null },
+      select: UserMapper.profileSelect(),
+    });
+    const actor = row && UserMapper.toDomain(row);
+    if (!actor || user.state !== 1 || (!actor.isSystemAdmin &&
+      !hasWorkflowArea(actor, "TESORERIA") && !hasWorkflowArea(actor, "RIESGO")))
+      return fail(
         "FORBIDDEN_EXTERNAL_PAYMENT",
         "Solo Tesorería, Riesgo o un administrador pueden registrar pagos externos.",
         403,
       );
+    return actor;
   }
 
   private async source(db: Db, id: string) {
@@ -195,6 +195,7 @@ export class ExternalPaymentService {
           // Same parent -> reservation lock order as reservation/receipt/revalidation.
           await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM transferencia_desembolsos WHERE solicitud_id = ${id}::uuid FOR UPDATE`;
+          const actor = await this.authorize(user, tx);
           const current = await this.source(tx, id);
           if (current.pagoExterno) return replay(current);
           const reason = this.blocked(current);
@@ -245,9 +246,10 @@ export class ExternalPaymentService {
             id,
             {
               id: user.id,
-              workflowOwnerId: user.workflowOwnerId ?? "",
+              workflowOwnerId: actor.workflowOwnerId ?? "",
+              workflowOwners: actor.workflowOwners,
               clientId: "beex-external-payment",
-              isSystemAdmin: user.isSystemAdmin,
+              isSystemAdmin: actor.isSystemAdmin,
             },
             `Transferencia realizada por fuera. Fecha: ${input.paidOn}.${input.reference ? ` Referencia: ${input.reference}.` : ""}${input.comment ? ` Comentario: ${input.comment}` : ""}`,
           );

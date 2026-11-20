@@ -1,3 +1,5 @@
+import { areaName, userAreaIds } from "@/modules/auth/utils/auth-user";
+import { Link } from "react-router-dom";
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { getImpersonationContext } from "@/modules/auth/services/auth-api";
 import { reloadIdentity } from "@/modules/auth/utils/reload-identity";
@@ -12,7 +14,7 @@ import {
 } from "@/modules/users-admin/components/admin-user-edit-dialog";
 import {
   enterUser,
-  assignWorkflowOwner,
+  assignWorkflowOwners,
   getUsers,
   getWorkflowOwners,
   type UpdateAdminUserRequest,
@@ -87,17 +89,22 @@ export function AdminUsersPage() {
       userId: string;
     }) => updateUser(userId, payload),
   });
-  const assignWorkflowOwnerMutation = useMutation({
+  const assignWorkflowOwnersMutation = useMutation({
     mutationFn: ({
       userId,
-      workflowOwnerId,
+      workflowOwnerIds,
     }: {
       userId: string;
-      workflowOwnerId: string | null;
-    }) => assignWorkflowOwner(userId, workflowOwnerId),
+      workflowOwnerIds: string[];
+    }) => assignWorkflowOwners(userId, workflowOwnerIds),
   });
 
   const users = usersQuery.data?.users ?? [];
+  const pendingAssignments = users.flatMap(user =>
+    (user.pendingAssignments ?? []).map(item => ({
+      ...item, assignee: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+    })),
+  );
   const searchTerms = normalizeSearch(search)
     .trim()
     .split(/\s+/)
@@ -110,12 +117,8 @@ export function AdminUsersPage() {
   });
   const workflowOwners = workflowOwnersQuery.data?.workflowOwners ?? [];
   const workflowOwnersById = new Map(
-    workflowOwners.map((owner) => [owner.id, owner.name]),
+    workflowOwners.map((owner) => [owner.id, areaName(owner)]),
   );
-  const workflowOwnerOptions = workflowOwners.map((owner) => ({
-    label: owner.name,
-    value: owner.id,
-  }));
   const riesgoWorkflowOwnerId =
     workflowOwners.find((owner) => owner.code === "RIESGO")?.id ?? null;
   const isLoading = usersQuery.isLoading || workflowOwnersQuery.isLoading;
@@ -123,7 +126,7 @@ export function AdminUsersPage() {
 
   async function handleSubmitUserUpdate({
     areaChanged,
-    nextWorkflowOwnerId,
+    nextWorkflowOwnerIds,
     userPayload,
   }: AdminUserEditSubmission) {
     if (!editingUser) {
@@ -170,9 +173,9 @@ export function AdminUsersPage() {
 
       if (shouldUpdateArea) {
         try {
-          await assignWorkflowOwnerMutation.mutateAsync({
+          await assignWorkflowOwnersMutation.mutateAsync({
             userId: editingUser.id,
-            workflowOwnerId: nextWorkflowOwnerId,
+            workflowOwnerIds: nextWorkflowOwnerIds,
           });
         } catch (error) {
           await queryClient.invalidateQueries({
@@ -184,8 +187,9 @@ export function AdminUsersPage() {
               ? error.message
               : "No se pudo actualizar el área.";
 
+          if (!hasUserChanges) throw error;
           toast.error(
-            `Se guardaron los datos del usuario, pero falló la actualización de área. ${detailMessage}`,
+            `Se guardaron los datos del usuario, pero falló la actualización de áreas. ${detailMessage}`,
             {
               duration: 3500,
               icon: <CircleAlert className="size-5" />,
@@ -196,9 +200,10 @@ export function AdminUsersPage() {
         }
       }
 
-      await queryClient.invalidateQueries({
-        queryKey: ["users-admin", "users"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["users-admin"] }),
+        queryClient.invalidateQueries({ queryKey: ["auth", "session"] }),
+      ]);
       setEditingUser(null);
       toast.success("Usuario actualizado correctamente.", {
         duration: 3000,
@@ -319,7 +324,7 @@ export function AdminUsersPage() {
                     Estado
                   </th>
                   <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
-                    Área
+                    Áreas
                   </th>
                   <th className="px-3 py-2 text-left font-medium text-foreground-secondary">
                     Admin sistema
@@ -348,10 +353,9 @@ export function AdminUsersPage() {
                       {getUserStateLabel(user.state)}
                     </td>
                     <td className="px-3 py-2 text-foreground">
-                      {user.workflowOwnerId
-                        ? (workflowOwnersById.get(user.workflowOwnerId) ??
-                          user.workflowOwnerId)
-                        : "Sin área"}
+                      {userAreaIds(user)
+                        .map((id) => workflowOwnersById.get(id) ?? id)
+                        .join(", ") || "Sin área"}
                     </td>
                     <td className="px-3 py-2 text-foreground">
                       {user.isSystemAdmin ? "Sí" : "No"}
@@ -375,7 +379,7 @@ export function AdminUsersPage() {
                             enter.isPending ||
                             !acting.isSuccess ||
                             user.state !== 1 ||
-                            !user.workflowOwnerId ||
+                            !userAreaIds(user).length ||
                             user.id === session.data.id
                           }
                           onClick={() => enter.mutate(user.id)}
@@ -392,9 +396,34 @@ export function AdminUsersPage() {
         )}
       </div>
 
+      {pendingAssignments.length > 0 && (
+        <section
+          aria-label="Solicitudes pendientes de reasignación"
+          className="max-h-52 overflow-auto border-t border-border bg-surface px-4 py-3"
+        >
+          <h2 className="text-sm font-semibold">
+            Solicitudes pendientes de reasignación ({pendingAssignments.length})
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm">
+            {pendingAssignments.map((item) => (
+              <li key={item.id}>
+                <Link
+                  className="font-medium text-primary underline"
+                  to={`/solicitudes/core/detalle/${item.id}`}
+                >
+                  Solicitud {item.nroSolicitud || item.id}
+                </Link>
+                {" · "}{item.assignee} ·{" "}
+                {item.areaCode === "RIESGO" ? "Análisis" : item.areaName} ·{" "}
+                {item.stateName}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <AdminUserEditDialog
         isSubmitting={
-          updateUserMutation.isPending || assignWorkflowOwnerMutation.isPending
+          updateUserMutation.isPending || assignWorkflowOwnersMutation.isPending
         }
         onOpenChange={(open) => {
           if (!open) {
@@ -405,7 +434,7 @@ export function AdminUsersPage() {
         open={editingUser !== null}
         riesgoWorkflowOwnerId={riesgoWorkflowOwnerId}
         user={editingUser}
-        workflowOwnerOptions={workflowOwnerOptions}
+        workflowOwners={workflowOwners}
       />
     </article>
   );

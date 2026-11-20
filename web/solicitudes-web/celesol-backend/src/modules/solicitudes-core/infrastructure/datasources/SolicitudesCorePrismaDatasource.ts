@@ -1,3 +1,4 @@
+import { activeWorkflowAreaWhere, userWorkflowAreas, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
 import { diffSellerReviewFields, mergeSellerReviewChanges, readSellerReviewChanges } from "../../application/services/SellerReviewChanges";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
@@ -21,7 +22,7 @@ import type {
 } from "../../domain/repositories/SolicitudesCoreRepository";
 import { assertMontoDentroDelAprobadoPorRiesgo } from "../../domain/services/MontoAprobadoRiesgo";
 import { PASO_POR_VIMARX_ACTION_CODE } from "../../domain/workflow/PasoPorVimarx";
-import { SolicitudCoreNotFoundError, SolicitudEditStateConflictError } from "../../domain/solicitudes-core-errors";
+import { ForbiddenSolicitudAccessError, SolicitudCoreNotFoundError, SolicitudEditStateConflictError } from "../../domain/solicitudes-core-errors";
 import { SolicitudCoreMapper } from "../mappers/SolicitudCore.mapper";
 
 const solicitudInclude = {
@@ -374,7 +375,7 @@ export class SolicitudesCorePrismaDatasource {
   private static buildWorkflowStateFilter(input: {
     estado?: string;
     excludeEstado?: string;
-    ownerId?: string;
+    ownerId?: string | string[];
   }) {
     const codeFilter =
       input.estado && input.excludeEstado
@@ -391,7 +392,7 @@ export class SolicitudesCorePrismaDatasource {
             : undefined;
 
     return {
-      ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+      ...(input.ownerId !== undefined ? { ownerId: Array.isArray(input.ownerId) ? { in: input.ownerId } : input.ownerId || { in: [] } } : {}),
       ...(codeFilter ? { code: codeFilter } : {}),
     };
   }
@@ -555,13 +556,11 @@ export class SolicitudesCorePrismaDatasource {
   }
 
   async findUserById(id: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        workflowOwnerId: true,
-      },
+      select: { id: true, workflowOwnerId: true, ...workflowAreaInclude },
     });
+    return user && { id: user.id, workflowOwnerId: user.workflowOwnerId, workflowOwners: userWorkflowAreas(user) };
   }
 
   async findCreadorById(id: string) {
@@ -607,7 +606,7 @@ export class SolicitudesCorePrismaDatasource {
       where: {
         deletedAt: null,
         state: 1,
-        ...(workflowOwnerId ? { workflowOwnerId } : {}),
+        ...(workflowOwnerId ? activeWorkflowAreaWhere({ id: workflowOwnerId }) : {}),
       },
       select: {
         email: true,
@@ -635,10 +634,18 @@ export class SolicitudesCorePrismaDatasource {
   async assignToUserIfUnassigned(input: {
     actorUserId: string;
     allowReassignment?: boolean;
+    requiredAreaId?: string;
     solicitudId: string;
     assignedToUserId: string;
   }) {
     const solicitud = await this.prisma.$transaction(async (tx) => {
+      if (input.requiredAreaId) {
+        const users = [...new Set([input.actorUserId, input.assignedToUserId])];
+        const members = await tx.user.count({ where: {
+          id: { in: users }, state: 1, deletedAt: null, ...activeWorkflowAreaWhere({ id: input.requiredAreaId }),
+        } });
+        if (members !== users.length) throw new ForbiddenSolicitudAccessError();
+      }
       const assignedUser = await tx.user.findUnique({
         where: {
           id: input.assignedToUserId,
@@ -655,6 +662,7 @@ export class SolicitudesCorePrismaDatasource {
         where: {
           id: input.solicitudId,
           ...(input.allowReassignment ? {} : { assignedToUserId: null }),
+          ...(input.requiredAreaId ? { estadoActual: { ownerId: input.requiredAreaId } } : {}),
         },
         data: {
           assignedToUserId: input.assignedToUserId,
@@ -787,7 +795,7 @@ export class SolicitudesCorePrismaDatasource {
         ...(input.estadoOwnerId || input.estado
           ? {
               estadoActual: {
-                ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
+                ...(input.estadoOwnerId ? { ownerId: Array.isArray(input.estadoOwnerId) ? { in: input.estadoOwnerId } : input.estadoOwnerId } : {}),
                 ...(input.estado ? { code: { equals: input.estado } } : {}),
               },
             }
@@ -1619,7 +1627,7 @@ export class SolicitudesCorePrismaDatasource {
     };
     const sinAsignarWhere: Prisma.SolicitudWhereInput = {
       assignedToUserId: null,
-      estadoActual: { owner: { code: input.areaOwnerCode } },
+      estadoActual: { owner: { code: Array.isArray(input.areaOwnerCode) ? { in: input.areaOwnerCode } : input.areaOwnerCode } },
     };
     const universoWhere: Prisma.SolicitudWhereInput =
       input.vista === "sin_asignar"
@@ -1939,7 +1947,7 @@ export class SolicitudesCorePrismaDatasource {
     };
     const sinAsignarWhere: Prisma.SolicitudWhereInput = {
       assignedToUserId: null,
-      estadoActual: { owner: { code: input.areaOwnerCode } },
+      estadoActual: { owner: { code: Array.isArray(input.areaOwnerCode) ? { in: input.areaOwnerCode } : input.areaOwnerCode } },
     };
     const universoWhere: Prisma.SolicitudWhereInput =
       input.vista === "sin_asignar"

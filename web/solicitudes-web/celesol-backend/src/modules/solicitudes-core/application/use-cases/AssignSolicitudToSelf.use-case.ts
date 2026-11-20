@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, userWorkflowAreaIds } from "../../../auth/domain/workflow-areas";
 import type { AssignSolicitudToSelfInput } from "../dtos/AssignSolicitudToSelf.dto";
 import {
   ForbiddenSolicitudAccessError,
@@ -24,7 +25,7 @@ export class AssignSolicitudToSelfUseCase {
       throw new Error("Assignment repository method is not available.");
     }
 
-    if (!input.currentUser.isSystemAdmin && !input.currentUser.workflowOwnerId) {
+    if (!input.currentUser.isSystemAdmin && !userWorkflowAreaIds(input.currentUser).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
@@ -38,7 +39,7 @@ export class AssignSolicitudToSelfUseCase {
     const isRiesgoOwnedByCurrentUser =
       solicitud.estadoActual.owner?.code === "RIESGO" &&
       ownerId !== null &&
-      ownerId === input.currentUser.workflowOwnerId;
+      hasWorkflowAreaId(input.currentUser, ownerId);
     const canReassignFreely =
       Boolean(input.currentUser.isSystemAdmin) || isRiesgoOwnedByCurrentUser;
 
@@ -47,7 +48,7 @@ export class AssignSolicitudToSelfUseCase {
     }
 
     if (!input.currentUser.isSystemAdmin && !input.currentUser.isAnalista) {
-      if (!ownerId || ownerId !== input.currentUser.workflowOwnerId) {
+      if (!hasWorkflowAreaId(input.currentUser, ownerId)) {
         throw new ForbiddenSolicitudAccessError();
       }
 
@@ -63,6 +64,7 @@ export class AssignSolicitudToSelfUseCase {
     const assigned = await this.repository.assignToUserIfUnassigned({
       actorUserId: input.currentUser.id,
       allowReassignment: canReassignFreely,
+      ...(!input.currentUser.isSystemAdmin && !input.currentUser.isAnalista && ownerId ? { requiredAreaId: ownerId } : {}),
       assignedToUserId: input.currentUser.id,
       solicitudId: input.solicitudId,
     });

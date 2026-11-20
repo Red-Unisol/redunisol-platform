@@ -62,6 +62,7 @@ export class SolicitudCancelacionesController {
         {
           currentUser: {
             id: user.id,
+            ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
             workflowOwnerId: user.workflowOwnerId,
           },
           solicitudId: params.id,
@@ -96,6 +97,7 @@ export class SolicitudCancelacionesController {
         cuentaBancaria: body.cuentaBancaria,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -135,6 +137,7 @@ export class SolicitudCancelacionesController {
         cuentaBancaria: body.cuentaBancaria,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
@@ -167,6 +170,7 @@ export class SolicitudCancelacionesController {
         cancelacionId: params.cancelacionId,
         currentUser: {
           id: user.id,
+          ...(user.workflowOwners ? { workflowOwners: user.workflowOwners } : {}),
           workflowOwnerId: user.workflowOwnerId,
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },

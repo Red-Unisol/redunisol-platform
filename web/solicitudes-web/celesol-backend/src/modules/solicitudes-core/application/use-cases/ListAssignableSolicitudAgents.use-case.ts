@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId, userWorkflowAreaIds } from "../../../auth/domain/workflow-areas";
 import type {
   AssignableSolicitudAgent,
   ListAssignableSolicitudAgentsInput,
@@ -28,7 +29,7 @@ export class ListAssignableSolicitudAgentsUseCase {
       throw new Error("Assignment repository methods are not available.");
     }
 
-    if (!input.currentUser.isSystemAdmin && !input.currentUser.workflowOwnerId) {
+    if (!input.currentUser.isSystemAdmin && !userWorkflowAreaIds(input.currentUser).length) {
       throw new MissingWorkflowOwnerAssignmentError();
     }
 
@@ -41,7 +42,7 @@ export class ListAssignableSolicitudAgentsUseCase {
     const ownerId = solicitud.estadoActual.ownerId ?? null;
 
     if (!input.currentUser.isSystemAdmin) {
-      if (!ownerId || ownerId !== input.currentUser.workflowOwnerId) {
+      if (!hasWorkflowAreaId(input.currentUser, ownerId)) {
         throw new ForbiddenSolicitudAccessError();
       }
 

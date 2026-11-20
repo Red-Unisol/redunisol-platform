@@ -43,9 +43,31 @@ describe("AssignSolicitudToUserUseCase", () => {
     assert.deepEqual(receivedInput, {
       actorUserId: "operator-1",
       allowReassignment: true,
+      requiredAreaId: "owner-riesgo",
       assignedToUserId: "target-1",
       solicitudId: "sol-1",
     });
+  });
+
+  it("assigns risk work when Riesgo is a secondary area for both users", async () => {
+    const areas = [
+      { id: "owner-tesoreria", code: "TESORERIA", name: "Tesorería" },
+      { id: "owner-riesgo", code: "RIESGO", name: "Riesgo" },
+    ];
+    const operator = { id: "operator", workflowOwnerId: areas[0].id, workflowOwners: areas };
+    const target = { ...operator, id: "target" };
+    const useCase = new AssignSolicitudToUserUseCase({ repository: {
+      ...repositoryBase(),
+      findUserById: async () => target,
+      assignToUserIfUnassigned: async input => solicitud({ assignedToUserId: input.assignedToUserId }),
+    } });
+    const command = { currentUser: operator, solicitudId: "sol-1", targetUserId: target.id };
+    assert.equal((await useCase.execute(command)).assignedToUserId, target.id);
+    target.workflowOwners = [areas[0]];
+    await assert.rejects(useCase.execute(command), ForbiddenSolicitudAccessError);
+    await assert.rejects(useCase.execute({
+      ...command, currentUser: { ...operator, isAnalista: true },
+    }), ForbiddenSolicitudAccessError);
   });
 
   it("rejects missing solicitud", async () => {
@@ -289,6 +311,7 @@ describe("AssignSolicitudToUserUseCase", () => {
     assert.deepEqual(receivedInput, {
       actorUserId: "operator-1",
       allowReassignment: true,
+      requiredAreaId: "owner-riesgo",
       assignedToUserId: "target-1",
       solicitudId: "sol-1",
     });

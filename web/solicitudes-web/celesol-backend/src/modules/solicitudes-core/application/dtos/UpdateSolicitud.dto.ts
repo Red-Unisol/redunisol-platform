@@ -1,8 +1,10 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 export type UpdateSolicitudInput = {
   currentUser: {
     id: string;
     isAnalista?: boolean;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   createdBy: string;

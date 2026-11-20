@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../../auth/domain/workflow-areas";
 import type { DownloadSolicitudAdjuntoInput } from "../dtos/DownloadSolicitudAdjunto.dto";
 import type { SolicitudAdjunto } from "../../domain/entities/SolicitudAdjunto.entity";
 import type { SolicitudAdjuntoRepository } from "../../domain/repositories/SolicitudAdjuntoRepository";
@@ -50,9 +51,9 @@ export class DownloadSolicitudAdjuntoUseCase {
     const generatedReview = adjunto.tipoAdjunto === "Legajo Digital" &&
       Boolean(adjunto.archivoPath?.includes("/revision-documental/"));
     if (generatedReview && !input.currentUser.isSystemAdmin) {
-      const ownerCode = input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+      const ownerCode = input.currentUser.workflowOwners === undefined && input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
         ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId) : null;
-      if (ownerCode !== "LEGAJOS_DIGITALES") throw new ForbiddenSolicitudAdjuntoAccessError();
+      if (!hasWorkflowArea({ ...input.currentUser, workflowOwnerCode: ownerCode }, "LEGAJOS_DIGITALES")) throw new ForbiddenSolicitudAdjuntoAccessError();
     }
 
     if (!adjunto.archivoPath || !adjunto.storageBucket) {

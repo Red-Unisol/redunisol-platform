@@ -1,10 +1,9 @@
 export type SignatureNotificationEvent = {
-  type: "signature_received" | "signature_requested";
   solicitudId: string;
   loanId: string;
   cycleId: string;
-  verificationId?: string;
-  reason?: string;
-  contractChanged?: boolean;
-  requestId?: string;
-};
+} & (
+  | { type: "signature_received"; verificationId: string; submittedAt: Date }
+  | { type: "signature_requested"; requestId: string; reason?: string; contractChanged?: false }
+  | { type: "signature_requested"; contractChanged: true; reason?: string; requestId?: never }
+);

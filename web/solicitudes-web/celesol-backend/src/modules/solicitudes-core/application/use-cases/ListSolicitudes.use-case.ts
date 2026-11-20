@@ -1,3 +1,4 @@
+import { userWorkflowAreaIds } from "../../../auth/domain/workflow-areas";
 import { InvalidSolicitudesCoreRequestError } from "../../domain/solicitudes-core-errors";
 import type { ListSolicitudesInput } from "../dtos/ListSolicitudes.dto";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
@@ -20,6 +21,8 @@ export class ListSolicitudesUseCase {
   }
 
   async execute(input: ListSolicitudesInput) {
+    const areaIds = userWorkflowAreaIds(input.currentUser);
+    const areaFilter = areaIds.length === 1 ? areaIds[0] : areaIds;
     if (input.scope === "historicas") {
       if (!this.repository.listHistoricas) {
         throw new Error("Historicas list repository method is not available.");
@@ -44,7 +47,7 @@ export class ListSolicitudesUseCase {
         throw new Error("Recientes list repository method is not available.");
       }
 
-      if (input.vista === "mi-area" && !input.currentUser.workflowOwnerId) {
+      if (input.vista === "mi-area" && !areaIds.length) {
         throw new InvalidSolicitudesCoreRequestError("No tenés un área asignada para consultar Mi área.");
       }
       const resolvedExcludeEstado = input.excludeEstado ?? "CargaVendedor";
@@ -52,8 +55,8 @@ export class ListSolicitudesUseCase {
       return this.repository
         .listRecientes({
           ...(input.search?.trim() ? { search: input.search.trim() } : {}),
-          ...(input.vista === "mi-area" && input.currentUser.workflowOwnerId
-            ? { estadoOwnerId: input.currentUser.workflowOwnerId }
+          ...(input.vista === "mi-area"
+            ? { estadoOwnerId: areaFilter }
             : {}),
           ...(input.creadoresVisibles
             ? { creadoPorIn: input.creadoresVisibles }
@@ -114,10 +117,9 @@ export class ListSolicitudesUseCase {
         limit: input.limit,
         nroDocumento: input.nroDocumento,
         offset: input.offset,
-        workflowOwnerId:
-          input.workflowOwnerId ??
-          input.currentUser.workflowOwnerId ??
-          (input.currentUser.isSystemAdmin ? undefined : ""),
+        workflowOwnerId: input.currentUser.isSystemAdmin
+          ? input.workflowOwnerId ?? (areaIds.length ? areaFilter : undefined)
+          : areaIds.length ? areaFilter : "",
       })
       .then((solicitudes) => this.decorateSolicitudes(solicitudes, input));
   }
@@ -173,7 +175,7 @@ export class ListSolicitudesUseCase {
 
     // Consultar una sola vez el área autenticada para las capabilities.
     const workflowOwnerCode =
-      !input.currentUser.isSystemAdmin &&
+      input.currentUser.workflowOwners === undefined && !input.currentUser.isSystemAdmin &&
       input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(

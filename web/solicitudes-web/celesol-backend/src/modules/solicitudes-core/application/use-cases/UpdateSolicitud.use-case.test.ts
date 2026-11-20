@@ -894,11 +894,14 @@ it("atribuye las ediciones de Revisar por área autenticada y excluye la primera
     const useCase = buildUseCase({
       findById: async () => row, findWorkflowOwnerCodeById: async () => area,
     });
-    const { guard } = await useCase.prepare(updateInput({
-      currentUser: { id: "editor", workflowOwnerId: area === "RIESGO" ? "risk" : owner.id },
-      solicitud: { observaciones: "Corregida" },
-    }));
-    assert.equal(guard.sellerReviewActor, actor);
+    const editorArea = area === "RIESGO" ? { id: "risk", code: area, name: "Análisis" } : owner;
+    for (const workflowOwners of [undefined, [editorArea]]) {
+      const { guard } = await useCase.prepare(updateInput({
+        currentUser: { id: "editor", workflowOwnerId: editorArea.id, workflowOwners },
+        solicitud: { observaciones: "Corregida" },
+      }));
+      assert.equal(guard.sellerReviewActor, actor);
+    }
   }
 });
 

@@ -33,7 +33,7 @@ test("link notifications target the seller, deduplicate retries and distinguish 
 
 test("every completed attempt has one review notification; old-loan events are ignored", async () => {
   const { db, rows, source } = fixture();
-  const event = { type: "signature_received" as const, solicitudId: source.id, loanId: source.legacyOid, cycleId: "cycle", verificationId: "attempt1" };
+  const event = { type: "signature_received" as const, solicitudId: source.id, loanId: source.legacyOid, cycleId: "cycle", verificationId: "attempt1", submittedAt: new Date() };
   await notifySignatureEvent(db, event);
   await notifySignatureEvent(db, event);
   assert.equal(rows.size, 1);

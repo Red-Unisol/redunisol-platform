@@ -12,6 +12,7 @@ export class SolicitudesCoreRepositoryImpl implements SolicitudesCoreRepository 
     input: {
       actorUserId: string;
       allowReassignment?: boolean;
+      requiredAreaId?: string;
       solicitudId: string;
       assignedToUserId: string;
     },

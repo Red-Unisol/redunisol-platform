@@ -74,7 +74,7 @@ export function createReconocimientoRecibosRoutes(d: Dependencies) {
         const solicitud = await d.solicitudesRepository.findById(id.data);
         if (!solicitud)
           throw new SolicitudesError("Solicitud no encontrada.", 404);
-        const workflowOwnerCode = user.workflowOwnerId
+        const workflowOwnerCode = user.workflowOwners === undefined && user.workflowOwnerId
           ? await d.solicitudesRepository.findWorkflowOwnerCodeById?.(
               user.workflowOwnerId,
             )

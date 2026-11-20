@@ -23,11 +23,16 @@ describe("GetSolicitudByIdUseCase", () => {
       ["RIESGO", false, true], ["VENDEDORES", false, false],
       ["LEGAJOS_DIGITALES", false, false], [null, true, true],
     ] as const) {
-      const response = await detail.execute({ id: "sol-1", currentUser: {
-        id: "viewer", workflowOwnerId: owner, isSystemAdmin: admin,
-      } });
-      assert.equal(Object.hasOwn(response, "sellerReviewChanges"), visible);
-      if (visible) assert.deepEqual(response.sellerReviewChanges, sellerReviewChanges);
+      const areas = owner ? [{ id: owner, code: owner, name: owner }] : [];
+      // The normal API sends memberships, including when Análisis is secondary.
+      const treasury = { id: "treasury", code: "TESORERIA", name: "Tesorería" };
+      for (const workflowOwners of [undefined, areas, ...(owner === "RIESGO" ? [[treasury, ...areas]] : [])]) {
+        const response = await detail.execute({ id: "sol-1", currentUser: {
+          id: "viewer", workflowOwnerId: workflowOwners?.[0]?.id ?? owner, workflowOwners, isSystemAdmin: admin,
+        } });
+        assert.equal(Object.hasOwn(response, "sellerReviewChanges"), visible);
+        if (visible) assert.deepEqual(response.sellerReviewChanges, sellerReviewChanges);
+      }
     }
   });
 

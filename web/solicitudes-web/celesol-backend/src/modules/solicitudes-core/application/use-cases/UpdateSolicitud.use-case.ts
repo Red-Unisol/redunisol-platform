@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../auth/domain/workflow-areas";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { UpdateSolicitudInput } from "../dtos/UpdateSolicitud.dto";
 import {
@@ -77,7 +78,7 @@ export class UpdateSolicitudUseCase {
       throw new AdministrativeCorrectionError("La solicitud cambió. Actualizá la ficha antes de finalizar la revisión.");
 
     const workflowOwnerCode =
-      !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
+      input.currentUser.workflowOwners === undefined && !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId)
         : null;
@@ -147,7 +148,7 @@ export class UpdateSolicitudUseCase {
     });
     if (lineaOid !== solicitud.lineaPrestamoLegacyOid)
       assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, efectivos);
-    const editaRiesgo = workflowOwnerCode === "RIESGO";
+    const editaRiesgo = hasWorkflowArea(permissionUser, "RIESGO");
     const enforceMontoAprobadoRiesgo =
       !input.currentUser.isSystemAdmin && !input.currentUser.isAnalista && !editaRiesgo;
     if (input.solicitud?.montoAFinanciar !== undefined && enforceMontoAprobadoRiesgo)
@@ -249,7 +250,7 @@ export class UpdateSolicitudUseCase {
     const guard = {
       expectedEstadoActualId: solicitud.estadoActual.id,
       ...(solicitud.estadoActual.owner?.code === "VENDEDORES" && solicitud.estadoActual.code !== "CargaVendedor"
-        ? { sellerReviewActor: workflowOwnerCode === "VENDEDORES" && !input.currentUser.isAnalista
+        ? { sellerReviewActor: hasWorkflowArea(permissionUser, "VENDEDORES") && !permissionUser.isAnalista && !permissionUser.isSystemAdmin
             ? "seller" as const : "other" as const }
         : {}),
       enforceMontoAprobadoRiesgo,

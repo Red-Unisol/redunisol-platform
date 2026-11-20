@@ -12,6 +12,11 @@ export const assignWorkflowOwnerBodySchema = z.object({
   workflowOwnerId: uuidLikeSchema.nullable(),
 });
 
+export const assignWorkflowOwnersBodySchema = z.object({
+  workflowOwnerIds: z.array(uuidLikeSchema.transform(id => id.toLowerCase())).max(3)
+    .refine(ids => new Set(ids).size === ids.length, "Las áreas no pueden repetirse."),
+});
+
 export type AssignWorkflowOwnerParams = z.infer<
   typeof assignWorkflowOwnerParamsSchema
 >;

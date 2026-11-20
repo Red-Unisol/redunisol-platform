@@ -1,3 +1,4 @@
+import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
 import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
 import { createSellerReviewFixture } from "./seller-review-fixtures.ts";
 import { SCENARIOS } from "./scenarios.ts";
@@ -67,6 +68,8 @@ export function createUiLabFetch(
 ): typeof fetch {
   let externalApproved = options.externalLegajo === "approved";
   let cbuAttempts = 0;
+  const demoUsers = options.production?.role === "admin" && options.production.editAreas
+    ? structuredClone(USERS_FIXTURE) : null;
   const sellerReview = options.production?.sellerReviewState
     ? createSellerReviewFixture(options.production.sellerReviewState, options.production.role ?? "riesgo", Boolean(options.production.signatureApproved))
     : null;
@@ -78,6 +81,25 @@ export function createUiLabFetch(
     const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
     const signal = init?.signal ?? request?.signal;
     signal?.throwIfAborted();
+    if (demoUsers && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {
+      if (method === "GET" && url.pathname === "/auth/users/pending-area") {
+        return Response.json({ users: demoUsers.filter((user) => user.state === 2) });
+      }
+      if (method === "GET" && url.pathname === "/auth/users") return Response.json({ users: demoUsers });
+      const user = demoUsers.find((user) => url.pathname === `/auth/users/${user.id}/workflow-owners`);
+      if (user && method === "PATCH") {
+        const { workflowOwnerIds } = JSON.parse(String(init?.body));
+        const removed = user.workflowOwners?.find((area) => !workflowOwnerIds.includes(area.id));
+        user.workflowOwners = USERS_WORKFLOW_OWNERS.filter((area) => workflowOwnerIds.includes(area.id));
+        user.workflowOwnerId = user.workflowOwners[0]?.id ?? null;
+        if (user.state !== 0) user.state = user.workflowOwners.length ? 1 : 2;
+        user.pendingAssignments = removed ? [{
+          id: HEADER_SAMPLE.id, nroSolicitud: HEADER_SAMPLE.number, areaCode: removed.code,
+          areaName: removed.name, stateName: "Solicitada",
+        }] : [];
+        return Response.json({ user, pendingAssignments: user.pendingAssignments });
+      }
+    }
     if (sellerReview && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {
       const result = sellerReview(method, url.pathname, init?.body);
       if (result) return result;

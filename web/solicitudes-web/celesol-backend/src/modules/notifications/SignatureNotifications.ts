@@ -1,3 +1,4 @@
+import { activeWorkflowAreaWhere } from "../auth/domain/workflow-areas";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { SignatureNotificationEvent } from "./types";
@@ -47,7 +48,7 @@ export async function notifySignatureEvent(db: NotificationDb, event: SignatureN
   } });
   if (!s || s.archivedAt || s.legacyOid !== event.loanId) return;
   const key = signatureEventKey([event.type, event.solicitudId, event.loanId, event.cycleId,
-    event.verificationId ?? event.requestId ?? ""]);
+    event.type === "signature_received" ? event.verificationId : event.requestId ?? ""]);
   if (event.type === "signature_requested") {
     const recipient = await seller(db, s.vendedorId, s.createdBy);
     await insert(db, {
@@ -58,7 +59,7 @@ export async function notifySignatureEvent(db: NotificationDb, event: SignatureN
     return;
   }
   const reviewers = await db.user.findMany({ where: {
-    state: 1, deletedAt: null, workflowOwner: { code: "LEGAJOS_DIGITALES", isActive: true },
+    state: 1, deletedAt: null, ...activeWorkflowAreaWhere("LEGAJOS_DIGITALES", event.submittedAt),
   }, select: { id: true } });
   await insert(db, {
     recipients: reviewers.map(u => u.id), solicitudId: event.solicitudId, loanId: event.loanId,

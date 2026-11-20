@@ -19,9 +19,10 @@ import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
 import { solicitudCbuFixture, type CbuScenario } from "./cbu-fixtures.ts";
 import { padronesFixture, type PadronesScenario } from "./padrones-fixtures.ts";
 
-export type ProductionRole = "riesgo" | "admin" | "vendedor";
+export type ProductionRole = "riesgo" | "admin" | "vendedor" | "tesoreria-legajos" | "analisis-legajos";
 export type ProductionFixtureOptions = {
   role?: ProductionRole;
+  editAreas?: boolean;
   externalPayment?: boolean;
   allowEdit?: boolean;
   cutoffScenario?: "confirmed" | "pending";
@@ -39,11 +40,16 @@ export function productionSession(
   role: ProductionRole = "riesgo",
 ): LoginResponse {
   const base = HEADER_SESSION_FIXTURE.user;
+  const reviewedAreas = role === "tesoreria-legajos" ? ["TESORERIA", "LEGAJOS_DIGITALES"]
+    : role === "analisis-legajos" ? ["RIESGO", "LEGAJOS_DIGITALES"] : [];
+  const workflowOwners = USERS_WORKFLOW_OWNERS.filter((owner) => reviewedAreas.includes(owner.code));
   return {
     user: {
       ...base,
       isSystemAdmin: role === "admin",
-      workflowOwner: {
+      workflowOwnerId: workflowOwners[0]?.id ?? base.workflowOwnerId,
+      workflowOwners: workflowOwners.length ? workflowOwners : undefined,
+      workflowOwner: workflowOwners[0] ?? {
         ...base.workflowOwner!,
         code: role === "vendedor" ? "VENDEDORES" : "RIESGO",
         name:
@@ -456,6 +462,12 @@ export function productionFixture(
   else if (pathname === "/auth/workflow-owners") body = { workflowOwners: USERS_WORKFLOW_OWNERS };
   else if (pathname === "/auth/impersonation") body = { context: null };
   else if (pathname === "/solicitudes") body = [{ ...PRODUCTION_SOLICITUD, ultimaNovedad: null }];
+  else if (pathname === "/solicitudes/document-review/inbox")
+    body = { items: [{ solicitudId: HEADER_SAMPLE.id, nroSolicitud: HEADER_SAMPLE.number, prestamoId: "demo-prestamo", socio: "Socia de ejemplo",
+      vendedor: null, monto: null, status: "to_review", completedAttempts: 1, lastCompletedAt: timestamp, analysisReady: true, reason: null }], total: 1, offset: 0, limit: 50 };
+  else if (pathname === "/api/notifications" && (options.role === "tesoreria-legajos" || options.role === "analisis-legajos"))
+    body = { items: [{ id: "demo-aviso", title: "Nueva firma para revisar", body: "Socia de ejemplo", solicitudId: HEADER_SAMPLE.id, createdAt: timestamp,
+      readAt: null, kind: "signature" }], unreadCount: 1, total: 1, offset: 0, limit: 8 };
   else if (pathname === "/api/notifications")
     body = { items: [], unreadCount: 0, total: 0, offset: 0, limit: 8 };
   else if (pathname === base)

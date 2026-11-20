@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../../auth/domain/entities/User.entity";
 export type DeleteSolicitudAdjuntoInput = {
   solicitudId: string;
   adjuntoId: string;
@@ -5,6 +6,7 @@ export type DeleteSolicitudAdjuntoInput = {
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   workflowOwnerId: string;

@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 export type ListSolicitudesInput = {
   search?: string;
   vista?: "mi-area" | "todas";
@@ -20,6 +21,7 @@ export type ListSolicitudesInput = {
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string | null;
   };
   workflowOwnerId?: string;

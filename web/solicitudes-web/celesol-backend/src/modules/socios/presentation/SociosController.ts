@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../auth/domain/workflow-areas";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
 
@@ -331,7 +332,7 @@ export class SociosController {
   }
 
   private isRiesgoOrAdmin(user: AuthUser): boolean {
-    return user.isSystemAdmin || user.workflowOwner?.code === "RIESGO";
+    return user.isSystemAdmin || hasWorkflowArea(user, "RIESGO");
   }
 
   private parseRequest<T>(schema: ZodSchema<T>, payload: unknown): T {

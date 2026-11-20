@@ -32,7 +32,7 @@ export class ListSolicitudTransitionsUseCase {
     // Necesitamos el codigo de owner (no solo el id) para la excepcion de
     // RIESGO en la transicion "pagar" (ver SolicitudWorkflowPrismaDatasource).
     const workflowOwnerCode =
-      !input.isSystemAdmin && this.solicitudesRepository.findWorkflowOwnerCodeById
+      input.workflowOwners === undefined && !input.isSystemAdmin && this.solicitudesRepository.findWorkflowOwnerCodeById
         ? await this.solicitudesRepository.findWorkflowOwnerCodeById(
             input.workflowOwnerId,
           )

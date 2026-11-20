@@ -1,3 +1,4 @@
+import type { AuthWorkflowOwner } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudEstadoHistorial } from "../entities/SolicitudEstadoHistorial.entity";
 import type { WorkflowTransition } from "../entities/WorkflowTransition.entity";
 import type { DismissalReversal } from "../workflow/Dismissal";
@@ -39,6 +40,7 @@ export type SolicitudWorkflowRepository = {
   listAvailableTransitions(input: {
     isSystemAdmin?: boolean;
     solicitudId: string;
+    workflowOwners?: AuthWorkflowOwner[];
     workflowOwnerId: string;
     workflowOwnerCode?: string | null;
   }): Promise<WorkflowTransition[]>;
@@ -46,6 +48,7 @@ export type SolicitudWorkflowRepository = {
     solicitudId: string;
     currentUser: {
       id: string;
+      workflowOwners?: AuthWorkflowOwner[];
       workflowOwnerId: string | null;
     };
   }): Promise<SolicitudEstadoHistorial[]>;

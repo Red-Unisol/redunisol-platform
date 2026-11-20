@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../auth/domain/workflow-areas";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 export const AMEJUCA_LINE_IDS = [
   "2519",
@@ -12,9 +13,9 @@ export function isAmejucaLine(id: string | number) {
   return (AMEJUCA_LINE_IDS as readonly string[]).includes(String(id));
 }
 export function canManageMonthlyCutoffs(
-  user: Pick<AuthUser, "isSystemAdmin" | "workflowOwner">,
+  user: Pick<AuthUser, "isSystemAdmin" | "workflowOwner" | "workflowOwners">,
 ) {
-  return user.isSystemAdmin || user.workflowOwner?.code === "RIESGO";
+  return user.isSystemAdmin || hasWorkflowArea(user, "RIESGO");
 }
 export class MonthlyCutoffError extends Error {
   constructor(

@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../auth/domain/workflow-areas";
 import { Router } from "express";
 import { z } from "zod";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
@@ -19,7 +20,7 @@ export function createPadronesRouter(deps: {
     res.setHeader("Cache-Control", "no-store, private");
     try {
       const user = await deps.auth.execute(req.cookies?.[ACCESS_TOKEN_COOKIE]);
-      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES")
+      if (!user.isSystemAdmin && hasWorkflowArea(user, "VENDEDORES"))
         throw new ForbiddenSolicitudAccessError();
       const id = z.uuid().safeParse(req.params.id);
       if (!id.success) {

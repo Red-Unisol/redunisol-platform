@@ -1,3 +1,4 @@
+import { hasArea } from "../../auth/utils/auth-user.ts";
 import type { AuthUser } from "@/modules/auth/services/auth-api";
 
 // Los mismos que ESTADOS_CON_TOPE_DE_RIESGO del backend: Riesgo le devuelve la
@@ -6,14 +7,14 @@ const ESTADOS_CON_TOPE_DE_RIESGO = ["PreAprobada", "Revisar"];
 
 /** Tope del monto para este usuario, o null si no tiene (Riesgo y administradores no tienen). */
 export function getTopeMontoRiesgo(
-  user: Pick<AuthUser, "isSystemAdmin" | "workflowOwner"> | null | undefined,
+  user: Pick<AuthUser, "isSystemAdmin" | "workflowOwner" | "workflowOwners"> | null | undefined,
   solicitud: {
     estadoActual: { code: string };
     montoAprobadoRiesgo?: number | null;
     sellerReviewStartedAt?: string | null;
   },
 ) {
-  if (!user || user.isSystemAdmin || user.workflowOwner?.code === "RIESGO") {
+  if (!user || user.isSystemAdmin || hasArea(user, "RIESGO")) {
     return null;
   }
 

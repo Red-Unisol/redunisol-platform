@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId } from "../../../auth/domain/workflow-areas";
 import { randomUUID } from "node:crypto";
 import type { MonthlyCutoffService } from "../../../monthly-cutoffs/domain";
 import { actingContext } from "../../../auth/impersonation/context";
@@ -197,7 +198,7 @@ export class CreatePrestamoLegacyUseCase {
 
   private assertCanGenerate(solicitud: SolicitudCore, input: CreatePrestamoLegacyInput) {
     if (!input.currentUser.isSystemAdmin &&
-      (!solicitud.estadoActual.ownerId || solicitud.estadoActual.ownerId !== input.currentUser.workflowOwnerId))
+      (!hasWorkflowAreaId(input.currentUser, solicitud.estadoActual.ownerId)))
       throw new ForbiddenSolicitudAccessError();
     if (solicitud.estadoActual.code !== "Confirmada")
       throw new AdministrativeCorrectionError("El préstamo se genera o regenera desde Confirmada. Primero completá la revisión y confirmá la solicitud.");
@@ -218,7 +219,7 @@ export class CreatePrestamoLegacyUseCase {
     if (!input.currentUser.isSystemAdmin) {
       const ownerId = solicitud.estadoActual.ownerId ?? null;
 
-      if (!ownerId || ownerId !== input.currentUser.workflowOwnerId) {
+      if (!hasWorkflowAreaId(input.currentUser, ownerId)) {
         throw new ForbiddenSolicitudAccessError();
       }
     }

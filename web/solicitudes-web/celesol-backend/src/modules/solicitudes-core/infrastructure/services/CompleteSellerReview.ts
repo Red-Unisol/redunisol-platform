@@ -1,3 +1,4 @@
+import { hasWorkflowAreaId } from "../../../auth/domain/workflow-areas";
 import type { DbClient } from "../../../../db/prisma";
 import type { ChangeSolicitudStateInput } from "../../application/dtos/ChangeSolicitudState.dto";
 import type { UpdateSolicitudUseCase } from "../../application/use-cases/UpdateSolicitud.use-case";
@@ -34,7 +35,7 @@ export class CompleteSellerReview {
       if (!current) throw new SolicitudCoreNotFoundError();
       if (!input.expectedUpdatedAt || current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt))
         throw new AdministrativeCorrectionError("La solicitud cambió. Actualizá la ficha antes de finalizar la revisión.");
-      if (!currentUser.isSystemAdmin && current.estadoActual.ownerId !== currentUser.workflowOwnerId)
+      if (!currentUser.isSystemAdmin && !hasWorkflowAreaId(currentUser, current.estadoActual.ownerId))
         throw new ForbiddenSolicitudAccessError();
       if (current.archivedAt || current.estadoActual.code !== "Liquidada" || !current.sellerReviewStartedAt)
         throw new AdministrativeCorrectionError("La solicitud ya no está pendiente de revisión de datos.");

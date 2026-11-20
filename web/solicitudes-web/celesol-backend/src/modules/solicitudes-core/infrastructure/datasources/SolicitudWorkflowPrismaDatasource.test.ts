@@ -37,6 +37,25 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     assert.equal(transitions[0]?.toState.owner.code, "SISTEMA");
   });
 
+  it("rechecks a revoked secondary membership inside the workflow transaction", async () => {
+    const prisma = new FakeWorkflowPrisma({
+      currentSolicitud: solicitudRecord({ estadoActualId: "state-riesgo", estadoActual: resolveStateById("state-riesgo") }),
+    });
+    const command = {
+      actionCode: "preaprobar", changedBy: "user-1", solicitudId: "sol-1", now: new Date(),
+      workflowOwnerId: "owner-tesoreria",
+      workflowOwners: [
+        { id: "owner-tesoreria", code: "TESORERIA", name: "Tesorería" },
+        { id: "owner-riesgo", code: "RIESGO", name: "Riesgo" },
+      ],
+    };
+    // The transaction sees the user's current area, Vendedores, after revocation.
+    await assert.rejects(executeDomainStepPlan(new SolicitudWorkflowPrismaDatasource(prisma.client()), command),
+      ForbiddenSolicitudAccessError);
+    assert.equal(prisma.historyCreateCalls.length, 0);
+    assert.equal(prisma.solicitudUpdateCalls.length, 0);
+  });
+
   it("rejects list when the user has no workflow owner assignment", async () => {
     const datasource = new SolicitudWorkflowPrismaDatasource(
       new FakeWorkflowPrisma().client(),
