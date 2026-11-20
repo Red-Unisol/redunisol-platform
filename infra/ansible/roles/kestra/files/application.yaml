@@ -1,0 +1,45 @@
+datasources:
+  postgres:
+    url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    maximum-pool-size: 10
+
+kestra:
+  server:
+    basic-auth:
+      enabled: true
+      username: ${KESTRA_ADMIN_EMAIL}
+      password: ${KESTRA_ADMIN_PASSWORD}
+  repository:
+    type: postgres
+  queue:
+    type: postgres
+  controller:
+    # Single standalone controller: periodic connection rotation adds no balancing.
+    # Mitigate jobs stranded in SUBMITTED across gRPC max_age reconnects on 2.0.0.
+    # Revisit when upgrading the engine or introducing multiple controllers.
+    max-connection-age: PT0S
+  storage:
+    type: local
+    local:
+      base-path: /app/storage
+  tasks:
+    tmp-dir:
+      path: /tmp/kestra-wd/tmp
+    scripts:
+      docker:
+        volume-enabled: true
+  url: ${KESTRA_PUBLIC_URL}
+  anonymous-usage-report:
+    enabled: false
+  ui-anonymous-usage-report:
+    enabled: false
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.scripts.runner.docker.Docker
+        values:
+          volume-enabled: true
+          pullPolicy: IF_NOT_PRESENT
+          autoRemove: true

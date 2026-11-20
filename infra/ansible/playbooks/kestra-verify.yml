@@ -1,0 +1,17 @@
+---
+- name: Verify the dedicated Kestra stack using read-only inspections
+  hosts: kestra_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm immutable dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify the Kestra stack
+      ansible.builtin.import_role:
+        name: kestra
+        tasks_from: verify
+      tags: [kestra]
