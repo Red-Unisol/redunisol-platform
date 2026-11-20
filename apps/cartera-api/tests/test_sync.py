@@ -94,3 +94,38 @@ def test_no_aplica_si_vimarx_devuelve_vacio(tmp_path):
     conn = connect(settings.db_path)
     assert conn.execute("SELECT COUNT(*) FROM prestamos WHERE eliminado = 0").fetchone()[0] == 1
     assert conn.execute("SELECT estado FROM sincronizaciones ORDER BY id DESC").fetchone()[0] == "error"
+
+
+def test_vimarx_reintenta_timeouts():
+    from cartera_api.vimarx import VimarxClient
+
+    cliente = VimarxClient("x", esperas=(0, 0))
+    respuestas = [TimeoutError("timed out"), TimeoutError("timed out"), [[1, "a"]]]
+
+    def post(_body):
+        r = respuestas.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    cliente._post = post
+    assert cliente.evaluate_list("T", "True", ["ID", "N"], 10) == [{"ID": 1, "N": "a"}]
+
+
+def test_vimarx_se_rinde_tras_los_reintentos():
+    from cartera_api.vimarx import VimarxClient, VimarxError
+
+    cliente = VimarxClient("x", esperas=(0,))
+    llamadas = []
+
+    def post(_body):
+        llamadas.append(1)
+        raise TimeoutError("timed out")
+
+    cliente._post = post
+    try:
+        cliente.evaluate_list("T", "True", ["ID"], 10)
+        raise AssertionError("debía fallar")
+    except VimarxError:
+        pass
+    assert len(llamadas) == 2

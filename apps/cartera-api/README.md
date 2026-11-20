@@ -58,6 +58,16 @@ con `siguiente = null` no hay más. Orden estable por `actualizado_en`.
 | `CARTERA_PROVEEDORES` | JSON; `["SANCOR%", "M SANATORIO SANTA FE", "MEDICA ROSARIO"]` |
 | `CARTERA_PARTICIPACION` | JSON; `{"SANCOR 20 PLAN DESEN": 0.5705, "SANCOR%": 0.5}` |
 
+## Despliegue (VPS Principal)
+
+- `.github/workflows/deploy-cartera-api-prod.yml`: corre al mergear en `main` cambios de `apps/cartera-api/`.
+  Prueba, construye `ghcr.io/red-unisol/cartera-api`, descifra el `.env` y levanta el contenedor en
+  `/opt/cartera-api` con `deploy/docker-compose.vps.yml`. No hay ambiente de dev. No toca Apache.
+- `deploy/cartera-api.prod.env.enc`: `.env` de prod cifrado con la clave de `RUNTIME_ENV_KEY`
+  (`kestra/tools/manage_encrypted_env.py`). El texto plano queda solo en `.local-secrets/cartera-api.prod.env`.
+- El contenedor escucha solo en `127.0.0.1:3070`; la base queda en `/opt/cartera-api/data`.
+- Tope de memoria: `CARTERA_MEM_LIMIT` (768m por defecto).
+
 ## Publicación (Cloudflare + Apache)
 
 `cartera-api.redunisol.com.ar` va detrás de Cloudflare (proxied), con SSL "Full (strict)":
