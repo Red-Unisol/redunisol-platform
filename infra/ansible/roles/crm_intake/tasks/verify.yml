@@ -1,0 +1,40 @@
+---
+- name: Read status over the private Unix socket
+  ansible.builtin.uri:
+    url: http://localhost/healthz
+    unix_socket: /run/redunisol-crm-intake/status.sock
+    use_proxy: false
+    return_content: true
+    status_code: 200
+  register: crm_intake_status
+  until: crm_intake_status.status == 200
+  retries: 8
+  delay: 1
+  check_mode: false
+
+- name: Verify the inactive release is loaded
+  ansible.builtin.assert:
+    that:
+      - crm_intake_status.json.service == 'crm-intake'
+      - crm_intake_status.json.revision is match('^[0-9a-f]{40}$')
+      - crm_intake_revision is not defined or crm_intake_status.json.revision == crm_intake_revision
+      - crm_intake_status.json.mode == 'inactive'
+      - crm_intake_status.json.capture_enabled is sameas false
+      - crm_intake_status.json.normalization_worker_enabled is sameas false
+      - crm_intake_status.json.prequalification_enabled is sameas false
+
+- name: Verify a synthetic capture is rejected before processing
+  ansible.builtin.uri:
+    url: http://localhost/v1/submissions
+    unix_socket: /run/redunisol-crm-intake/status.sock
+    use_proxy: false
+    method: POST
+    body_format: json
+    body: {}
+    status_code: 503
+    return_content: true
+  register: crm_intake_disabled_probe
+  failed_when: >-
+    crm_intake_disabled_probe.status != 503 or
+    crm_intake_disabled_probe.json.error | default('') != 'capture_inactive'
+  check_mode: false

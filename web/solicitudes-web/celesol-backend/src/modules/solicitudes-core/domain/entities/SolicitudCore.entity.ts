@@ -222,7 +222,10 @@ export type SolicitudCoreGarantia = {
   tipoRelacion: string | null;
 };
 
+export type SellerReviewChange = { field: string; before: string | null; after: string | null };
+
 export type SolicitudCore = {
+  sellerReviewChanges?: SellerReviewChange[];
   loanReplacementPending?: boolean;
   appearance?: SolicitudAppearance;
   assignedToUser?: {
@@ -266,6 +269,7 @@ export type SolicitudCore = {
   capabilities?: SolicitudCoreCapabilities;
   participants?: SolicitudCoreParticipant[];
   titular: SolicitudCoreTitular;
+  sellerReviewStartedAt?: Date | null;
   updatedAt: Date;
   vendedorSolicitud: string | null;
 };

@@ -167,22 +167,10 @@ export function executeSolicitudCoreTransition(
   solicitudId: string,
   payload: ExecuteWorkflowTransitionRequest,
 ) {
-  const requestBody: ExecuteWorkflowTransitionRequest = {
-    actionCode: payload.actionCode,
-  };
-
-  if (payload.comment !== undefined) {
-    requestBody.comment = payload.comment;
-  }
-
-  if (payload.reason !== undefined) {
-    requestBody.reason = payload.reason;
-  }
-
   return withAreaForbiddenMessage(
     apiClient.post<ExecuteWorkflowTransitionResponse>(
       `/solicitudes/${solicitudId}/transitions`,
-      requestBody,
+      payload,
     ),
   );
 }

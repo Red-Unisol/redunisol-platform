@@ -19,6 +19,9 @@ installUiLabNetworkGuard(
           allowEdit: search.get("edit") === "1",
           cbuScenario: parseCbuScenario(search.get("cbu")),
           padronesScenario: parsePadronesScenario(search.get("scenario")),
+          sellerReviewState: search.get("state") === "confirmada" ? "Confirmada" : search.get("state") === "liquidada" ? "Liquidada" : undefined,
+          signatureApproved: search.get("signature") === "approved",
+          sellerChanges: search.get("sellerChanges") === "1",
           workflowState: search.get("state") === "evaluacion-externa"
             ? "EvaluacionExterna"
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,

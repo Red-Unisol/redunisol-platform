@@ -82,6 +82,22 @@ it("the transaction rejects a source changed during external checks", async () =
   assert.equal(coreReconciliationPending(f.row), true);
 });
 
+it("missing reconciliation prevents analysis preflight before any Vimarx query but leaves legacy verification untouched", async () => {
+  const f = fixture();
+  Object.assign(f.row, { administrativeCoreControl: null });
+  const offline = { ...f.deps, lifecycle: async () => { throw new Error("Unexpected Vimarx request"); } };
+  for (const action of ["liquidar", "liquidar_con_firma", "enviar_a_liquidada"]) {
+    await assert.rejects(assertWorkflowFinancialReady(f.db, "s", "operator", offline, action),
+      { statusCode: 409, message: /no tiene registro de conciliación/ });
+  }
+  for (const state of ["Liquidada", "VerificarFirmaYDocumentacion", "Transferir"]) {
+    f.row.estadoActual.code = state;
+    await assertWorkflowFinancialReady(f.db, "s", "operator", f.deps, state === "Transferir" ? "pagar" : "transferir");
+  }
+  assert.equal(f.writes(), 0);
+  assert.equal(f.audits.length, 0);
+});
+
 it("an already reconciled loan is still checked as active, without duplicate reconciliation audits", async () => {
   const f = fixture();
   f.row.administrativeCoreControl.reconciledFingerprint = coreConditionsFingerprint(f.row);

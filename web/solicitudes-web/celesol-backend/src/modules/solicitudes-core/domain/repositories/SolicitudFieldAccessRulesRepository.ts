@@ -13,6 +13,7 @@ export type SolicitudFieldAccessRuleRecord = {
 export type SolicitudFieldAccessRulesRepository = {
   findByWorkflowStateId(
     workflowStateId: string,
+    forSellerReview?: boolean,
   ): Promise<SolicitudFieldAccessRuleRecord | null>;
   findByWorkflowStateIds(
     workflowStateIds: string[],

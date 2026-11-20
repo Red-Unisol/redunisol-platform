@@ -336,8 +336,10 @@ export function resolveFieldAccessRuleRecord(
   };
 }
 
-export function assertPatchMatchesFieldAccess(
-  input: UpdateSolicitudInput,
+type EditableSolicitudInput = Omit<UpdateSolicitudInput, "createdBy" | "createdByLegacyUser">;
+
+export function assertPatchMatchesFieldAccess<T extends EditableSolicitudInput>(
+  input: T,
   fieldAccess: SolicitudFieldAccess,
   currentSolicitud?: Pick<SolicitudCore, "garantias">,
 ) {
@@ -375,8 +377,8 @@ export function assertPatchMatchesFieldAccess(
   }
 }
 
-export function extractSolicitudPatchAccessTargets(
-  input: UpdateSolicitudInput,
+export function extractSolicitudPatchAccessTargets<T extends EditableSolicitudInput>(
+  input: T,
   currentGarantias: SolicitudCore["garantias"] = [],
 ): PatchAccessTargets {
   const blockedFields = new Set<string>();

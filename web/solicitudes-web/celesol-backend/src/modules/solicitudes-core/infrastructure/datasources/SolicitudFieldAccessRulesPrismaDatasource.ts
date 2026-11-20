@@ -26,6 +26,13 @@ export class SolicitudFieldAccessRulesPrismaDatasource {
     });
   }
 
+  findByWorkflowStateCode(code: string) {
+    return this.prisma.solicitudFieldAccessRule.findFirst({
+      where: { workflowState: { code } },
+      select: { active: true, editableFields: true, editableGroups: true, readonlyReason: true },
+    });
+  }
+
   findByWorkflowStateIds(workflowStateIds: string[]) {
     if (workflowStateIds.length === 0) {
       return Promise.resolve([]);

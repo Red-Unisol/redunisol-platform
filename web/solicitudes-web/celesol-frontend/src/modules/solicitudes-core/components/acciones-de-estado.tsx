@@ -36,11 +36,14 @@ export function AccionesDeEstado({
 
   return (
     <div className="flex items-center gap-2">
-      {mas.length > 0 ? <MasAcciones acciones={mas} /> : null}
+      {mas.length > 0 ? <MasAcciones acciones={mas} secundariaEnMovil={secundaria} /> : null}
       {secundaria ? (
         <Button
           aria-label={secundaria.etiqueta}
-          className="h-10 rounded-md border border-white/30 bg-transparent px-3 font-semibold text-white hover:bg-white/10 sm:px-4"
+          className={cn(
+            "h-10 rounded-md border border-white/30 bg-transparent px-3 font-semibold text-white hover:bg-white/10 sm:px-4",
+            mas.length > 0 && "max-sm:hidden",
+          )}
           disabled={secundaria.deshabilitada}
           onClick={secundaria.onClick}
           title={secundaria.motivo ?? undefined}
@@ -78,14 +81,17 @@ export function MotivoBloqueo({ children }: { children: ReactNode }) {
   );
 }
 
-function MasAcciones({ acciones }: { acciones: AccionDeEstado[] }) {
+function MasAcciones({ acciones, secundariaEnMovil }: {
+  acciones: AccionDeEstado[];
+  secundariaEnMovil?: AccionDeEstado;
+}) {
   const [abierto, setAbierto] = useState(false);
   const comunes = acciones.filter((accion) => !accion.terminal);
   const terminales = acciones.filter((accion) => accion.terminal);
 
-  function item(accion: AccionDeEstado) {
+  function item(accion: AccionDeEstado, className?: string) {
     return (
-      <li key={accion.clave}>
+      <li className={className} key={accion.clave}>
         <button
           className={cn(
             "flex w-full flex-col items-start rounded-md px-3 py-2 text-left text-sm font-medium transition hover:bg-background disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent",
@@ -124,11 +130,14 @@ function MasAcciones({ acciones }: { acciones: AccionDeEstado[] }) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-1">
-        <ul>{comunes.map(item)}</ul>
+        <ul>
+          {secundariaEnMovil && item(secundariaEnMovil, "sm:hidden")}
+          {comunes.map((accion) => item(accion))}
+        </ul>
         {comunes.length > 0 && terminales.length > 0 ? (
           <hr className="my-1 border-border" />
         ) : null}
-        <ul>{terminales.map(item)}</ul>
+        <ul>{terminales.map((accion) => item(accion))}</ul>
       </PopoverContent>
     </PopoverRoot>
   );

@@ -461,16 +461,27 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return legacyUserRows[0]?.id ?? null;
   }
 
-  // Un mismo login puede tener mas de un VendedorSolicitud asociado
-  // (duplicados/perfiles renombrados a lo largo del tiempo), sin un campo
-  // confiable en el catalogo VendedorSolicitud -- ni "Activo", ni fecha --
-  // para distinguir cual es el vigente. En cambio, el historial real de
-  // solicitudes de ese login si lo revela: se toma el VendedorSolicitud.ID
-  // de la solicitud propia mas reciente (mayor Oid). Confirmado contra
-  // datos reales que esto le gana a "elegir el ID mas alto del catalogo"
-  // (que en un caso real eligio un perfil viejo en desuso) -- ver seccion
-  // 14 del design doc.
   async getVendedorLegacyId(legacyUser: string): Promise<number | null> {
+    const escapedLegacyUser = escapeLegacyString(legacyUser);
+    const activeSellers = await this.executeEvaluateList({
+      tipo: "PreSolicitud.Module.VendedorSolicitud",
+      buildCmd: () => `Activo = true And Usuario.UserName = '${escapedLegacyUser}'`,
+      fields: ["ID"],
+      defaultMax: 2,
+      mapRow: (row) => {
+        const id = getNumberValue(row, { ID: 0 }, "ID");
+        if (row.length !== 1 || id === null || !Number.isSafeInteger(id) || id <= 0) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return id;
+      },
+    }, 2, true);
+
+    if (activeSellers.length <= 1) {
+      return activeSellers[0] ?? null;
+    }
+
+    // Si hay varias fichas activas, se elige la usada en la solicitud más reciente.
     const rows = await this.executeEvaluateList(
       buildSolicitudesByVendedorUserNameDefinition(legacyUser),
       500,
@@ -1456,7 +1467,7 @@ function buildSolicitudesByVendedorUserNameDefinition(
   const escapedLegacyUser = escapeLegacyString(legacyUser);
 
   return {
-    buildCmd: () => `VendedorSolicitud.Usuario.UserName = '${escapedLegacyUser}'`,
+    buildCmd: () => `VendedorSolicitud.Activo = true And VendedorSolicitud.Usuario.UserName = '${escapedLegacyUser}'`,
     defaultMax: 500,
     fields: VENDEDOR_HISTORIAL_FIELDS,
     mapRow: mapSolicitudVendedorHistorialRow,

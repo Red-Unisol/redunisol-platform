@@ -14,6 +14,8 @@ const ETIQUETA_DE_ACCION: Record<string, string> = {
   desestimar: "Desestimar",
   devolver_a_liquidada: "Devolver a Liquidada",
   enviar: "Enviar a Riesgo",
+  enviar_a_liquidada: "Enviar a liquidada",
+  finalizar_revision_datos: "Finalizar revisión de datos",
   evaluacion_externa: "Enviar a Evaluación Externa",
   volver_a_revision_riesgo: "Volver a Revisión Riesgo",
   liquidar: "Enviar a firmar",
@@ -39,7 +41,7 @@ export const ACCIONES_DE_ESTADO: Record<
   { primaria?: string; secundaria?: string }
 > = {
   CargaVendedor: { primaria: "enviar" },
-  Confirmada: { primaria: "liquidar", secundaria: "revisar" },
+  Confirmada: { primaria: "enviar_a_liquidada", secundaria: "revisar" },
   EvaluacionExterna: { primaria: "volver_a_revision_riesgo" },
   Liquidada: { primaria: "transferir" },
   PreAprobada: { primaria: "confirmar" },

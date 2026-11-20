@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { hasWorkflowArea } from "../auth/domain/workflow-areas";
 import { Prisma, type PrismaClient, type SolicitudDocumentReview, type SolicitudDocumentDecision } from "@prisma/client";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
@@ -41,8 +42,10 @@ export function canManageSignature(row: SignatureSourceRow) {
   return isSignatureOpen(row) && !row.desembolso && !row.pagoExterno;
 }
 
-export function isAnalysisReady(row: Pick<SignatureSourceRow, "analisisFinalizadoAt" | "estadoActual">) {
-  // Existing Liquidada/verification cases already passed the analysis handoff.
+export function isAnalysisReady(row: Pick<SignatureSourceRow, "analisisFinalizadoAt" | "sellerReviewStartedAt"> & { estadoActual: { code: string } }) {
+  // A seller review remains open through any reanalysis, even if a signature arrives first.
+  if (row.sellerReviewStartedAt) return false;
+  // Legacy Liquidada/verification cases already passed the analysis handoff.
   return Boolean(row.analisisFinalizadoAt || ["Liquidada", "VerificarFirmaYDocumentacion", "Transferir"].includes(row.estadoActual.code));
 }
 
@@ -66,6 +69,34 @@ export function reviewSource(s: SignatureSourceRow): ReviewSource {
     phone: t?.celular ?? null,
     email: t?.email ?? null,
   };
+}
+
+export function newSignatureCycle(previousExclusions: unknown, attemptIds: string[], reason: string, requestedAt: Date) {
+  const previousIds = Array.isArray(previousExclusions)
+    ? previousExclusions.filter((id): id is string => typeof id === "string") : [];
+  return {
+    signatureCycleId: randomUUID(), signatureRequestedAt: requestedAt, signatureRequestReason: reason,
+    signatureExcludedVerificationIds: [...new Set([...previousIds, ...attemptIds])],
+  };
+}
+
+// Include unfinished attempts already observed before the seller's correction.
+// A late provider callback from one of them belongs to the earlier contract.
+export async function signatureCycleAfterContractChange(db: SignatureDatabase, id: string, previousExclusions: unknown) {
+  const observations = await db.solicitudDocumentReview.findMany({
+    where: { solicitudId: id }, select: { assessment: true, selectedVerificationId: true, decisions: { select: { verificationId: true } } },
+  });
+  const attemptIds = new Set<string>();
+  for (const observation of observations) {
+    if (observation.selectedVerificationId) attemptIds.add(observation.selectedVerificationId);
+    for (const decision of observation.decisions) if (decision.verificationId) attemptIds.add(decision.verificationId);
+    const assessment = observation.assessment as Partial<Assessment> | null;
+    if (Array.isArray(assessment?.attempts)) {
+      for (const attempt of assessment.attempts) if (typeof attempt?.verificationId === "string") attemptIds.add(attempt.verificationId);
+    }
+  }
+  return newSignatureCycle(previousExclusions, [...attemptIds],
+    "Se requiere una nueva firma por el cambio en las condiciones del préstamo.", new Date());
 }
 
 export function eligibleSignatureCandidates(row: SignatureSourceRow, candidates: ProviderCandidate[]) {

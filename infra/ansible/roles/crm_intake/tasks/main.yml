@@ -1,0 +1,78 @@
+---
+- name: Require a reviewed Git commit for the isolated installation
+  ansible.builtin.assert:
+    that:
+      - crm_intake_revision | default('') is match('^[0-9a-f]{40}$')
+    fail_msg: Supply crm_intake_revision from the reviewed checkout.
+  when: not ansible_check_mode
+
+- name: Install only the inactive draft
+  when: not ansible_check_mode
+  block:
+    - name: Create a root-owned release directory
+      ansible.builtin.file:
+        path: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}"
+        owner: root
+        group: root
+        mode: "0755"
+        state: directory
+
+    - name: Install the verified source and schema from the reviewed checkout
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../apps/crm-intake/{{ item.source }}"
+        dest: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/{{ item.destination }}"
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      loop:
+        - {source: crm_intake/, destination: crm_intake/}
+        - {source: schema.sql, destination: schema.sql}
+
+    - name: Create the directory for the shared Kestra policy
+      ansible.builtin.file:
+        path: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/kestra_policy"
+        owner: root
+        group: root
+        mode: "0755"
+        state: directory
+
+    - name: Install only the pure Kestra policy from the same Git commit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../kestra/automations/marketing-crm/files/bitrix24_form_flow/form_processor/{{ item }}"
+        dest: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}/kestra_policy/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - attribution.py
+        - catalogs.py
+        - commercial_prequalification.py
+        - input_parser.py
+        - normalization.py
+        - qualification.py
+
+    - name: Check normalization and prequalification with synthetic examples
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -B, -m, crm_intake.sample]
+        chdir: "/opt/redunisol-crm-intake/releases/{{ crm_intake_revision }}"
+      changed_when: false
+
+    - name: Render the private status service unit
+      ansible.builtin.template:
+        src: crm-intake.service.j2
+        dest: /etc/systemd/system/redunisol-crm-intake.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: crm_intake_unit
+
+    - name: Start only the inactive status process
+      ansible.builtin.systemd_service:
+        name: redunisol-crm-intake.service
+        daemon_reload: "{{ crm_intake_unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if crm_intake_unit.changed else 'started' }}"
+
+    - name: Confirm the installed revision and that capture is disabled
+      ansible.builtin.import_tasks: verify.yml

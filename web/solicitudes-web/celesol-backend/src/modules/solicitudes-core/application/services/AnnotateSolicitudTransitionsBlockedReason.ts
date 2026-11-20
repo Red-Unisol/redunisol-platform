@@ -10,7 +10,7 @@ import {
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 
-const LIQUIDAR_ACTION_CODE = "liquidar";
+const ACTIONS_REQUIRING_LINKED_LOAN = new Set(["liquidar", "enviar_a_liquidada"]);
 const CONFIRMAR_ACTION_CODE = "confirmar";
 
 type Dependencies = {
@@ -56,7 +56,7 @@ export class AnnotateSolicitudTransitionsBlockedReason {
 
     return transitions.map((transition) => {
       if (
-        transition.actionCode === LIQUIDAR_ACTION_CODE &&
+        ACTIONS_REQUIRING_LINKED_LOAN.has(transition.actionCode) &&
         liquidarBlockedReason
       ) {
         return { ...transition, blockedReason: liquidarBlockedReason };
@@ -78,7 +78,7 @@ export class AnnotateSolicitudTransitionsBlockedReason {
     solicitudId: string,
   ): Promise<string | null> {
     const hasLiquidarTransition = transitions.some(
-      (transition) => transition.actionCode === LIQUIDAR_ACTION_CODE,
+      (transition) => ACTIONS_REQUIRING_LINKED_LOAN.has(transition.actionCode),
     );
 
     if (!hasLiquidarTransition) {

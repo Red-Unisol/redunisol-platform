@@ -29,7 +29,7 @@ import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 import type { SignatureInboxLoanState } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 import {
   canManageSignature, signatureSubmissionAt, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
-  isAnalysisReady, isLegajosUser, reviewSource,
+  isAnalysisReady, isLegajosUser, newSignatureCycle, reviewSource,
   signatureSourceInclude, type SignatureSourceRow, type SignatureStatus,
 } from "./signature-workflow";
 export { reviewSource } from "./signature-workflow";
@@ -920,20 +920,12 @@ export class DocumentReviewService {
           if (input.decision === "not_approve") {
             // The old observation/decision stays immutable. An explicit request
             // starts a new cycle; old callbacks cannot satisfy it.
-            const excluded = [...new Set([
-              ...(Array.isArray(current.signatureExcludedVerificationIds)
-                ? current.signatureExcludedVerificationIds.filter((v): v is string => typeof v === "string") : []),
-              ...assessment.attempts.map(a => a.verificationId),
-            ])];
-            const cycleId = randomUUID();
-            await tx.solicitud.update({ where: { id }, data: {
-              signatureCycleId: cycleId, signatureRequestedAt: decidedAt,
-              signatureRequestReason: reason,
-              signatureExcludedVerificationIds: excluded,
-            } });
+            const cycle = newSignatureCycle(current.signatureExcludedVerificationIds,
+              assessment.attempts.map(a => a.verificationId), reason, decidedAt);
+            await tx.solicitud.update({ where: { id }, data: cycle });
             await this.deps.onSignatureEvent?.(tx, {
               type: "signature_requested", solicitudId: id,
-              loanId: current.legacyOid!, cycleId, reason, requestId: input.requestId,
+              loanId: current.legacyOid!, cycleId: cycle.signatureCycleId, reason, requestId: input.requestId,
             });
           } else if (isAnalysisReady(current) && current.estadoActual.code !== "Transferir") {
             await this.deps.transition(

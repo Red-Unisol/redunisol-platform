@@ -11,6 +11,7 @@ import { PadronesGateway } from "../padrones/PadronesGateway";
 import { InitialLoanGenerationService } from "./infrastructure/services/InitialLoanGenerationService";
 import { addInitialLoanGenerationRoutes } from "./presentation/InitialLoanGenerationRoutes";
 import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "./infrastructure/services/WorkflowFinancialGuard";
+import { CompleteSellerReview } from "./infrastructure/services/CompleteSellerReview";
 import { inspectLinkedLoan, type LinkedLoanReader } from "./application/services/LinkedLoanRules";
 import { ControlledLoanReplacementService } from "./infrastructure/services/ControlledLoanReplacementService";
 import { buildLinkFirmaDigital } from "./application/services/buildLinkFirmaDigital";
@@ -308,8 +309,10 @@ export function createSolicitudesCoreRouter(
     exportar: exportarEvaluacionExcel,
     bucket: env.MINIO_BUCKET_SOLICITUDES,
   });
+  const sellerReview = new CompleteSellerReview(prisma, updateSolicitudUseCase, sociosRepository);
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
-    authorizeFinancialOperation: input => assertWorkflowFinancialReady(prisma, input.solicitudId, input.currentUser.id),
+    completeSellerReview: (input, command) => sellerReview.execute(input, command),
+    authorizeFinancialOperation: input => assertWorkflowFinancialReady(prisma, input.solicitudId, input.currentUser.id, undefined, input.actionCode),
     archivarEvaluacion,
     adjuntoRepository: solicitudAdjuntoRepository,
     engine: workflowEngine,

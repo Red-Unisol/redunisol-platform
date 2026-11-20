@@ -28,6 +28,9 @@ export type ProductionFixtureOptions = {
   cbuScenario?: CbuScenario;
   padronesScenario?: PadronesScenario;
   workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
+  sellerReviewState?: "Confirmada" | "Liquidada";
+  signatureApproved?: boolean;
+  sellerChanges?: boolean;
 };
 
 const timestamp = "2026-10-23T20:05:00.000Z";
@@ -362,8 +365,19 @@ export function productionFixture(
 ): ProductionFixtureResult {
   const base = `/solicitudes/${HEADER_SAMPLE.id}`;
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
+  const correctedData = options.workflowState === "RevisionRiesgo" && options.sellerChanges && options.role !== "vendedor"
+    ? {
+        titular: { ...PRODUCTION_SOLICITUD.titular, celular: "011 5550 0124" },
+        observaciones: "El socio solicita el contacto por la tarde.",
+        sellerReviewChanges: [
+          { field: "titular.celular", before: "011 5550 0100", after: "011 5550 0124" },
+          { field: "solicitud.observaciones", before: "Contactar por la mañana.", after: "El socio solicita el contacto por la tarde." },
+        ],
+      }
+    : {};
   const baseSolicitud = options.workflowState ? {
     ...PRODUCTION_SOLICITUD,
+    ...correctedData,
     legacyOid: null,
     estadoActual: {
       ...PRODUCTION_SOLICITUD.estadoActual,
@@ -427,6 +441,10 @@ export function productionFixture(
     }));
   else if (pathname === `${base}/adjuntos`) body = attachments;
   else if (pathname === `${base}/history`) body = history;
+  else if (pathname === `${base}/reliquidacion` && options.workflowState) body = {
+    visible: false, pending: false, prepared: false, canReopen: false, blockedReason: null,
+    updatedAt: timestamp, previousLoanId: null,
+  };
   // The editing scenario exercises save/cancel with notes only. No available
   // simulation lines means entering edit mode cannot trigger a calculation POST.
   else if (pathname === `${base}/lineas-prestamo`)
@@ -548,12 +566,12 @@ export function productionFixture(
   else if (pathname === `${base}/document-review`)
     body = {
       ...HEADER_DOCUMENT_REVIEW_FIXTURE,
-      analysisReady: !options.workflowState,
+      analysisReady: !options.workflowState && !options.sellerReviewState,
       signature: {
-        status: "approved",
-        completedAttempts: 1,
-        lastCompletedAt: timestamp,
-        approved: true,
+        status: options.sellerReviewState && !options.signatureApproved ? "waiting" : "approved",
+        completedAttempts: options.sellerReviewState && !options.signatureApproved ? 0 : 1,
+        lastCompletedAt: options.sellerReviewState && !options.signatureApproved ? null : timestamp,
+        approved: !options.sellerReviewState || options.signatureApproved,
         reason: null,
         link: null,
         cycle: "demo-ciclo-001",

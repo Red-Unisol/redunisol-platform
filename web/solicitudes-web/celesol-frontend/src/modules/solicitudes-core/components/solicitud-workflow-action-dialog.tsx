@@ -41,7 +41,8 @@ export function SolicitudWorkflowActionDialog({
   const [validationMessage, setValidationMessage] = useState<string | null>(
     null,
   );
-  const showComment = !(
+  const isSellerReview = transition?.actionCode === "finalizar_revision_datos";
+  const showComment = !isSellerReview && !(
     transition?.actionCode === "liquidar" &&
     transition.toState.code === "VerificarFirmaYDocumentacion" &&
     transition.requiresComment === false
@@ -81,7 +82,11 @@ export function SolicitudWorkflowActionDialog({
     }
 
     setValidationMessage(null);
-    await onConfirm(payload);
+    try {
+      await onConfirm(payload);
+    } catch (error) {
+      setValidationMessage(error instanceof Error ? error.message : "No se pudo confirmar la acción.");
+    }
   }
 
   return (
@@ -96,7 +101,11 @@ export function SolicitudWorkflowActionDialog({
               <DialogTitle className="truncate text-xl font-semibold leading-tight text-foreground">
                 {transition?.actionLabel ?? "Confirmar acción"}
               </DialogTitle>
-              {transition?.toState ? (
+              {isSellerReview ? (
+                <DialogDescription className="mt-1 text-sm text-foreground-secondary">
+                  Confirmá que terminaste de revisar los datos de la solicitud.
+                </DialogDescription>
+              ) : transition?.toState ? (
                 <DialogDescription className="mt-1 text-sm text-foreground-secondary">
                   Destino:{" "}
                   {/* Motor es un paso automatico: la solicitud termina en Riesgo. */}
@@ -123,14 +132,14 @@ export function SolicitudWorkflowActionDialog({
           </DialogClose>
         </header>
 
-        <div className="space-y-4 px-4 py-4">
-          {transition?.description ? (
+        <div className="space-y-4 px-4 py-4 empty:hidden">
+          {!isSellerReview && transition?.description ? (
             <p className="text-sm text-foreground-secondary">
               {transition.description}
             </p>
           ) : null}
 
-          {transition?.defaultComment ? (
+          {!isSellerReview && transition?.defaultComment ? (
             <div className="rounded-lg border border-border bg-muted/20 px-3 py-3">
               <p className="text-xs font-medium tracking-[0.12em] text-foreground-secondary uppercase">
                 Comentario automático

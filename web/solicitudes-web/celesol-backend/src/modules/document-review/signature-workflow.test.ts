@@ -72,6 +72,20 @@ test("signature source and approval survive analysis handoff; state alone does n
   assert.equal(signatureSummary(row, review, approval(review)).approved, true);
 });
 
+test("an optional seller review blocks automatic transfer through corrections, while legacy Liquidada stays ready", () => {
+  const row = sourceRow();
+  row.estadoActual.code = "Liquidada";
+  assert.equal(isAnalysisReady(row), true);
+  row.sellerReviewStartedAt = new Date();
+  for (const state of ["Liquidada", "RevisionRiesgo", "Confirmada"]) {
+    row.estadoActual.code = state;
+    assert.equal(isAnalysisReady(row), false);
+  }
+  row.sellerReviewStartedAt = null;
+  row.estadoActual.code = "VerificarFirmaYDocumentacion";
+  assert.equal(isAnalysisReady(row), true);
+});
+
 test("reliquidation pause suppresses an otherwise valid approval and signature link", () => {
   const row = sourceRow(), review = observation(row), decision = approval(review);
   assert.equal(signatureSummary(row, review, decision).approved, true);

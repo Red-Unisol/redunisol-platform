@@ -2,11 +2,12 @@ import { ESTADOS_CON_TOPE_DE_RIESGO } from "../entities/SolicitudCore.entity";
 import { MontoSuperaAprobadoRiesgoError } from "../solicitudes-core-errors";
 
 export function assertMontoDentroDelAprobadoPorRiesgo(
-  solicitud: { estadoActual: { code: string }; montoAprobadoRiesgo?: number | null },
+  solicitud: { estadoActual: { code: string }; montoAprobadoRiesgo?: number | null; sellerReviewStartedAt?: Date | null },
   montoAFinanciar: number | null,
 ) {
   const tope = solicitud.montoAprobadoRiesgo ?? null;
-  if (!ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code) || tope === null)
+  const sellerReview = solicitud.estadoActual.code === "Liquidada" && Boolean(solicitud.sellerReviewStartedAt);
+  if ((!sellerReview && !ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code)) || tope === null)
     return;
 
   const montoFormateado = `$${tope.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;

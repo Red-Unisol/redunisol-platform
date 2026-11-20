@@ -286,6 +286,8 @@ export type ExecuteWorkflowTransitionRequest = {
   actionCode: string;
   comment?: string;
   reason?: string;
+  expectedUpdatedAt?: string;
+  changes?: PatchSolicitudCoreRequest;
 };
 
 export type ExecuteWorkflowTransitionResponse = {
@@ -418,6 +420,8 @@ export type SolicitudCoreGarantiaResponse = {
 };
 
 export type SolicitudCoreResponse = {
+  sellerReviewChanges?: SellerReviewChange[];
+  sellerReviewStartedAt?: string | null;
   loanReplacementPending?: boolean;
   assignedToUser: SolicitudCoreAssignedUserResponse | null;
   assignedToUserId: string | null;
@@ -672,4 +676,10 @@ export type UpdateSolicitudCoreCancelacionRequest = {
   notas?: string;
   socio?: string;
   socioLegacyId?: string;
+};
+
+export type SellerReviewChange = {
+  field: string;
+  before: string | null;
+  after: string | null;
 };

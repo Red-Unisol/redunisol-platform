@@ -1,5 +1,6 @@
 import { activeWorkflowAreaWhere, userWorkflowAreas, workflowAreaInclude } from "../../../auth/domain/workflow-areas";
 import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
+import { diffSellerReviewFields, mergeSellerReviewChanges, readSellerReviewChanges } from "../../application/services/SellerReviewChanges";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { DbClient } from "../../../../db/prisma";
 import type { Prisma } from "@prisma/client";
@@ -465,7 +466,7 @@ export class SolicitudesCorePrismaDatasource {
     return SolicitudesCorePrismaDatasource.resolveLatestComentarios(history);
   }
 
-  async findById(id: string) {
+  async findById(id: string, options?: { withSellerReviewChanges: boolean }) {
     const solicitud = await this.prisma.solicitud.findUnique({
       where: {
         id,
@@ -473,7 +474,13 @@ export class SolicitudesCorePrismaDatasource {
       include: solicitudDetailInclude,
     });
 
-    return solicitud ? SolicitudCoreMapper.toDomain(solicitud) : null;
+    if (!solicitud) return null;
+    const detail = SolicitudCoreMapper.toDomain(solicitud);
+    if (options?.withSellerReviewChanges && solicitud.estadoActual.owner?.code === "RIESGO") {
+      const changes = readSellerReviewChanges(solicitud.sellerReviewChanges);
+      if (changes.length) detail.sellerReviewChanges = changes;
+    }
+    return detail;
   }
 
   async findByIdempotencyKey(idempotencyKey: string, createdBy: string) {
@@ -929,8 +936,9 @@ export class SolicitudesCorePrismaDatasource {
     }));
   }
 
-  async update(id: string, patch: UpdateSolicitudCorePatch, guard?: UpdateSolicitudCoreGuard) {
-    return this.prisma.$transaction(async (tx) => {
+  async update(id: string, patch: UpdateSolicitudCorePatch, guard?: UpdateSolicitudCoreGuard, reviewTransaction?: Prisma.TransactionClient) {
+    const save = async (tx: Prisma.TransactionClient) => {
+      let beforeEdit: Prisma.SolicitudGetPayload<{ include: typeof solicitudInclude }> | null = null;
       if (guard || patch.solicitud?.montoAFinanciar !== undefined || patch.solicitud?.legacyOid !== undefined) {
         // Solo se bloquea durante el guardado, nunca durante la simulacion.
         // Releer despues del lock incluye cambios que hayan terminado mientras
@@ -938,16 +946,12 @@ export class SolicitudesCorePrismaDatasource {
         await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
         const current = await tx.solicitud.findUnique({
           where: { id },
-          select: {
-            estadoActualId: true,
-            administrativeCoreControl: true,
-            estadoActual: { select: { code: true } },
-            montoAprobadoRiesgo: true,
-            montoAFinanciar: true,
-            legacyOid: true,
-          },
+          include: solicitudInclude,
         });
         if (!current) throw new SolicitudCoreNotFoundError();
+        if (current.estadoActual.code === "Liquidada" && current.sellerReviewStartedAt && !reviewTransaction && guard) {
+          throw new AdministrativeCorrectionError("Usá Finalizar revisión de datos para guardar y entregar los cambios.");
+        }
         assertNoLoanReplacementPending(current);
         if (guard && current.estadoActualId !== guard.expectedEstadoActualId)
           throw new SolicitudEditStateConflictError();
@@ -959,9 +963,11 @@ export class SolicitudesCorePrismaDatasource {
           throw new AdministrativeCorrectionError(`El monto está congelado por el préstamo ${current.legacyOid}. Primero debe verificarse su anulación en Vimarx.`);
         if (patch.solicitud?.legacyOid !== undefined && current.legacyOid && current.legacyOid !== patch.solicitud.legacyOid)
           throw new AdministrativeCorrectionError("El vínculo sólo puede cambiar mediante el reemplazo controlado del préstamo anulado.");
+        if (guard?.sellerReviewActor) beforeEdit = current;
         if (guard?.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {
           assertMontoDentroDelAprobadoPorRiesgo({
             estadoActual: current.estadoActual,
+            sellerReviewStartedAt: current.sellerReviewStartedAt,
             montoAprobadoRiesgo: current.montoAprobadoRiesgo === null ? null : Number(current.montoAprobadoRiesgo),
           }, patch.solicitud.montoAFinanciar);
         }
@@ -1111,8 +1117,21 @@ export class SolicitudesCorePrismaDatasource {
         include: solicitudInclude,
       });
 
-      return SolicitudCoreMapper.toDomain(solicitud);
-    });
+      const updated = SolicitudCoreMapper.toDomain(solicitud);
+      if (beforeEdit && guard?.sellerReviewActor) {
+        const edits = diffSellerReviewFields(SolicitudCoreMapper.toDomain(beforeEdit), updated);
+        const previous = readSellerReviewChanges(beforeEdit.sellerReviewChanges);
+        if (edits.length && (previous.length || guard.sellerReviewActor === "seller")) {
+          const changes = mergeSellerReviewChanges(previous, edits, guard.sellerReviewActor);
+          const tracked = await tx.solicitud.update({
+            where: { id }, data: { sellerReviewChanges: changes }, select: { updatedAt: true },
+          });
+          updated.updatedAt = tracked.updatedAt;
+        }
+      }
+      return updated;
+    };
+    return reviewTransaction ? save(reviewTransaction) : this.prisma.$transaction(save);
   }
 
   private static buildStatsDateBoundary(isoDate: string, boundary: "start" | "end") {

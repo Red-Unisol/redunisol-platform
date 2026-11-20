@@ -4,6 +4,7 @@ import { inspectLinkedLoan, assertLinkedLoanReady, type LinkedLoanGateways } fro
 import { administrativeSource, type CoreLoanSnapshot } from "./AdministrativeCorrectionService";
 import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import { AdministrativeCorrectionError, assertNoLoanReplacementPending, coreConditionsFingerprint, coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
+import { assertAnalysisControl } from "../../domain/workflow/SellerReview";
 import { actingContext } from "../../../auth/impersonation/context";
 
 type GuardDependencies = LinkedLoanGateways & { lineResolver: LineaPrestamoLegacyIdResolver };
@@ -62,9 +63,11 @@ export async function assertWorkflowFinancialReady(
   id: string,
   actorId?: string,
   dependencies?: GuardDependencies,
+  action?: string,
 ) {
-  const deps = dependencies ?? await productionDependencies();
   const source = await administrativeSource(db, id);
+  if (action) assertAnalysisControl(source, action);
+  const deps = dependencies ?? await productionDependencies();
   const snapshots: CoreLoanSnapshot[] = [];
   const status = await inspectLinkedLoan(source, {
     lifecycle: deps.lifecycle,

@@ -749,6 +749,8 @@ export class SolicitudesCoreController {
       );
       const result = await this.changeSolicitudStateUseCase.execute({
         actionCode: body.actionCode,
+        ...(body.expectedUpdatedAt ? { expectedUpdatedAt: body.expectedUpdatedAt } : {}),
+        ...(body.changes ? { changes: body.changes } : {}),
         comment: body.comment,
         currentUser: {
           id: user.id,
