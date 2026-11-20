@@ -1,0 +1,19 @@
+# Administrado por infra/ansible (rol firewall).
+# Carga al arrancar solo las reglas que un apply confirmó. Arranca después del
+# nftables.service de Debian, que hace "flush ruleset", para que no las borre.
+[Unit]
+Description=Firewall de Red Unisol (reglas confirmadas)
+Wants=network-pre.target
+Before=network-pre.target shutdown.target
+After=nftables.service
+Conflicts=shutdown.target
+DefaultDependencies=no
+ConditionPathExists=/etc/redunisol-firewall/rules.confirmed.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/redunisol-firewall/rules.confirmed.nft
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,95 @@
+#!/usr/sbin/nft -f
+# Administrado por infra/ansible (rol firewall). No editar a mano: se pisa en el próximo apply.
+# Solo maneja su propia tabla; no toca las tablas de Docker ni la de fail2ban.
+
+table inet redunisol_firewall
+delete table inet redunisol_firewall
+
+table inet redunisol_firewall {
+    # Listas de orígenes permitidos (los valores salen del inventario)
+    set provider_v4 {
+        type ipv4_addr
+        flags interval
+        auto-merge
+{% if foundation_firewall_provider_sources | length > 0 %}
+        elements = { {{ foundation_firewall_provider_sources | join(', ') }} }
+{% endif %}
+    }
+
+    set cloudflare_v4 {
+        type ipv4_addr
+        flags interval
+        auto-merge
+{% if foundation_firewall_cloudflare_ipv4 | length > 0 %}
+        elements = { {{ foundation_firewall_cloudflare_ipv4 | join(', ') }} }
+{% endif %}
+    }
+
+    set cloudflare_v6 {
+        type ipv6_addr
+        flags interval
+        auto-merge
+{% if foundation_firewall_cloudflare_ipv6 | length > 0 %}
+        elements = { {{ foundation_firewall_cloudflare_ipv6 | join(', ') }} }
+{% endif %}
+    }
+
+    set monitoring_v4 {
+        type ipv4_addr
+        flags interval
+        auto-merge
+{% if foundation_firewall_monitoring_sources | length > 0 %}
+        elements = { {{ foundation_firewall_monitoring_sources | join(', ') }} }
+{% endif %}
+    }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # Tráfico interno del servidor (túnel BCRA -> API, Apache base, métricas)
+        iif "lo" accept
+
+        # Respuestas a conexiones que inició el servidor (hora, actualizaciones, imágenes)
+        ct state established,related accept
+
+        # Paquetes rotos que no pertenecen a ninguna conexión
+        ct state invalid drop
+
+        # Contenedores hablando con el propio servidor (se mantiene como hoy)
+        iifname "docker0" accept
+        iifname "br-*" accept
+
+        # Ping, con límite de velocidad
+        icmp type echo-request limit rate 5/second accept
+        icmpv6 type echo-request limit rate 5/second accept
+
+        # Mensajes de control que IPv6 necesita para funcionar
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert, packet-too-big } accept
+
+        # B1: SSH abierto a todos (fail2ban lo sigue vigilando)
+        tcp dport {{ foundation_firewall_ssh_port }} accept
+
+        # B2: SSH clásico, solo para el proveedor (DonWeb)
+        ip saddr @provider_v4 tcp dport {{ foundation_firewall_provider_ssh_port }} accept
+
+        # B3: HTTPS solo desde Cloudflare
+        ip saddr @cloudflare_v4 tcp dport {{ foundation_firewall_https_port }} accept
+        ip6 saddr @cloudflare_v6 tcp dport {{ foundation_firewall_https_port }} accept
+
+        # B4: SNMP solo para el monitoreo del proveedor (DonWeb)
+        ip saddr @provider_v4 udp dport {{ foundation_firewall_snmp_port }} accept
+
+        # B5: métricas solo para nuestro servidor de monitoreo
+        ip saddr @monitoring_v4 tcp dport {{ foundation_firewall_monitoring_port }} accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+
+        # D1: desde internet no se abren conexiones nuevas hacia contenedores.
+        # La salida de los contenedores, sus respuestas y el tráfico entre ellos siguen como hoy.
+{% if foundation_firewall_public_interface | length > 0 %}
+        iifname "{{ foundation_firewall_public_interface }}" ct state new drop
+{% endif %}
+    }
+}

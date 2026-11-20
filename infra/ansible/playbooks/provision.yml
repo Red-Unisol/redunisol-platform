@@ -28,6 +28,9 @@
       tags: [backup_storage]
     - role: docker
       tags: [docker]
+    # Después de docker: su cadena forward también cubre lo que Docker publique.
+    - role: firewall
+      tags: [firewall]
     - role: proxy
       tags: [proxy]
     - role: monitoring
