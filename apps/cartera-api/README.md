@@ -74,9 +74,9 @@ con `siguiente = null` no hay más. Orden estable por `actualizado_en`.
 
 - `deploy/cloudflare.yml`: estado deseado en Cloudflare (DNS proxied, certificado de origen, regla de SSL
   estricto y sin caché).
-- `deploy/apache/cartera-api.redunisol.com.ar.conf`: archivo nuevo para `/opt/apache/conf.d/` de la VPS
+- `deploy/apache/31-cartera-api-redunisol.conf`: archivo nuevo para `/opt/apache/conf.d/` de la VPS
   Principal. Aplica solo a este dominio y no carga módulos ni cambia nada global. Publica la app
-  (`127.0.0.1:3070`) y solo acepta conexiones de Cloudflare (`cartera-api-cloudflare-ips.inc`, con los rangos
+  (`127.0.0.1:3070`) y solo acepta conexiones de Cloudflare (`31-cartera-api-cloudflare-ips.inc`, con los rangos
   de https://www.cloudflare.com/ips/).
 - La app toma la IP real del cliente de `CF-Connecting-IP`, y marca todas las respuestas `Cache-Control: no-store`.
 - Para aplicarlo en Apache: verificar la configuración antes de recargar, y recargar en modo graceful.
