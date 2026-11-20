@@ -39,6 +39,14 @@ class FinalizarController extends Controller
             return (string) $default;
         };
 
+        $finalizar = $finalizarSolicitud->resolve(
+            $request->query('sol'),
+            $request->query('ntrans'),
+            $request->query('linea'),
+            $request->routeIs('finalizar.solicitudes'),
+        );
+        $termsUrl = config("finalizar.lines.{$finalizar['linea']}.terms_url");
+
         $settings = [
             'heading'          => $getSettingOrEnv('finalizar_heading', 'FINALIZAR_HEADING', 'Termina tu Solicitud'),
             'subheading'       => $getSettingOrEnv('finalizar_subheading', 'FINALIZAR_SUBHEADING', 'Su préstamo será descontado de la siguiente forma:'),
@@ -47,18 +55,11 @@ class FinalizarController extends Controller
             'tea'              => $getSettingOrEnv('finalizar_tea', 'FINALIZAR_TEA', ''),
             'tnm'              => $getSettingOrEnv('finalizar_tnm', 'FINALIZAR_TNM', ''),
             'cft'              => $getSettingOrEnv('finalizar_cft', 'FINALIZAR_CFT', ''),
-            'terms_url'        => $normalizeTermsUrl($getSettingOrEnv('finalizar_terms_url', 'FINALIZAR_TERMS_URL', '/terminos-y-condiciones.pdf')),
+            'terms_url'        => $termsUrl ?? $normalizeTermsUrl($getSettingOrEnv('finalizar_terms_url', 'FINALIZAR_TERMS_URL', '/terminos-y-condiciones.pdf')),
             'contact_email'    => $getSettingOrEnv('finalizar_contact_email', 'FINALIZAR_CONTACT_EMAIL', SiteSetting::get('contact_email', 'contacto@redunisol.com.ar')),
             'whatsapp_url'     => $getSettingOrEnv('finalizar_whatsapp_url', 'FINALIZAR_WHATSAPP_URL', ''),
             'facebook_url'     => $getSettingOrEnv('finalizar_facebook_url', 'FINALIZAR_FACEBOOK_URL', ''),
         ];
-
-        $finalizar = $finalizarSolicitud->resolve(
-            $request->query('sol'),
-            $request->query('ntrans'),
-            $request->query('linea'),
-            $request->routeIs('finalizar.solicitudes'),
-        );
 
         if ($finalizar['loan'] === null) {
             $finalizar['loan'] = $finalizarSolicitud->fallbackLoanFromQuery(

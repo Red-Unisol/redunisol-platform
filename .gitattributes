@@ -3,3 +3,6 @@
 infra/ansible/** text eol=lf
 .github/workflows/validate-ansible.yml text eol=lf
 docs/dedicated-foundation.md text eol=lf
+
+# Keep the published AMEJUCA PDFs byte-for-byte identical to the originals.
+web/redunisol-web/public/terminos-y-condiciones-amejuca-*.pdf binary
