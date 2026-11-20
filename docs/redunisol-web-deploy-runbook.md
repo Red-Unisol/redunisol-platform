@@ -121,8 +121,9 @@ FINALIZAR_ITS_API_TIMEOUT_SECONDS=25
 
 La variante `linea=amejuca-redunisol` selecciona el flujo
 `6aede26a429fb127ae3a5b58` en `/finalizar` y `/finalizar.php`.
-Los datos del credito se anexan al documento de TyC
-`be61a621-bf66-4400-82eb-aa916ad2edd1`.
+Los datos del credito se anexan al PDF de terminos y condiciones
+`Terminos_y_condiciones_Red_Unisol_AMEJUCA.pdf`, con ID
+`858aee1c-c167-453b-b9b4-8ac127df8b4c`.
 El flujo incluye tambien `Amejuca 2026.pdf`, con ID
 `4f4a8d2a-f361-49b5-9532-0528a83516e2`; ese adjunto se administra en
 MetaMap y no es el destino de las variables del credito de esta variante.

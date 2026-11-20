@@ -43,11 +43,13 @@ return [
         'amejuca' => [
             'flow_id' => '6453eb1ed9e6ce001d5b3858',
             'doc_id' => '4f4a8d2a-f361-49b5-9532-0528a83516e2',
+            'terms_url' => '/terminos-y-condiciones-amejuca-celesol.pdf',
             'extra_html' => '',
         ],
         'amejuca-redunisol' => [
             'flow_id' => '6aede26a429fb127ae3a5b58',
-            'doc_id' => 'be61a621-bf66-4400-82eb-aa916ad2edd1',
+            'doc_id' => '858aee1c-c167-453b-b9b4-8ac127df8b4c',
+            'terms_url' => '/terminos-y-condiciones-amejuca-red-unisol.pdf',
             'extra_html' => '',
         ],
         'validacionSimple' => [

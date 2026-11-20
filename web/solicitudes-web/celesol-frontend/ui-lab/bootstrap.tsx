@@ -8,6 +8,7 @@ import "./theme.css";
 const search = new URLSearchParams(window.location.search);
 const role = search.get("role");
 const productionRole = role === "admin" || role === "vendedor" || role === "tesoreria-legajos" || role === "analisis-legajos" ? role : "riesgo";
+const cutoffScenario = search.get("cutoff");
 installUiLabNetworkGuard(
   globalThis,
   (window.location.pathname.startsWith("/production") || window.location.pathname.startsWith("/padrones"))
@@ -17,6 +18,10 @@ installUiLabNetworkGuard(
           editAreas: search.get("areas") === "edit",
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
+          cutoffScenario:
+            cutoffScenario === "confirmed" || cutoffScenario === "pending"
+              ? cutoffScenario
+              : undefined,
           cbuScenario: parseCbuScenario(search.get("cbu")),
           padronesScenario: parsePadronesScenario(search.get("scenario")),
           sellerReviewState: search.get("state") === "confirmada" ? "Confirmada" : search.get("state") === "liquidada" ? "Liquidada" : undefined,

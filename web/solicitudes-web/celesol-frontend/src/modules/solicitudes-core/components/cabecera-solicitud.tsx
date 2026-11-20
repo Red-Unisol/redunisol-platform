@@ -181,16 +181,27 @@ export function SituacionDelSocio({
         ? "No es socio"
         : "Socio sin verificar";
   const activos = creditos.data?.activos;
+  const badgeBackground = {
+    success: "bg-success",
+    warning: "bg-warning",
+    neutral: undefined,
+  };
+  const creditosVariant = typeof activos === "boolean" ? "neutral" : "warning";
 
   return (
     <div aria-live="polite" className="flex flex-wrap items-center gap-1.5">
-      <Badge variant={condicion.variant}>{textoSocio}</Badge>
+      <Badge
+        className={badgeBackground[condicion.variant]}
+        variant={condicion.variant}
+      >
+        {textoSocio}
+      </Badge>
       {condicion.member ? (
         creditos.isPending ? (
           <Badge variant="neutral">Consultando créditos</Badge>
         ) : activos === true && canViewDetalle ? (
           <button
-            className="rounded-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            className="rounded-full focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-marino focus-visible:outline-none"
             onClick={onVerPrestamos}
             title="Ver los préstamos del socio"
             type="button"
@@ -200,7 +211,10 @@ export function SituacionDelSocio({
             </Badge>
           </button>
         ) : (
-          <Badge variant={typeof activos === "boolean" ? "neutral" : "warning"}>
+          <Badge
+            className={badgeBackground[creditosVariant]}
+            variant={creditosVariant}
+          >
             {activos === true
               ? "Tiene créditos"
               : activos === false
@@ -210,12 +224,16 @@ export function SituacionDelSocio({
         )
       ) : null}
       {condicion.member && canViewDetalle && mora.data?.enMora === true ? (
-        <Badge variant="warning">Tiene mora</Badge>
+        <Badge className="bg-warning" variant="warning">
+          Tiene mora
+        </Badge>
       ) : null}
       {condicion.member &&
       canViewDetalle &&
       (mora.isError || (!mora.isPending && mora.data?.enMora === null)) ? (
-        <Badge variant="warning">Mora sin verificar</Badge>
+        <Badge className="bg-warning" variant="warning">
+          Mora sin verificar
+        </Badge>
       ) : null}
     </div>
   );

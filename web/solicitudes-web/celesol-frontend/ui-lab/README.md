@@ -120,6 +120,13 @@ loopback y `UI_LAB_OUTPUT_DIR` una carpeta absoluta para la evidencia. No se con
 
 ## Opción A en la ficha real
 
+La ficha también permite revisar los encabezados de Solicitud y CredixSA con
+un historial BCRA ficticio y una solicitud AMEJUCA. Abrir
+`/production?state=revision-riesgo&cutoff=confirmed` o cambiar el último valor
+por `pending`. Con `ui:dev` activo, `node ui-lab/section-headings.browser-test.mjs`
+verifica los encabezados, las pestañas y el corte en escritorio y a 390 px, y
+guarda capturas en `.local/section-headings-review/`.
+
 `http://127.0.0.1:5271/production` carga `AppLayout` y la ficha operativa completa con
 fixtures, incluyendo Evaluación y CredixSA reales. `role=vendedor` o `role=admin` permite
 revisar otros permisos; `payment=external` agrega el aviso de una transferencia de ejemplo
