@@ -10,6 +10,21 @@ import type {
 } from "../../domain/entities/User.entity";
 import { UserMapper } from "../mappers/User.mapper";
 
+const pendingAreaAssignments = {
+  where: { pendingReassignmentAreaId: { not: null }, archivedAt: null, estadoActual: { isTerminal: false } },
+  orderBy: { createdAt: "desc" },
+  select: { id: true, nroSolicitud: true, estadoActual: {
+    select: { name: true, owner: { select: { code: true, name: true } } },
+  } },
+} satisfies Prisma.SolicitudFindManyArgs;
+
+function toPendingAreaAssignment(row: Prisma.SolicitudGetPayload<typeof pendingAreaAssignments>): PendingAreaAssignment {
+  return {
+    id: row.id, nroSolicitud: row.nroSolicitud,
+    areaName: row.estadoActual.owner.name, areaCode: row.estadoActual.owner.code, stateName: row.estadoActual.name,
+  };
+}
+
 const activeUserWhere = {
   deletedAt: null,
   state: {
@@ -202,7 +217,7 @@ export class AuthPrismaDatasource {
 
   async listUsers() {
     const users = await this.prisma.user.findMany({
-      select: UserMapper.profileSelect(),
+      select: { ...UserMapper.profileSelect(), assignedSolicitudes: pendingAreaAssignments },
       where: {
         deletedAt: null,
       },
@@ -211,7 +226,7 @@ export class AuthPrismaDatasource {
       },
     });
 
-    return users.map((user) => UserMapper.toDomain(user));
+    return users.map(user => ({ ...UserMapper.toDomain(user), pendingAssignments: user.assignedSolicitudes.map(toPendingAreaAssignment) }));
   }
 
   async listPendingAreaUsers() {
@@ -357,11 +372,15 @@ export class AuthPrismaDatasource {
           state: true, workflowOwnerId: true,
           workflowOwner: { select: { id: true, code: true } },
           workflowOwnerMemberships: { select: {
-            assignedAt: true, workflowOwner: { select: { id: true, code: true } },
+            workflowOwner: { select: { id: true, code: true } },
           } },
         },
       });
       if (!current) throw new UserNotFoundError();
+
+      if ("workflowOwnerId" in input && current.workflowOwnerMemberships.length > 1) {
+        throw new AuthConflictError("Esta cuenta tiene varias áreas. Editalas desde el formulario de Áreas.");
+      }
 
       const owners = await tx.workflowOwner.findMany({
         where: { isActive: true, id: { in: ownerIds } },
@@ -372,9 +391,6 @@ export class AuthPrismaDatasource {
       if (owners.length > 1 && owners.some(owner => !cumulativeWorkflowCodes.has(owner.code))) {
         throw new InvalidRequestError("Solo se pueden combinar Análisis, Tesorería y Legajos Digitales.");
       }
-      const assignedAt = new Map(current.workflowOwnerMemberships.map(
-        membership => [membership.workflowOwner.id, membership.assignedAt],
-      ));
       const previous = current.workflowOwnerMemberships.length
         ? current.workflowOwnerMemberships.map(membership => membership.workflowOwner)
         : current.workflowOwner ? [current.workflowOwner] : [];
@@ -383,6 +399,14 @@ export class AuthPrismaDatasource {
         && !previous.some(owner => owner.code === "RIESGO");
       const removedRisk = removed.some(area => area.code === "RIESGO");
       const representative = owners.find(owner => owner.id === current.workflowOwnerId) ?? owners[0];
+      // Update memberships first so the compatibility column reflects the final set.
+      await tx.userWorkflowOwner.deleteMany({
+        where: { userId: input.userId, workflowOwnerId: { notIn: ownerIds } },
+      });
+      await tx.userWorkflowOwner.createMany({
+        data: ownerIds.map(workflowOwnerId => ({ userId: input.userId, workflowOwnerId })),
+        skipDuplicates: true,
+      });
       await tx.user.update({
         where: { id: input.userId },
         data: {
@@ -395,18 +419,6 @@ export class AuthPrismaDatasource {
         },
         select: { id: true },
       });
-      await tx.userWorkflowOwner.deleteMany({
-        where: { userId: input.userId, workflowOwnerId: { notIn: ownerIds } },
-      });
-      await tx.userWorkflowOwner.createMany({
-        // The legacy-column trigger can remove secondary memberships when the
-        // representative changes. Restore retained memberships with their original dates.
-        data: owners.map(owner => ({
-          userId: input.userId, workflowOwnerId: owner.id, assignedAt: assignedAt.get(owner.id),
-        })),
-        skipDuplicates: true,
-      });
-
       const user = await tx.user.findUniqueOrThrow({
         where: { id: input.userId }, select: UserMapper.profileSelect(),
       });
@@ -414,20 +426,13 @@ export class AuthPrismaDatasource {
       if (!("workflowOwnerIds" in input)) return profile;
 
       const pending = removed.length ? await tx.solicitud.findMany({
+        ...pendingAreaAssignments,
         where: {
-          assignedToUserId: input.userId,
-          archivedAt: null,
-          estadoActual: { isTerminal: false, ownerId: { in: removed.map(area => area.id) } },
+          ...pendingAreaAssignments.where, assignedToUserId: input.userId,
+          pendingReassignmentAreaId: { in: removed.map(area => area.id) },
         },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, nroSolicitud: true, estadoActual: {
-          select: { name: true, owner: { select: { code: true, name: true } } },
-        } },
       }) : [];
-      const pendingAssignments = pending.map(({ id, nroSolicitud, estadoActual }) => ({
-        id, nroSolicitud, areaName: estadoActual.owner.name,
-        areaCode: estadoActual.owner.code, stateName: estadoActual.name,
-      }));
+      const pendingAssignments = pending.map(toPendingAreaAssignment);
       return { ...profile, pendingAssignments };
     });
   }

@@ -17,7 +17,6 @@ import {
   assignWorkflowOwners,
   getUsers,
   getWorkflowOwners,
-  type PendingAssignment,
   type UpdateAdminUserRequest,
   type UsersAdminUser,
   updateUser,
@@ -69,10 +68,6 @@ export function AdminUsersPage() {
     onError: (error) => toast.error(error.message),
   });
   const [editingUser, setEditingUser] = useState<UsersAdminUser | null>(null);
-  const [pendingAssignments, setPendingAssignments] = useState<{
-    name: string;
-    cases: PendingAssignment[];
-  } | null>(null);
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const usersQuery = useQuery({
@@ -105,6 +100,11 @@ export function AdminUsersPage() {
   });
 
   const users = usersQuery.data?.users ?? [];
+  const pendingAssignments = users.flatMap(user =>
+    (user.pendingAssignments ?? []).map(item => ({
+      ...item, assignee: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+    })),
+  );
   const searchTerms = normalizeSearch(search)
     .trim()
     .split(/\s+/)
@@ -173,21 +173,10 @@ export function AdminUsersPage() {
 
       if (shouldUpdateArea) {
         try {
-          const result = await assignWorkflowOwnersMutation.mutateAsync({
+          await assignWorkflowOwnersMutation.mutateAsync({
             userId: editingUser.id,
             workflowOwnerIds: nextWorkflowOwnerIds,
           });
-          setPendingAssignments(
-            result.pendingAssignments.length
-              ? {
-                  name:
-                    [editingUser.firstName, editingUser.lastName]
-                      .filter(Boolean)
-                      .join(" ") || editingUser.email,
-                  cases: result.pendingAssignments,
-                }
-              : null,
-          );
         } catch (error) {
           await queryClient.invalidateQueries({
             queryKey: ["users-admin", "users"],
@@ -407,26 +396,16 @@ export function AdminUsersPage() {
         )}
       </div>
 
-      {pendingAssignments && (
+      {pendingAssignments.length > 0 && (
         <section
           aria-label="Solicitudes pendientes de reasignación"
           className="max-h-52 overflow-auto border-t border-border bg-surface px-4 py-3"
         >
-          <div className="flex items-start justify-between gap-4">
-            <h2 className="text-sm font-semibold">
-              Solicitudes de {pendingAssignments.name} pendientes de
-              reasignación ({pendingAssignments.cases.length})
-            </h2>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPendingAssignments(null)}
-            >
-              Cerrar
-            </Button>
-          </div>
+          <h2 className="text-sm font-semibold">
+            Solicitudes pendientes de reasignación ({pendingAssignments.length})
+          </h2>
           <ul className="mt-2 space-y-1 text-sm">
-            {pendingAssignments.cases.map((item) => (
+            {pendingAssignments.map((item) => (
               <li key={item.id}>
                 <Link
                   className="font-medium text-primary underline"
@@ -434,7 +413,7 @@ export function AdminUsersPage() {
                 >
                   Solicitud {item.nroSolicitud || item.id}
                 </Link>
-                {" · "}
+                {" · "}{item.assignee} ·{" "}
                 {item.areaCode === "RIESGO" ? "Análisis" : item.areaName} ·{" "}
                 {item.stateName}
               </li>

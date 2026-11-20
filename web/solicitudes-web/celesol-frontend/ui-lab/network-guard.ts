@@ -93,10 +93,11 @@ export function createUiLabFetch(
         user.workflowOwners = USERS_WORKFLOW_OWNERS.filter((area) => workflowOwnerIds.includes(area.id));
         user.workflowOwnerId = user.workflowOwners[0]?.id ?? null;
         if (user.state !== 0) user.state = user.workflowOwners.length ? 1 : 2;
-        return Response.json({ user, pendingAssignments: removed ? [{
+        user.pendingAssignments = removed ? [{
           id: HEADER_SAMPLE.id, nroSolicitud: HEADER_SAMPLE.number, areaCode: removed.code,
           areaName: removed.name, stateName: "Solicitada",
-        }] : [] });
+        }] : [];
+        return Response.json({ user, pendingAssignments: user.pendingAssignments });
       }
     }
     if (sellerReview && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {

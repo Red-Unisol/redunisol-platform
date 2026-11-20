@@ -82,6 +82,7 @@ try {
       true,
     );
     await dialog.getByRole("checkbox", { name: "Análisis" }).check();
+    await dialog.getByText("Al guardar, entrará al reparto automático de Análisis.").waitFor();
     await legajos.uncheck();
     await page.screenshot({
         animations: "disabled",
@@ -92,7 +93,12 @@ try {
       name: "Solicitudes pendientes de reasignación",
     });
     await cases.getByRole("link", { name: "Solicitud 500001" }).waitFor();
+    await cases.getByText(/María Pérez/).waitFor();
     assert.ok((await row.innerText()).includes("Análisis, Tesorería"));
+    await row.getByRole("button", { name: "Editar" }).click();
+    await dialog.getByRole("checkbox", { name: "Análisis" }).uncheck();
+    await dialog.getByText("Al guardar, saldrá del reparto automático de Análisis.").waitFor();
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
     await page.screenshot({
         animations: "disabled",
       path: path.join(output, `reasignar-${width}.png`),
@@ -102,6 +108,15 @@ try {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     );
+    await cases.getByRole("link", { name: "Solicitud 500001" }).click();
+    await cases.waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Mostrar u ocultar menú lateral" }).click();
+    const nav = page.getByRole("navigation");
+    const usersLink = nav.getByRole("link", { name: "Usuarios", exact: true });
+    const administration = nav.getByRole("button", { name: "Administración" });
+    if (await administration.getAttribute("aria-expanded") !== "true") await administration.click();
+    await usersLink.click();
+    await cases.getByRole("link", { name: "Solicitud 500001" }).waitFor();
     await open("list=pendientes&role=admin&areas=edit");
     const pending = page.getByRole("row").filter({ hasText: "sin.nombre@example.invalid" });
     await pending.getByRole("checkbox", { name: "Tesorería" }).check();

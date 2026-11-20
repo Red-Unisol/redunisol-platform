@@ -72,8 +72,30 @@ it("reemplaza roles, conserva asignaciones y revoca accesos en la próxima consu
     assert.equal(await db.user.count({ where: { id: userId, ...activeWorkflowAreaWhere("RIESGO") } }), 0);
     assert.equal((await ds.findActiveById(userId))?.workflowOwners?.length, 2);
 
-    await db.user.update({ where: { id: userId }, data: { workflowOwnerId: owner.VENDEDORES } });
-    assert.deepEqual((await ds.findById(userId))?.workflowOwners?.map(o => o.code), ["VENDEDORES"]);
+    const pendingCaseIds = async () => (await ds.listUsers()).find(user => user.id === userId)!
+      .pendingAssignments.map(item => item.id);
+    assert.deepEqual(await pendingCaseIds(), [request.id]);
+    for (const workflowOwnerId of [owner.TESORERIA, null, owner.VENDEDORES]) {
+      await assert.rejects(ds.assignWorkflowOwner({ userId, workflowOwnerId }), { statusCode: 409 });
+    }
+    for (const workflowOwnerId of [null, owner.VENDEDORES]) {
+      await assert.rejects(db.user.update({ where: { id: userId }, data: { workflowOwnerId } }), /varias áreas/);
+    }
+    assert.equal((await ds.findById(userId))?.workflowOwners?.length, 2);
+    const unrelated = await db.solicitud.create({ data: {
+      createdBy: userId, assignedToUserId: userId, estadoActualId: riskState.id,
+      lineaPrestamoDescripcion: "Cross-area assignment", lineaPrestamoLegacyOid: "test",
+    } });
+    assert.deepEqual(await pendingCaseIds(), [request.id]);
+    await grant(all);
+    assert.deepEqual(await pendingCaseIds(), []);
+    await grant([owner.TESORERIA, owner.LEGAJOS_DIGITALES]);
+    assert.deepEqual(new Set(await pendingCaseIds()), new Set([request.id, unrelated.id]));
+    await db.solicitud.update({ where: { id: request.id }, data: { assignedToUserId: null } });
+    await db.solicitud.update({ where: { id: unrelated.id }, data: { archivedAt: new Date() } });
+    assert.deepEqual(await pendingCaseIds(), []);
+    assert.equal(await wouldNotify(firstReviewDate), 1);
+    await grant([owner.TESORERIA]);
     await grant([owner.LEGAJOS_DIGITALES]);
     assert.equal(await wouldNotify(firstReviewDate), 0);
     await ds.assignWorkflowOwner({ userId, workflowOwnerId: owner.RIESGO });

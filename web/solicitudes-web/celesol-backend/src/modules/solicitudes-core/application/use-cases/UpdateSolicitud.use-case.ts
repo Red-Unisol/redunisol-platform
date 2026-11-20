@@ -250,7 +250,7 @@ export class UpdateSolicitudUseCase {
     const guard = {
       expectedEstadoActualId: solicitud.estadoActual.id,
       ...(solicitud.estadoActual.owner?.code === "VENDEDORES" && solicitud.estadoActual.code !== "CargaVendedor"
-        ? { sellerReviewActor: workflowOwnerCode === "VENDEDORES" && !input.currentUser.isAnalista
+        ? { sellerReviewActor: hasWorkflowArea(permissionUser, "VENDEDORES") && !permissionUser.isAnalista && !permissionUser.isSystemAdmin
             ? "seller" as const : "other" as const }
         : {}),
       enforceMontoAprobadoRiesgo,

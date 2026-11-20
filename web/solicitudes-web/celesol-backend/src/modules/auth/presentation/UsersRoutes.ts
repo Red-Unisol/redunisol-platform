@@ -123,7 +123,7 @@ export class UsersRoutes {
      *       404:
      *         description: User or workflow owner not found.
      *       409:
-     *         description: Workflow owner is inactive.
+     *         description: Área inactiva o cuenta con varias áreas. Usar workflow-owners para editarla.
      */
     router.patch("/:id/workflow-owner", controller.assignWorkflowOwner);
     /**

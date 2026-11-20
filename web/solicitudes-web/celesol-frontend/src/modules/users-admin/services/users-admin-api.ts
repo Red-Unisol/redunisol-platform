@@ -12,6 +12,7 @@ export type PendingAreaUser = {
 };
 
 export type UsersAdminUser = {
+  pendingAssignments?: PendingAssignment[];
   email: string;
   emailVerified: boolean;
   firstName: string;

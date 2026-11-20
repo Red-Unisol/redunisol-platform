@@ -1,3 +1,4 @@
+import { hasWorkflowArea } from "../../../auth/domain/workflow-areas";
 import type { GetSolicitudByIdInput } from "../dtos/GetSolicitudById.dto";
 import { ForbiddenSolicitudAccessError, SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
@@ -57,7 +58,7 @@ export class GetSolicitudByIdUseCase {
     };
 
     const { sellerReviewChanges, ...detail } = solicitud;
-    const canViewChanges = input.currentUser.isSystemAdmin || workflowOwnerCode === "RIESGO";
+    const canViewChanges = currentUser.isSystemAdmin || hasWorkflowArea(currentUser, "RIESGO");
     return {
       ...detail,
       ...(canViewChanges && sellerReviewChanges?.length ? { sellerReviewChanges } : {}),

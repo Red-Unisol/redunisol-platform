@@ -345,6 +345,7 @@ function AdminUserEditForm({
             <WorkflowAreaSelector
               owners={workflowOwners}
               selected={workflowOwnerIds}
+              initialSelection={initialAreaIds}
               onChange={setWorkflowOwnerIds}
               disabled={isSubmitting || !areaEditAllowed}
             />

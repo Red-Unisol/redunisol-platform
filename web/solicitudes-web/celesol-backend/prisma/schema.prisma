@@ -226,6 +226,7 @@ model Solicitud {
   vendedorId               String?                    @map("vendedor_id") @db.Uuid
   observaciones            String?
   createdBy                String                     @map("created_by") @db.Uuid
+  pendingReassignmentAreaId  String?                    @map("pending_reassignment_area_id") @db.Uuid
   assignedToUserId         String?                    @map("assigned_to_user_id") @db.Uuid
   createdAt                DateTime                   @default(now()) @map("created_at")
   updatedAt                DateTime                   @updatedAt @map("updated_at")

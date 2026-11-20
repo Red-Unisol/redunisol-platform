@@ -21,7 +21,7 @@ export type AuthRepository = {
     userId: string;
     passwordHash: string;
   }): Promise<void>;
-  listUsers(): Promise<AuthUser[]>;
+  listUsers(): Promise<Array<AuthUser & { pendingAssignments?: PendingAreaAssignment[] }>>;
   listPendingAreaUsers(): Promise<AuthUser[]>;
   listActiveWorkflowOwners(): Promise<
     Array<{

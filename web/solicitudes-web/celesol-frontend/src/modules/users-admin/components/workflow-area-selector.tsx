@@ -7,14 +7,19 @@ const INTERNAL_AREAS = new Set(["RIESGO", "TESORERIA", "LEGAJOS_DIGITALES"]);
 export function WorkflowAreaSelector({
   owners,
   selected,
+  initialSelection = [],
   onChange,
   disabled,
 }: {
   owners: WorkflowOwner[];
   selected: string[];
+  initialSelection?: string[];
   onChange: (ids: string[]) => void;
   disabled: boolean;
 }) {
+  const analysis = owners.find(owner => owner.code === "RIESGO");
+  const addsAnalysis = !!analysis && selected.includes(analysis.id) && !initialSelection.includes(analysis.id);
+  const removesAnalysis = !!analysis && !selected.includes(analysis.id) && initialSelection.includes(analysis.id);
   const hasExclusive = owners.some(
     (owner) => selected.includes(owner.id) && !INTERNAL_AREAS.has(owner.code),
   );
@@ -53,6 +58,10 @@ export function WorkflowAreaSelector({
         Análisis, Tesorería y Legajos Digitales se pueden combinar. Las demás
         áreas se asignan individualmente.
       </p>
+      <div aria-live="polite" className="text-xs text-foreground-secondary">
+        {addsAnalysis && "Al guardar, entrará al reparto automático de Análisis."}
+        {removesAnalysis && "Al guardar, saldrá del reparto automático de Análisis."}
+      </div>
     </fieldset>
   );
 }
