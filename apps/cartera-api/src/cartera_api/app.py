@@ -26,7 +26,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
-from .db import connect
+from .db import connect, connect_lectura
 from .sync import AR
 
 log = logging.getLogger("cartera_api")
@@ -110,20 +110,56 @@ class Limitador:
 limitador = Limitador()
 
 
+class RegistroIPs:
+    """Lleva las IPs que consultan sin escribir en la base en cada consulta.
+
+    Escribir en cada pedido hacía esperar al disco de la VPS (iowait) y algunas páginas tardaban
+    decenas de segundos. Ahora se escribe solo cuando aparece una IP nueva (para el aviso
+    `ip_nueva`) y, para las conocidas, como mucho una vez cada GUARDAR_CADA segundos.
+    """
+
+    GUARDAR_CADA = 900
+
+    def __init__(self) -> None:
+        self._estado: dict[str, list] = {}  # ip -> [último guardado (monotonic), consultas sin guardar]
+        self._lock = threading.Lock()
+
+    def registrar(self, ip: str) -> None:
+        ahora_m = time.monotonic()
+        with self._lock:
+            estado = self._estado.get(ip)
+            if estado is not None:
+                estado[1] += 1
+                if ahora_m - estado[0] < self.GUARDAR_CADA:
+                    return
+                pendientes, estado[0], estado[1] = estado[1], ahora_m, 0
+            else:
+                self._estado[ip] = [ahora_m, 0]
+                pendientes = 1
+        self._guardar(ip, pendientes)
+
+    def _guardar(self, ip: str, consultas: int) -> None:
+        ahora = datetime.now(AR).isoformat(timespec="seconds")
+        conn = connect(_db_path())
+        try:
+            with conn:
+                nueva = conn.execute("SELECT 1 FROM ips_vistas WHERE ip = ?", [ip]).fetchone() is None
+                conn.execute(
+                    "INSERT INTO ips_vistas (ip, primera_vez, ultima_vez, consultas) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(ip) DO UPDATE SET ultima_vez = excluded.ultima_vez, "
+                    "consultas = consultas + excluded.consultas",
+                    [ip, ahora, ahora, consultas])
+        finally:
+            conn.close()
+        if nueva:
+            log.warning("ip_nueva ip=%s", ip)
+
+
+registro_ips = RegistroIPs()
+
+
 def _registrar_ip(ip: str) -> None:
-    ahora = datetime.now(AR).isoformat(timespec="seconds")
-    conn = connect(_db_path())
-    try:
-        with conn:
-            nueva = conn.execute("SELECT 1 FROM ips_vistas WHERE ip = ?", [ip]).fetchone() is None
-            conn.execute(
-                "INSERT INTO ips_vistas (ip, primera_vez, ultima_vez, consultas) VALUES (?, ?, ?, 1) "
-                "ON CONFLICT(ip) DO UPDATE SET ultima_vez = excluded.ultima_vez, consultas = consultas + 1",
-                [ip, ahora, ahora])
-    finally:
-        conn.close()
-    if nueva:
-        log.warning("ip_nueva ip=%s", ip)
+    registro_ips.registrar(ip)
 
 
 def autorizar(request: Request) -> str:
@@ -175,6 +211,7 @@ def _hilo_sync(parar: threading.Event) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _token()  # falla al arrancar si no hay token
+    connect(_db_path()).close()  # crea la base y aplica el esquema una sola vez
     parar = threading.Event()
     if os.getenv("CARTERA_SYNC_ACTIVA", "1") == "1":
         threading.Thread(target=_hilo_sync, args=(parar,), daemon=True, name="sync").start()
@@ -237,7 +274,7 @@ def _paginar(tabla: str, claves: list[str], filtros: list[tuple[str, Any]], curs
         sql += " WHERE " + " AND ".join(where)
     sql += f" ORDER BY {', '.join(orden)} LIMIT ?"
     params.append(limite + 1)
-    conn = connect(_db_path())
+    conn = connect_lectura(_db_path())
     try:
         filas = conn.execute(sql, params).fetchall()
     finally:
@@ -324,7 +361,7 @@ def health():
 
 
 def _estado() -> dict[str, Any]:
-    conn = connect(_db_path())
+    conn = connect_lectura(_db_path())
     try:
         ok = conn.execute(
             "SELECT fin, prestamos, cuotas, cobros FROM sincronizaciones WHERE estado = 'ok' ORDER BY id DESC LIMIT 1"
