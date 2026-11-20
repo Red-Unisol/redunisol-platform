@@ -68,13 +68,22 @@ def _limite_por_minuto() -> int:
 # ---------- seguridad ----------
 
 def ip_cliente(request: Request) -> str:
-    """IP real del cliente. Solo se cree X-Forwarded-For si la conexión viene de un proxy confiable."""
+    """IP real del cliente.
+
+    Los encabezados solo se creen si la conexión viene de un proxy confiable (Apache en la VPS).
+    Detrás de Cloudflare, la IP real llega en CF-Connecting-IP; Apache solo acepta conexiones de
+    Cloudflare para este sitio, así que ese encabezado no se puede falsificar desde afuera.
+    Sin Cloudflare (pruebas locales), se usa el último valor de X-Forwarded-For, que agrega Apache.
+    """
     directa = request.client.host if request.client else ""
     try:
         directa_ip = ipaddress.ip_address(directa)
     except ValueError:
         return directa
     if any(directa_ip in red for red in _proxies_confiables()):
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if cf:
+            return cf
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
             return xff.split(",")[-1].strip()  # Apache agrega la IP del cliente al final
@@ -174,6 +183,15 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Cartera API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.middleware("http")
+async def no_guardar_en_cache(request: Request, call_next):
+    """Las respuestas traen DNI/CUIT: ni Cloudflare ni ningún intermediario las puede guardar."""
+    respuesta = await call_next(request)
+    respuesta.headers["Cache-Control"] = "no-store"
+    respuesta.headers["X-Content-Type-Options"] = "nosniff"
+    return respuesta
 
 
 # ---------- consultas ----------

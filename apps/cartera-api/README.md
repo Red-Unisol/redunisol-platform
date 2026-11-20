@@ -12,6 +12,8 @@ No consulta Vimarx en cada pedido. Una vez por día copia la cartera desde la AP
 - Lee los préstamos por proveedor y, por lotes de 100 préstamos, sus cuotas y los movimientos de pago.
 - Cuotas: solo `NroCuota > 0` y el tipo exacto `CuotaPrestamo`. Las filas "PG ..." (subtipo
   `CuotaPrestamoCobro`) son cobros, no cuotas.
+- Estado: además del número, el texto que muestra Vimarx (`ToStr([Estado])`): Activa, Pago, PagoAnticipado,
+  PagoVencido, Refinanciado, Fallecimiento, Perdida, Anulada.
 - Cobros: movimientos con `Pago = true`, agrupados por cobro de Vimarx (`TransaccionAjuste`), préstamo y cuota.
 - Cada fila guarda un hash de su contenido: `actualizado_en` solo cambia si la fila cambió. Lo que deja de
   venir de Vimarx queda con `eliminado: true`.
@@ -56,9 +58,21 @@ con `siguiente = null` no hay más. Orden estable por `actualizado_en`.
 | `CARTERA_PROVEEDORES` | JSON; `["SANCOR%", "M SANATORIO SANTA FE", "MEDICA ROSARIO"]` |
 | `CARTERA_PARTICIPACION` | JSON; `{"SANCOR 20 PLAN DESEN": 0.5705, "SANCOR%": 0.5}` |
 
+## Publicación (Cloudflare + Apache)
+
+`cartera-api.redunisol.com.ar` va detrás de Cloudflare (proxied), con SSL "Full (strict)":
+
+- `deploy/cloudflare.yml`: estado deseado en Cloudflare (DNS proxied, certificado de origen, regla de SSL
+  estricto y sin caché).
+- `deploy/apache/cartera-api.redunisol.com.ar.conf`: archivo nuevo para `/opt/apache/conf.d/` de la VPS
+  Principal. Aplica solo a este dominio y no carga módulos ni cambia nada global. Publica la app
+  (`127.0.0.1:3070`) y solo acepta conexiones de Cloudflare (`cartera-api-cloudflare-ips.inc`, con los rangos
+  de https://www.cloudflare.com/ips/).
+- La app toma la IP real del cliente de `CF-Connecting-IP`, y marca todas las respuestas `Cache-Control: no-store`.
+- Para aplicarlo en Apache: verificar la configuración antes de recargar, y recargar en modo graceful.
+
 ## Pendiente
 
-- Estado como texto (hoy van los números `estado` y `estado_prestamo`).
 - Refinanciación: préstamo de origen y monto cancelado.
 
 ## Desarrollo

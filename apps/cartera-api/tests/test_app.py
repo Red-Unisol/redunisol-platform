@@ -76,6 +76,21 @@ def test_ip_detras_de_proxy(monkeypatch):
     assert app_mod.ip_cliente(Req()) == "8.8.8.8"
 
 
+def test_ip_detras_de_cloudflare():
+    class Req:
+        client = type("c", (), {"host": "127.0.0.1"})()
+        headers = {"cf-connecting-ip": "203.0.113.10", "x-forwarded-for": "203.0.113.10, 162.158.1.1"}
+    assert app_mod.ip_cliente(Req()) == "203.0.113.10"
+    Req.client.host = "8.8.8.8"  # sin pasar por Apache: el encabezado no se cree
+    assert app_mod.ip_cliente(Req()) == "8.8.8.8"
+
+
+def test_respuestas_sin_cache(client):
+    assert client.get("/v1/prestamos", headers=AUTH).headers["cache-control"] == "no-store"
+    assert client.get("/v1/prestamos").headers["cache-control"] == "no-store"  # también los 401
+    assert client.get("/health").headers["cache-control"] == "no-store"
+
+
 def test_limite_por_minuto(client, monkeypatch):
     monkeypatch.setenv("CARTERA_LIMITE_POR_MINUTO", "2")
     assert client.get("/v1/estado", headers=AUTH).status_code == 200

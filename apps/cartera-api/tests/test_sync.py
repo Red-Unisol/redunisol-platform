@@ -10,7 +10,7 @@ REGLAS = {"SANCOR 20 PLAN DESEN": 0.5705, "SANCOR%": 0.5}
 
 # Montos del préstamo 426321 de Vimarx prod (20/11/2026); datos del socio ficticios.
 PRESTAMO = [426321, 1005605, 12345, 30111222, 27301112223, "MEDICA ROSARIO", "9902", "MEDICA ESPECIAL B",
-            "2025-10-06", 101234.37, 81139.39, 381665.97, 1.2349, 0.1015, 2.1902, 36, 243842.18, 0, 1]
+            "2025-10-06", 101234.37, 81139.39, 381665.97, 1.2349, 0.1015, 2.1902, 36, 243842.18, 0, 1, "Activa", "AprobadoInactivo"]
 CUOTA = [426321, 1, "2025-10-31", 326.54, 10275.29, 0.0, 10601.83, -326.54, -10275.29, -10601.83,
          "2025-10-31", 0.0]
 
@@ -34,7 +34,7 @@ def test_transformar_prestamo():
     assert p["total_a_devolver"] == 381665.97
     assert p["tna"] == 1.2349
     assert p["participacion_mutual"] is None
-    assert p["estado_texto"] is None
+    assert (p["estado_texto"], p["estado_prestamo_texto"]) == ("Activa", "AprobadoInactivo")
 
 
 def test_transformar_cuota_pagos_en_positivo():

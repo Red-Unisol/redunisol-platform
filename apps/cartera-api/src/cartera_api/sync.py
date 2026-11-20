@@ -37,6 +37,8 @@ CAMPOS_PRESTAMO = [
     "Proveedor.Nombre", "LineaPrestamo.Codigo", "LineaPrestamo.Descripcion",
     "FechaEmision", "Capital", "MontoADesembolsar", "MontoPrestamo",
     "TNA", "TEM", "TEA", "Cuotas", "SaldoPrestamo", "Estado", "EstadoPrestamo",
+    # ToStr devuelve el nombre del enum, el mismo texto que muestra la columna Estado de Vimarx.
+    "ToStr([Estado])", "ToStr([EstadoPrestamo])",
 ]
 CAMPOS_CUOTA = [
     "Prestamo.ID", "NroCuota", "Fecha", "Capital", "Interes", "Otros", "MontoTotal",
@@ -46,12 +48,6 @@ CAMPOS_MOVIMIENTO = [
     "TransaccionAjuste.ID", "TransaccionPrestamo.Prestamo.ID", "TransaccionPrestamo.NroCuota",
     "Fecha", "Monto", "Tipo.Descripcion",
 ]
-
-# Texto de Prestamo.Estado (Vimarx lo devuelve como número). Se completa a medida que se confirma
-# contra la columna Estado de la pantalla de Vimarx.
-ESTADOS_PRESTAMO = {
-    3: "anulado",  # confirmado 20/11/2026: sin cuotas, saldo 0
-}
 
 MAX_PRESTAMOS = 50_000
 MAX_CUOTAS_LOTE = 20_000
@@ -118,8 +114,9 @@ def transformar_prestamo(fila: dict[str, Any], reglas_participacion: dict[str, f
         "cantidad_cuotas": _entero(fila["Cuotas"]),
         "saldo": _num(fila["SaldoPrestamo"]),
         "estado": _entero(fila["Estado"]),
-        "estado_texto": ESTADOS_PRESTAMO.get(_entero(fila["Estado"])),
+        "estado_texto": _texto(fila["ToStr([Estado])"]),
         "estado_prestamo": _entero(fila["EstadoPrestamo"]),
+        "estado_prestamo_texto": _texto(fila["ToStr([EstadoPrestamo])"]),
         "participacion_mutual": participacion_para(proveedor, reglas_participacion),
     }
 
