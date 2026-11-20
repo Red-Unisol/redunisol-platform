@@ -91,3 +91,53 @@ CREATE OR REPLACE TRIGGER forms_append_only
 CREATE OR REPLACE TRIGGER interpretations_append_only
     BEFORE UPDATE OR DELETE OR TRUNCATE ON crm_intake.interpretations
     FOR EACH STATEMENT EXECUTE FUNCTION crm_intake.reject_snapshot_mutation();
+
+-- Requests are commercial cases. A person or phone can have several over time.
+CREATE TABLE IF NOT EXISTS crm_intake.requests (
+    id uuid PRIMARY KEY,
+    opened_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS crm_intake.request_submissions (
+    submission_id uuid PRIMARY KEY REFERENCES crm_intake.submissions(id),
+    request_id uuid NOT NULL REFERENCES crm_intake.requests(id),
+    kind text NOT NULL CHECK (kind IN ('opening', 'continuation')),
+    evidence_ref text NOT NULL CHECK (length(evidence_ref) BETWEEN 1 AND 160),
+    linked_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS request_single_opening
+    ON crm_intake.request_submissions (request_id) WHERE kind = 'opening';
+CREATE INDEX IF NOT EXISTS request_submission_history ON crm_intake.request_submissions (request_id, linked_at);
+CREATE OR REPLACE TRIGGER request_submissions_append_only
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON crm_intake.request_submissions
+    FOR EACH STATEMENT EXECUTE FUNCTION crm_intake.reject_snapshot_mutation();
+
+CREATE TABLE IF NOT EXISTS crm_intake.request_records (
+    request_id uuid NOT NULL REFERENCES crm_intake.requests(id),
+    record_type text NOT NULL CHECK (record_type IN
+        ('historical_lead', 'deal', 'edna_message', 'bitrix_message', 'bitrix_session')),
+    source_scope text NOT NULL CHECK (length(source_scope) BETWEEN 1 AND 160),
+    source_id text NOT NULL CHECK (length(source_id) BETWEEN 1 AND 160),
+    evidence_ref text NOT NULL CHECK (length(evidence_ref) BETWEEN 1 AND 160),
+    linked_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (request_id, record_type, source_scope, source_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS request_message_single_owner
+    ON crm_intake.request_records (record_type, source_scope, source_id)
+    WHERE record_type IN ('edna_message', 'bitrix_message');
+CREATE OR REPLACE TRIGGER request_records_append_only
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON crm_intake.request_records
+    FOR EACH STATEMENT EXECUTE FUNCTION crm_intake.reject_snapshot_mutation();
+
+-- A committed empty lead_id reserves the only create attempt. Never expire this reservation.
+-- One installation manages one Bitrix portal.
+CREATE TABLE IF NOT EXISTS crm_intake.request_primary_leads (
+    request_id uuid PRIMARY KEY REFERENCES crm_intake.requests(id),
+    reserved_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lead_id bigint UNIQUE CHECK (lead_id > 0),
+    evidence_ref text,
+    confirmed_at timestamptz,
+    CHECK ((lead_id IS NULL AND confirmed_at IS NULL AND evidence_ref IS NULL)
+        OR (lead_id IS NOT NULL AND confirmed_at IS NOT NULL AND evidence_ref IS NOT NULL
+            AND length(evidence_ref) BETWEEN 1 AND 160))
+);
