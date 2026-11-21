@@ -19,7 +19,6 @@ class LegalDocumentController extends Controller
                 'title' => $document['title'],
                 'description' => $document['description'],
                 'content' => file_get_contents(resource_path('legal/'.$document['content'])),
-                'pdfUrl' => $document['pdf'],
                 'draft' => true,
             ],
             'seo' => [
