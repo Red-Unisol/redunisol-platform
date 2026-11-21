@@ -28,6 +28,11 @@ class HandleRedirections
 
         $path = '/'.ltrim($request->path(), '/');
 
+        // Keep canonical legal pages and their aliases reachable even with old CMS rules.
+        if (app(ManagedRedirects::class)->isLegalDocumentPath($path)) {
+            return $next($request);
+        }
+
         // These reviewed migration rules take precedence over editable CMS rules.
         $target = app(ManagedRedirects::class)->targetFor($request->getHost(), $request->getPathInfo());
         if ($target !== null) {

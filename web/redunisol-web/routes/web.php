@@ -3,6 +3,7 @@
 use App\Http\Controllers\AdminReportDownloadController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\FinalizarController;
+use App\Http\Controllers\LegalDocumentController;
 use App\Http\Controllers\RobotsController;
 use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\WhatsAppJourneyController;
@@ -85,6 +86,11 @@ Route::get('/finalizar.php', [FinalizarController::class, 'show'])->name('finali
 Route::get('/finalizar-nvo', [FinalizarController::class, 'show'])->name('finalizar.solicitudes');
 
 require __DIR__.'/settings.php';
+
+Route::get('/terminos', LegalDocumentController::class)->name('legal.terms');
+Route::get('/privacidad', LegalDocumentController::class)->name('legal.privacy');
+Route::redirect('/politicas-de-privacidad', '/privacidad', 301);
+Route::redirect('/terminos-y-condiciones', '/terminos', 301);
 
 // ──────────────────────────────────────────────────────────────
 //   /                                           → slug /

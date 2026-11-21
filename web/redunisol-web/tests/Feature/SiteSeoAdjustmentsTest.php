@@ -102,7 +102,6 @@ it('excludes agency redirects from the canonical sitemap without hiding other ho
 it('redirects legacy requests through the Laravel HTTP stack', function (string $url, string $destination) {
     $this->get($url)->assertStatus(301)->assertRedirect($destination);
 })->with([
-    ['https://www.redunisol.com.ar/privacidad/', 'https://redunisol.com.ar/politicas-de-privacidad'],
     ['https://redunisol.com.ar/celesol/Terminos%20y%20condiciones%20Celesol.pdf', 'https://redunisol.com.ar/gestion-de-datos'],
     ['https://prestamos.redunisol.com.ar/wp-content/themes/redunisol/css/old.css', 'https://redunisol.com.ar/'],
     ['https://prestamos.redunisol.com.ar/diferencia-entre-mutual-y-cooperativa/', 'https://redunisol.com.ar/blog/diferencia-entre-mutual-y-cooperativa'],
