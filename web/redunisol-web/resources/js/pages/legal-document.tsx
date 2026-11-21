@@ -11,12 +11,12 @@ import { useMemo } from 'react';
 
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
-import type { LegalTextSectionData } from '@/components/sections/LegalTextSection';
 import SeoHead from '@/components/seo-head';
 import { platformContact, platformName } from '@/data/home-platform-copy';
+import type { PlatformLegalDocument } from '@/types/legal-document';
 
 interface LegalDocumentProps {
-    document: LegalTextSectionData & { description: string };
+    document: PlatformLegalDocument;
     [key: string]: unknown;
 }
 

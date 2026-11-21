@@ -10,4 +10,6 @@ Para una revisión futura, actualizar el HTML a partir del documento aprobado, r
 
 Los enlaces antiguos `/politicas-de-privacidad` y `/terminos-y-condiciones` redirigen a las páginas correspondientes. Las rutas legales tienen prioridad sobre redirecciones históricas o del CMS que antes enviaban a otras páginas.
 
-No se reemplaza `public/terminos-y-condiciones.pdf`: ese archivo ya se utiliza en el circuito de finalización del préstamo, distinto de los términos de uso de la plataforma. Tampoco se modifican los consentimientos ni su almacenamiento.
+En `/finalizar`, `/finalizar.php` y `/finalizar-nvo`, el acceso «Términos y condiciones de la plataforma» abre una ventana de lectura sin salir de la página. Usa `LegalDocumentService`, la misma fuente que `/terminos`, y recibe el contenido con la respuesta inicial. No abre PDFs ni documentos contractuales de la operación, ni agrega una aceptación obligatoria.
+
+La antigua configuración `finalizar_terms_url` y la variable `FINALIZAR_TERMS_URL` ya no se consumen en Finalizar. Se retiró el campo del panel administrativo, sin borrar valores históricos de la base. El archivo `public/terminos-y-condiciones.pdf` se conserva; no se reemplaza ni se utiliza para este modal. Tampoco se modifican los consentimientos ni su almacenamiento.

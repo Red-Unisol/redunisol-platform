@@ -14,6 +14,8 @@ import ConventionCard, {
 } from '@/components/convenio-card';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
+import PlatformTermsDialog from '@/components/platform-terms-dialog';
+import type { PlatformLegalDocument } from '@/types/legal-document';
 
 interface FinalizarSettings {
     heading: string;
@@ -23,7 +25,6 @@ interface FinalizarSettings {
     tea: string;
     tnm: string;
     cft: string;
-    terms_url: string;
     contact_email: string;
     whatsapp_url: string;
     facebook_url: string;
@@ -70,6 +71,7 @@ interface FinalizarPayload {
 interface PageProps {
     settings: FinalizarSettings;
     finalizar: FinalizarPayload;
+    platformTerms: PlatformLegalDocument;
     [key: string]: unknown;
 }
 
@@ -153,7 +155,7 @@ function useMetamapScript() {
 }
 
 export default function Finalizar() {
-    const { settings, finalizar } = usePage<PageProps>().props;
+    const { settings, finalizar, platformTerms } = usePage<PageProps>().props;
     const scriptStatus = useMetamapScript();
     const metamapButtonRef = useRef<HTMLElement | null>(null);
     const [verificationState, setVerificationState] =
@@ -406,14 +408,7 @@ export default function Finalizar() {
                             >
                                 Condiciones financieras
                             </h2>
-                            {settings.terms_url && (
-                                <a
-                                    href={settings.terms_url}
-                                    className="text-sm font-semibold text-emerald-600 underline underline-offset-2 transition-colors hover:text-emerald-700"
-                                >
-                                    Términos y condiciones
-                                </a>
-                            )}
+                            <PlatformTermsDialog document={platformTerms} />
                         </div>
 
                         <div>

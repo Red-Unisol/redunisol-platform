@@ -32,28 +32,21 @@ class FinalizarSettingsPage extends Page
 
     public function mount(): void
     {
-        $normalizeTermsUrl = static function (string $url): string {
-            return $url === '/terminos-y-condiciones'
-                ? '/terminos-y-condiciones.pdf'
-                : $url;
-        };
-
         $this->data = [
             // Tasas
-            'finalizar_tna'          => SiteSetting::get('finalizar_tna', ''),
-            'finalizar_tea'          => SiteSetting::get('finalizar_tea', ''),
-            'finalizar_tnm'          => SiteSetting::get('finalizar_tnm', ''),
-            'finalizar_cft'          => SiteSetting::get('finalizar_cft', ''),
+            'finalizar_tna' => SiteSetting::get('finalizar_tna', ''),
+            'finalizar_tea' => SiteSetting::get('finalizar_tea', ''),
+            'finalizar_tnm' => SiteSetting::get('finalizar_tnm', ''),
+            'finalizar_cft' => SiteSetting::get('finalizar_cft', ''),
 
-            // Links legales y contacto
-            'finalizar_terms_url'    => $normalizeTermsUrl(SiteSetting::get('finalizar_terms_url', '/terminos-y-condiciones.pdf')),
-            'finalizar_contact_email'=> SiteSetting::get('finalizar_contact_email', ''),
+            // Contacto
+            'finalizar_contact_email' => SiteSetting::get('finalizar_contact_email', ''),
             'finalizar_whatsapp_url' => SiteSetting::get('finalizar_whatsapp_url', ''),
             'finalizar_facebook_url' => SiteSetting::get('finalizar_facebook_url', ''),
 
             // Textos de la página
-            'finalizar_heading'      => SiteSetting::get('finalizar_heading', 'Termina tu Solicitud'),
-            'finalizar_subheading'   => SiteSetting::get('finalizar_subheading', 'Su préstamo será descontado de la siguiente forma:'),
+            'finalizar_heading' => SiteSetting::get('finalizar_heading', 'Termina tu Solicitud'),
+            'finalizar_subheading' => SiteSetting::get('finalizar_subheading', 'Su préstamo será descontado de la siguiente forma:'),
             'finalizar_contact_question' => SiteSetting::get('finalizar_contact_question', '¿Tiene otra consulta para hacernos?'),
         ];
 
@@ -84,7 +77,7 @@ class FinalizarSettingsPage extends Page
                 ]),
 
             Section::make('Tasas Financieras')
-                ->description('Estas tasas se mostrarán debajo del botón de verificación y junto al link de términos y condiciones.')
+                ->description('Estas tasas se mostrarán debajo del botón de verificación y junto al acceso a los términos de la plataforma.')
                 ->schema([
                     TextInput::make('finalizar_tna')
                         ->label('Tasa Nominal Anual (TNA)')
@@ -115,11 +108,6 @@ class FinalizarSettingsPage extends Page
             Section::make('Links y Contacto')
                 ->description('URLs y datos de contacto que se muestran al pie de la página.')
                 ->schema([
-                    TextInput::make('finalizar_terms_url')
-                        ->label('URL de Términos y Condiciones')
-                        ->placeholder('/terminos-y-condiciones.pdf')
-                        ->columnSpanFull(),
-
                     TextInput::make('finalizar_contact_email')
                         ->label('Email de contacto')
                         ->email()
