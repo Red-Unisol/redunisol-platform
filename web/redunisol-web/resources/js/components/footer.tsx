@@ -35,7 +35,8 @@ interface SharedProps {
 
 const legalLinks = [
     { label: 'Contacto', href: '/contacto' },
-    { label: 'Políticas de Privacidad', href: '/politicas-de-privacidad' },
+    { label: 'Términos y Condiciones', href: '/terminos' },
+    { label: 'Política de Privacidad', href: '/privacidad' },
     { label: 'Gestión de Datos', href: '/gestion-de-datos' },
 ];
 

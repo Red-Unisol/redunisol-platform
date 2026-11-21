@@ -14,6 +14,10 @@ dataset('agency redirects', function () {
     $row = 2;
     while (($values = fgetcsv($file, escape: '')) !== false) {
         $label = 'htaccess row '.$row++;
+        // These paths now serve the supplied legal documents, not the agency's retired destinations.
+        if (in_array(parse_url($values[0], PHP_URL_PATH), ['/privacidad', '/terminos'], true)) {
+            continue;
+        }
         // Marketing confirmed this commercial landing in tasks #23051 and #23315.
         // Keep the original agency fixture as evidence, but retire its blog redirect.
         if ($values[0] === 'https://www.redunisol.com.ar/prestamos-para-empleados-universidad-nacional-de-cordoba') {
@@ -52,8 +56,8 @@ it('limits historical rules to their source host and directory', function () {
         ->and($rules->targetFor('example.com', '/index.html'))->toBeNull()
         ->and($rules->targetFor('prestamos.redunisol.com.ar', '/wp-content/themes/redunisol-other/style.css'))->toBeNull()
         ->and($rules->targetFor('prestamos.redunisol.com.ar', '/wp-content/themes/redunisol/style.css'))->toBe('https://redunisol.com.ar/')
-        ->and($rules->targetFor('www.redunisol.com.ar', '/privacidad/'))->toBe('https://redunisol.com.ar/politicas-de-privacidad')
-        ->and($rules->targetFor('redunisol.com.ar', '/privacidad'))->toBe('https://redunisol.com.ar/politicas-de-privacidad')
+        ->and($rules->targetFor('www.redunisol.com.ar', '/privacidad/'))->toBeNull()
+        ->and($rules->targetFor('redunisol.com.ar', '/privacidad'))->toBeNull()
         ->and($rules->targetFor('dev.redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBe('https://redunisol.com.ar/')
         ->and($rules->targetFor('redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBeNull()
         ->and($rules->targetFor('www.redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBeNull();
