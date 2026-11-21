@@ -8,19 +8,19 @@ beforeEach(function () {
     config()->set('inertia.ssr.enabled', false);
 });
 
-it('serves the supplied document without a CMS page or a historical redirect', function (string $path, string $title, string $pdf) {
+it('serves the supplied document without a CMS page or a historical redirect', function (string $path, string $title) {
     $this->get('https://dev.redunisol.com.ar'.$path)->assertOk()
         ->assertInertia(fn (Assert $page) => $page->component('legal-document')
             ->where('document.title', $title)
-            ->where('document.pdfUrl', $pdf)
+            ->missing('document.pdfUrl')
             ->where('document.draft', true)
             ->where('document.content', fn ($content) => str_contains($content, 'Para cerrar el borrador'))
             ->where('seo.robots', 'noindex, nofollow'));
     $this->get('https://redunisol.com.ar'.$path)->assertOk();
     $this->head('https://redunisol.com.ar'.$path)->assertOk();
 })->with([
-    ['/terminos', 'Términos y Condiciones', '/legal/red-unisol-terminos-y-condiciones.pdf'],
-    ['/privacidad', 'Política de Privacidad', '/legal/red-unisol-politica-de-privacidad.pdf'],
+    ['/terminos', 'Términos y Condiciones'],
+    ['/privacidad', 'Política de Privacidad'],
 ]);
 
 it('keeps legal pages reachable despite an old active CMS redirect', function () {
