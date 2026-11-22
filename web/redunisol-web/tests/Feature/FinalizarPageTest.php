@@ -229,6 +229,7 @@ it('includes the same platform terms as the legal page on every finalizar route'
             ->component('finalizar')
             ->missing('settings.terms_url')
             ->where('platformTerms', $terms)
+            ->where('platformTerms.draft', false)
             ->where('platformTerms.content', fn ($content) => str_contains($content, 'no garantiza el pago de las cuotas'))
         );
 })->with(['/finalizar', '/finalizar.php', '/finalizar-nvo']);

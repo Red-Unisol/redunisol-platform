@@ -14,7 +14,7 @@ class LegalDocumentService
             'title' => $document['title'],
             'description' => $document['description'],
             'content' => file_get_contents(resource_path('legal/'.$document['content'])),
-            'draft' => true,
+            'draft' => false,
         ];
     }
 }

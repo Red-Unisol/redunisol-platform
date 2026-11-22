@@ -20,7 +20,7 @@ class SitemapController extends Controller
         // Add Pages
         $pages = Page::where('index', true)->get();
         foreach ($pages as $page) {
-            // The supplied legal documents are drafts, regardless of old CMS indexing settings.
+            // Keep the legal pages' indexing policy regardless of old CMS indexing settings.
             if (app(ManagedRedirects::class)->isLegalDocumentPath($page->slug)) {
                 continue;
             }

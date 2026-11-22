@@ -13,8 +13,8 @@ it('serves the supplied document without a CMS page or a historical redirect', f
         ->assertInertia(fn (Assert $page) => $page->component('legal-document')
             ->where('document.title', $title)
             ->missing('document.pdfUrl')
-            ->where('document.draft', true)
-            ->where('document.content', fn ($content) => str_contains($content, 'Para cerrar el borrador'))
+            ->where('document.draft', false)
+            ->where('document.content', fn ($content) => ! str_contains(strtolower($content), 'borrador'))
             ->where('seo.robots', 'noindex, nofollow'));
     $this->get('https://redunisol.com.ar'.$path)->assertOk();
     $this->head('https://redunisol.com.ar'.$path)->assertOk();

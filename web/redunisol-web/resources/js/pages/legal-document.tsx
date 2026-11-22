@@ -21,7 +21,7 @@ interface LegalDocumentProps {
 }
 
 // Only add navigation attributes to the trusted, Git-managed document HTML.
-// Wording and paragraphs remain intact, including the draft review notes.
+// Wording and paragraphs remain intact.
 function withSectionAnchors(content: string) {
     const headings: { id: string; title: string }[] = [];
     const html = content.replace(
