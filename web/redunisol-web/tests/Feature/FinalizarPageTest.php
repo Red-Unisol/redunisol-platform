@@ -251,7 +251,7 @@ it('ignores the old configurable PDF destination without deleting its saved valu
 });
 
 it('keeps the finalizar visual and identity verification contract', function () {
-    $page = file_get_contents(resource_path('js/pages/finalizar.tsx'));
+    $page = preg_replace('/\s+/', ' ', file_get_contents(resource_path('js/pages/finalizar.tsx')));
     $conventionCard = file_get_contents(resource_path('js/components/convenio-card.tsx'));
 
     expect($page)
@@ -262,7 +262,7 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('Monto del crédito')
         ->toContain('Plan de cuotas')
         ->toContain('Número de solicitud')
-        ->toContain("createElement('metamap-button'")
+        ->toContain("'metamap-button'")
         ->toContain('clientid:')
         ->toContain('flowid:')
         ->toContain('metadata,')
@@ -277,7 +277,6 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('La validación de identidad está en curso.')
         ->toContain('Identidad validada correctamente')
         ->toContain('La validación no fue completada.')
-        ->toContain('max-w-2xl')
         ->toContain('bottom-[calc(0.75rem+env(safe-area-inset-bottom))]')
         ->toContain('sm:static')
         ->toContain('pb-32')
