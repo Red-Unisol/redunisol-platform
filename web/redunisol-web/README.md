@@ -711,3 +711,9 @@ La API `/api/internal/bitrix-routing` conserva su contrato de listas de IDs por 
 Los consumidores de Kestra con `BITRIX24_ROUTING_CONFIG_URL` configurado detienen la ejecución ante una consulta inválida o fallida; no restauran listas fijas de vendedores. Los grupos ausentes en una respuesta válida quedan vacíos. Los reintentos usan nuevamente la configuración administrada. La compatibilidad de configuración sin URL se conserva para consumidores que todavía no usan este contrato.
 
 Validación focalizada: `php artisan test --filter=BitrixRoutingConfigTest`, `php artisan test --filter=BitrixSellerRegistryTest` y la suite de `kestra/automations/marketing-crm/files/bitrix24_form_flow/tests`. La revisión visual se realiza localmente con directorio y base de datos ficticios, sin usar producción como entorno de pruebas.
+
+### Tasas de Finalizar para préstamos con IVA
+
+Ver [cálculo, consultas, configuración y pruebas](docs/finalizar-iva.md).
+La corrección se aplica en el backend de Finalizar y alimenta tanto la pantalla
+como los valores de MetaMap; no modifica las tasas almacenadas en Vimarx.
