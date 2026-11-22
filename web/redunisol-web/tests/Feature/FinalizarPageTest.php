@@ -219,27 +219,35 @@ it('supports fallback loans with missing optional data', function () {
         );
 });
 
-it('uses a hosted pdf as the default terms url', function () {
+it('includes the same platform terms as the legal page on every finalizar route', function (string $path) {
     config()->set('finalizar.legacy_clients.caja.base_url', '');
+    $terms = $this->get('/terminos')->assertOk()->viewData('page')['props']['document'];
+
+    $this->get($path)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->missing('settings.terms_url')
+            ->where('platformTerms', $terms)
+            ->where('platformTerms.draft', false)
+            ->where('platformTerms.content', fn ($content) => str_contains($content, 'no garantiza el pago de las cuotas'))
+        );
+})->with(['/finalizar', '/finalizar.php', '/finalizar-nvo']);
+
+it('ignores the old configurable PDF destination without deleting its saved value', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+    SiteSetting::set('finalizar_terms_url', 'https://example.test/contrato-operacion.pdf');
 
     $this->get('/finalizar')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
-            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
+            ->missing('settings.terms_url')
+            ->where('platformTerms.title', 'Términos y Condiciones')
+            ->missing('platformTerms.pdfUrl')
         );
-});
 
-it('normalizes the old finalizar terms url to the hosted pdf path', function () {
-    config()->set('finalizar.legacy_clients.caja.base_url', '');
-    SiteSetting::set('finalizar_terms_url', '/terminos-y-condiciones');
-
-    $this->get('/finalizar')
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('finalizar')
-            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
-        );
+    expect(SiteSetting::get('finalizar_terms_url'))->toBe('https://example.test/contrato-operacion.pdf');
 });
 
 it('keeps the finalizar visual and identity verification contract', function () {
@@ -273,7 +281,7 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('bottom-[calc(0.75rem+env(safe-area-inset-bottom))]')
         ->toContain('sm:static')
         ->toContain('pb-32')
-        ->toContain('sm:grid-cols-2')
+        ->toContain('grid-cols-2')
         ->not->toContain('Al continuar, revisá')
         ->not->toContain('ProgressSteps')
         ->not->toContain('verificationSteps')
