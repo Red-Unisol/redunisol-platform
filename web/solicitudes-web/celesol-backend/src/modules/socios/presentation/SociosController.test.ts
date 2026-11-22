@@ -73,6 +73,65 @@ describe("SociosController", () => {
     });
   });
 
+  it("allows Tesorería to create a socio", async () => {
+    const controller = buildController({
+      getCurrentUserUseCase: {
+        execute: async () => ({ ...authenticatedUser(), workflowOwner: { id: "tesoreria", code: "TESORERIA", name: "Tesorería" } }),
+      },
+      createSocioUseCase: {
+        execute: async () => buildFisicaSocio(),
+      },
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.create(
+      request({
+        body: {
+          apellido: "Perez",
+          cuit: "20-12345678-3",
+          domicilioCalle: "San Martin",
+          domicilioCodigoPostal: "2300",
+          domicilioLocalidad: "12",
+          domicilioNroPuerta: "742",
+          fechaDeNacimiento: "1990-02-28",
+          nombre: "Juan",
+          nroDocumento: "12345678",
+          sexo: "M",
+          tipoDocumento: "DNI",
+          tipoPersona: "FISICA",
+        },
+      }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 201);
+    assert.deepEqual(response.body, {
+      apellido: "Perez",
+      celular: null,
+      createdAt: "2026-06-19T18:00:00.000Z",
+      cuit: "20123456783",
+      domicilioCalle: null,
+      domicilioCodigoPostal: null,
+      domicilioLocalidad: null,
+      domicilioNroPuerta: null,
+      email: null,
+      fechaDeNacimiento: "1990-02-28",
+      id: SOCIO_ID,
+      nombre: "Juan",
+      nroDocumento: "12345678",
+      nroSocioLegacy: null,
+      sexo: "M",
+      tipoDocumento: "DNI",
+      tipoPersona: "FISICA",
+      updatedAt: "2026-06-19T18:00:00.000Z",
+    });
+  });
+
   it("rejects socio creation for a vendedor (non-RIESGO, non-admin)", async () => {
     let useCaseCalled = false;
     const controller = buildController({
