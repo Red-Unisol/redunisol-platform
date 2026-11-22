@@ -215,11 +215,14 @@ export default function Finalizar() {
         };
     }, [metamapReady, metadata]);
 
+    // Query-only previews have no resolved loan or signature metadata.
+    // They retain the configured disclosures; resolved loans share MetaMap rates.
+    const ratesLoan = finalizar.metamap.metadata ? loan : null;
     const rates = {
-        tna: loan ? loan.prestamo_tna : settings.tna,
-        tea: loan ? loan.prestamo_tea : settings.tea,
-        tem: loan ? loan.prestamo_tem : settings.tnm,
-        cft: loan ? loan.prestamo_cft : settings.cft,
+        tna: ratesLoan ? ratesLoan.prestamo_tna : settings.tna,
+        tea: ratesLoan ? ratesLoan.prestamo_tea : settings.tea,
+        tem: ratesLoan ? ratesLoan.prestamo_tem : settings.tnm,
+        cft: ratesLoan ? ratesLoan.prestamo_cft : settings.cft,
     };
 
     const installmentPlan =
