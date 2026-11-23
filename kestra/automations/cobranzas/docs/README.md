@@ -8,6 +8,8 @@ Dominio para automatizaciones de cobranzas y mora.
 
 - [Diagnóstico de Pago360 sin imputar](pago360-diagnostico.md).
 
+- [Cliente HTTP de Etapa 2 y prueba supervisada](pago360-etapa2-api.md).
+
 ## Flows
 
 - `bitrix_crm_negociaciones`: webhook principal que persiste las acciones futuras y programa un subflow para cada una.
