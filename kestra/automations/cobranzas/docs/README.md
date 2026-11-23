@@ -4,6 +4,8 @@ Dominio para automatizaciones de cobranzas y mora.
 
 ## Integraciones en preparación
 
+- [Diagnóstico de Pago360 sin imputar](pago360-diagnostico.md): consulta reproducible de la cuota; no confirma pagos ni habilita cobros.
+
 - Los flujos de Pago360 usan el motor de cuotas vencidas del #744. Ambos flujos y sus disparadores están deshabilitados. [Entradas de Kestra y recuperación](pago360.md) · [Reglas del motor](pago360-cuotas.md)
 
 ## Flows
