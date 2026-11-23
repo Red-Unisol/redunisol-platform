@@ -76,3 +76,5 @@ Configuracion versionada del embudo:
 Pruebas unitarias del dominio:
 
 - `python -m unittest kestra.automations.cobranzas.tests.test_bitrix_crm_negociaciones`
+
+- [Cliente HTTP de Etapa 2 y límites de la prueba supervisada](pago360-etapa2-api.md).
