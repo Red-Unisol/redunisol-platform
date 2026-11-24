@@ -308,7 +308,7 @@ def construir_consulta(api, tenant):
     return consultar
 
 
-def hubo_inicio_programado(api, base, flow, trigger, ahora):
+def hubo_inicio_programado(api, base, flow, trigger, ahora, *, despues_de=None, solo_exitos=False):
     # Trigger clocks advance when polled. Require an execution from this exact schedule.
     consulta = {"filters[namespace][EQUALS]": CRM, "filters[flowId][EQUALS]": flow,
                 "filters[timeRange][EQUALS]": "PT20M", "sort": "state.startDate:desc", "size": 5}
@@ -325,7 +325,9 @@ def hubo_inicio_programado(api, base, flow, trigger, ahora):
             if (fila.get("namespace") == CRM and fila.get("flowId") == flow and disparador.get("id") == trigger
                     and disparador.get("type") == "io.kestra.plugin.core.trigger.Schedule"
                     and estado.get("current") in {"RUNNING", "SUCCESS", "WARNING", "FAILED"}
-                    and inicio and ahora - timedelta(minutes=20) <= inicio <= ahora):
+                    and (not solo_exitos or estado.get("current") == "SUCCESS")
+                    and inicio and ahora - timedelta(minutes=20) <= inicio <= ahora
+                    and (despues_de is None or inicio > despues_de)):
                 return True
         total = respuesta.get("total")
         if not isinstance(total, int) or (not filas and (pagina - 1) * 5 < total):

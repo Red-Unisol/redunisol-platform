@@ -57,6 +57,7 @@ tasks:
     pullPolicy: IF_NOT_PRESENT
   containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
   env:
+    PREFILL_EXECUTION_STARTED_AT: '{{ execution.startDate }}'
     BACKFILL_DATE_FROM: '{{ inputs.date_from }}'
     BITRIX24_BASE_URL: '{{ envs.bitrix24_base_url }}'
     BITRIX24_WEBHOOK_PATH: '{{ secret(''BITRIX24_WEBHOOK_PATH'') }}'
@@ -71,7 +72,26 @@ tasks:
     BITRIX24_LEAD_STATUS_REJECTED: '{{ envs.bitrix24_lead_status_rejected }}'
     BITRIX24_TIMEOUT_SECONDS: '{{ envs.bitrix24_timeout_seconds }}'
   commands:
-  - python -m bitrix24_form_flow.kestra_lead_prefill_batch_select_entrypoint
+  # This immutable command fences stale scheduler ticks, including a resume during watchdog recovery.
+  - |
+    python - <<'PY'
+    from datetime import datetime, timedelta, timezone
+    import os
+    from bitrix24_form_flow.kestra_lead_prefill_batch_select_entrypoint import emit_batch, select_batch
+
+    started = datetime.fromisoformat(os.environ["PREFILL_EXECUTION_STARTED_AT"].replace("Z", "+00:00"))
+    if started.tzinfo is None:
+        raise ValueError("Missing offset in execution start time")
+
+    def current():
+        return timedelta(0) <= datetime.now(timezone.utc) - started < timedelta(minutes=20)
+
+    leads = select_batch() if current() else []
+    if current():
+        emit_batch(leads)
+    else:
+        emit_batch([], action="expired_scheduler_tick")
+    PY
 - id: procesar_lote
   type: io.kestra.plugin.core.flow.Parallel
   concurrent: 2

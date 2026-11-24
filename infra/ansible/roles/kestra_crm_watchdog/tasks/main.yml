@@ -1,0 +1,121 @@
+---
+- name: Limit execution to a single dedicated host and a known mode
+  ansible.builtin.assert:
+    that:
+      - groups['crm_intake_hosts'] | length == 1
+      - foundation_kestra_watchdog_mode in ['observe', 'recover', 'stopped']
+
+- name: Check controller-supplied credentials for active modes
+  ansible.builtin.assert:
+    that:
+      - foundation_kestra_watchdog_username | default('') | length > 0
+      - foundation_kestra_watchdog_password | default('') | length > 0
+  no_log: true
+  when: foundation_kestra_watchdog_mode != 'stopped'
+
+- name: End check mode after validating the installation contract
+  ansible.builtin.meta: end_host
+  when: ansible_check_mode
+
+- name: Check whether the observer exists before rollback
+  ansible.builtin.stat:
+    path: /etc/systemd/system/redunisol-kestra-crm-watchdog.timer
+  register: foundation_kestra_watchdog_timer
+  when: foundation_kestra_watchdog_mode == 'stopped'
+
+- name: Finish rollback on a host where the timer was never installed
+  ansible.builtin.meta: end_host
+  when: foundation_kestra_watchdog_mode == 'stopped' and not foundation_kestra_watchdog_timer.stat.exists
+
+- name: Disable the timer on rollback
+  ansible.builtin.systemd_service:
+    name: redunisol-kestra-crm-watchdog.timer
+    enabled: false
+    state: stopped
+  when: foundation_kestra_watchdog_mode == 'stopped'
+
+- name: Stop any in-flight observer on rollback
+  ansible.builtin.systemd_service:
+    name: redunisol-kestra-crm-watchdog.service
+    state: stopped
+  when: foundation_kestra_watchdog_mode == 'stopped'
+
+- name: Close the previous recovery activation on rollback
+  ansible.builtin.copy:
+    content: "stopped\n"
+    dest: /opt/redunisol-kestra-crm-watchdog/mode
+    owner: root
+    group: root
+    mode: '0644'
+  when: foundation_kestra_watchdog_mode == 'stopped'
+
+- name: End rollback without changing credentials or receipts
+  ansible.builtin.meta: end_host
+  when: foundation_kestra_watchdog_mode == 'stopped'
+
+- name: Create local observer user
+  ansible.builtin.user:
+    name: kestra-crm-watchdog
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create root-owned application directory
+  ansible.builtin.file:
+    path: /opt/redunisol-kestra-crm-watchdog
+    owner: root
+    group: root
+    mode: '0755'
+    state: directory
+
+- name: Install observer and shared schedule validation
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/redunisol-kestra-crm-watchdog/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - watchdog.py
+    - "{{ role_path }}/../../../../kestra/platform/system/files/alerta_barrido/barrido.py"
+
+- name: Install credentials for systemd LoadCredential
+  ansible.builtin.copy:
+    content: "{{ {'username': foundation_kestra_watchdog_username, 'password': foundation_kestra_watchdog_password} | to_json }}"
+    dest: /opt/redunisol-kestra-crm-watchdog/credential.json
+    mode: '0600'
+    owner: root
+    group: root
+  no_log: true
+  diff: false
+
+- name: Install units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/redunisol-kestra-crm-watchdog.{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [service, timer]
+
+- name: Record the activation mode and preserve its timestamp on identical applies
+  ansible.builtin.copy:
+    content: "{{ foundation_kestra_watchdog_mode }}\n"
+    dest: /opt/redunisol-kestra-crm-watchdog/mode
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Link metrics into the installed foundation node exporter
+  ansible.builtin.file:
+    src: /var/lib/redunisol-kestra-crm-watchdog/watchdog.prom
+    dest: "{{ foundation_monitoring_textfile_directory | default('/var/lib/prometheus/node-exporter') }}/redunisol-kestra-crm-watchdog.prom"
+    state: link
+    force: true
+
+- name: Enable the independent timer
+  ansible.builtin.systemd_service:
+    name: redunisol-kestra-crm-watchdog.timer
+    state: started
+    enabled: true
+    daemon_reload: true

@@ -1,0 +1,13 @@
+---
+- name: Manage the external observer of CRM schedules
+  hosts: crm_intake_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    foundation_kestra_watchdog_mode: observe
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: kestra_crm_watchdog

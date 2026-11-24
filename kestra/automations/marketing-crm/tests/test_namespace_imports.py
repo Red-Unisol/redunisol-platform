@@ -15,6 +15,8 @@ import yaml
 DOMAIN = Path(__file__).resolve().parents[1]
 MODULE_COMMAND = re.compile(r"python(?:3)? -m ((?:bitrix24_form_flow|edna_incoming)\.[\w.]+)$")
 
+INLINE_IMPORT = re.compile(r"^from ((?:bitrix24_form_flow|edna_incoming)\.[\w.]+) import ", re.MULTILINE)
+
 
 def task_modules(node):
     if isinstance(node, dict):
@@ -23,6 +25,8 @@ def task_modules(node):
             match = MODULE_COMMAND.fullmatch(command.strip())
             if match:
                 modules.append(match[1])
+            elif command.lstrip().startswith(("python - <<", "python3 - <<")):
+                modules.extend(INLINE_IMPORT.findall(command))
         if modules:
             yield node, modules
         for value in node.values():

@@ -1,0 +1,24 @@
+[Unit]
+Description=Observe Kestra CRM schedules and enforce the reviewed prefill recovery policy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kestra-crm-watchdog
+StateDirectory=redunisol-kestra-crm-watchdog
+StateDirectoryMode=0751
+UMask=0077
+LoadCredential=kestra.json:/opt/redunisol-kestra-crm-watchdog/credential.json
+ExecStart=/usr/bin/python3 -EBs /opt/redunisol-kestra-crm-watchdog/watchdog.py --mode {{ foundation_kestra_watchdog_mode }}
+TimeoutStartSec=100
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
