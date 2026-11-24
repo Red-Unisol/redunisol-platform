@@ -2,11 +2,31 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ConsultaEmpleadorTest extends TestCase
 {
+    private string $registroDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->registroDir = sys_get_temp_dir().'/empleador-registro-'.uniqid();
+        config()->set('tools.empleador_registro_path', $this->registroDir);
+    }
+
+    protected function tearDown(): void
+    {
+        foreach (glob($this->registroDir.'/*') ?: [] as $file) {
+            unlink($file);
+        }
+        @rmdir($this->registroDir);
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_it_requires_an_identifier(): void
     {
         $response = $this->withSession(['empleador_usuario' => 'aortega'])->postJson('/api/tools/consulta-empleador', [
@@ -126,5 +146,66 @@ class ConsultaEmpleadorTest extends TestCase
             ->postJson('/api/tools/consulta-empleador/logout')
             ->assertOk()
             ->assertSessionMissing('empleador_usuario');
+    }
+
+    public function test_each_query_is_logged_with_user_identifier_and_status(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-24 13:05:00', 'UTC'));
+        config()->set('tools.proxy.consulta_empleador_url', 'https://kestra.example.test/webhook');
+        Http::fakeSequence('https://kestra.example.test/webhook')
+            ->push(['ok' => true, 'found' => true, 'data_json' => '{"secreto":"no se guarda"}'], 200)
+            ->push(['ok' => false, 'error' => 'falla'], 500);
+
+        $this->withSession(['empleador_usuario' => 'aortega'])
+            ->postJson('/api/tools/consulta-empleador', ['identificador' => '20-35966130-5'])->assertOk();
+        $this->withSession(['empleador_usuario' => 'jperez'])
+            ->postJson('/api/tools/consulta-empleador', ['identificador' => '35966130'])->assertStatus(502);
+
+        $contenido = file_get_contents($this->registroDir.'/consultas-2026-11.ndjson');
+        $this->assertStringNotContainsString('secreto', $contenido);
+
+        $this->withSession(['empleador_usuario' => 'aortega'])
+            ->getJson('/api/tools/consulta-empleador/registro?mes=2026-11')
+            ->assertOk()
+            ->assertJsonPath('meses', ['2026-11'])
+            ->assertJsonCount(2, 'consultas')
+            ->assertJsonPath('consultas.0.usuario', 'jperez')
+            ->assertJsonPath('consultas.0.identificador', '35966130')
+            ->assertJsonPath('consultas.0.estado', 'error')
+            ->assertJsonPath('consultas.1.usuario', 'aortega')
+            ->assertJsonPath('consultas.1.identificador', '20359661305')
+            ->assertJsonPath('consultas.1.estado', 'ok')
+            ->assertJsonPath('consultas.1.fecha', '2026-11-24T10:05:00-03:00');
+    }
+
+    public function test_invalid_identifier_is_not_logged(): void
+    {
+        $this->withSession(['empleador_usuario' => 'aortega'])
+            ->postJson('/api/tools/consulta-empleador', ['identificador' => 'abc'])->assertStatus(422);
+
+        $this->assertSame([], glob($this->registroDir.'/*') ?: []);
+    }
+
+    public function test_registro_requires_login(): void
+    {
+        $this->getJson('/api/tools/consulta-empleador/registro')->assertStatus(401);
+        $this->get('/api/tools/consulta-empleador/registro.csv')->assertStatus(401);
+    }
+
+    public function test_registro_downloads_as_csv(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-24 13:05:00', 'UTC'));
+        config()->set('tools.proxy.consulta_empleador_url', 'https://kestra.example.test/webhook');
+        Http::fake(['https://kestra.example.test/webhook' => Http::response(['ok' => true, 'found' => false], 200)]);
+
+        $this->withSession(['empleador_usuario' => 'aortega'])
+            ->postJson('/api/tools/consulta-empleador', ['identificador' => '35966130'])->assertOk();
+
+        $response = $this->withSession(['empleador_usuario' => 'aortega'])
+            ->get('/api/tools/consulta-empleador/registro.csv?mes=2026-11');
+
+        $response->assertOk();
+        $this->assertStringContainsString('consultas-empleador-2026-11.csv', $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString('24/11/2026 10:05:00;aortega;35966130;ok', $response->getContent());
     }
 }
