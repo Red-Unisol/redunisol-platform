@@ -3,6 +3,25 @@
 Aqui viven los flows tecnicos u operativos que no pertenecen a un dominio de
 negocio especifico.
 
+## Alerta vigente: `alerta_flows_barrido`
+
+Cada 8 minutos (`files/alerta_barrido/barrido.py`, pruebas en
+`kestra/tools/tests/test_alerta_barrido.py`) hace dos chequeos sobre `redunisol.prod.*`
+y avisa al chat de alertas de Bitrix24, con el estado en la clave KV `alerta.barrido.incidentes`:
+
+- **Fallas**: ejecuciones `FAILED` de los ultimos 20 minutos, un incidente por flow
+  ("Flow fallido" / "Flow recuperado").
+- **Ejecuciones trabadas**: `RUNNING`, `QUEUED` o `KILLING` con mas de
+  `TRABADA_UMBRAL_MINUTOS` (45 por defecto, mayor que el SLA de 30 min de los flows de
+  cada minuto). Un aviso por ejecucion ("Ejecucion trabada" con estado y hora de inicio)
+  y otro cuando deja de estarlo ("Ejecucion destrabada"). `TRABADA_EXCLUIDOS` acepta
+  `namespace/flow` separados por coma para flows que duran mas de forma normal.
+  Motivo: el 22/11/2026 `bitrix24_lead_prefill` estuvo 55,8 h en RUNNING y
+  `bitrix24_deal_assignment_queue` ~59 h en KILLING sin que la alerta de fallas lo viera.
+  Una ejecucion que queda para siempre en KILLING (zombi) se avisa una sola vez.
+
+Lo que sigue describe el esquema anterior por evento, sin ejecuciones desde el 25/09/2026.
+
 ## Alertas: observador, temporizador y gestor unico
 
 - `alerta_flow_fallos.yaml` recibe los eventos `FAILED` y `SUCCESS` de prod,

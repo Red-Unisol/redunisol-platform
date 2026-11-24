@@ -22,22 +22,24 @@ _spec.loader.exec_module(barrido)
 AHORA = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 
 
-def ejecucion(namespace, flow, minutos_atras, ident="x"):
+def ejecucion(namespace, flow, minutos_atras, ident="x", estado=None):
     momento = AHORA - timedelta(minutes=minutos_atras)
     return {
         "id": ident,
         "namespace": namespace,
         "flowId": flow,
-        "state": {"startDate": momento.isoformat().replace("+00:00", "Z")},
+        "state": {"startDate": momento.isoformat().replace("+00:00", "Z"), "current": estado},
     }
 
 
 class Espia:
     """Sustituye las dependencias de red y registra lo que se pidio."""
 
-    def __init__(self, fallidas=None, exitos=None, romper=False):
+    def __init__(self, fallidas=None, exitos=None, romper=False, trabadas=None):
         self.fallidas = fallidas or []
         self.exitos = exitos or []
+        # La API real ya filtra por estado y antiguedad; el espia solo separa por estado.
+        self.trabadas = trabadas or []
         self.romper = romper
         self.avisos = []
         self.consultas = []
@@ -46,6 +48,9 @@ class Espia:
         self.consultas.append(filtros)
         if filtros.get("filters[state][EQUALS]") == "FAILED":
             return self.fallidas
+        if "filters[startDate][LESS_THAN]" in filtros:
+            estado = filtros.get("filters[state][EQUALS]")
+            return [e for e in self.trabadas if e["state"]["current"] == estado]
         return self.exitos
 
     def avisar(self, titulo, namespace, flow, referencia):
@@ -90,9 +95,10 @@ def test_agrupar_ignora_el_propio_flow():
 
 @pytest.mark.parametrize("guardado", [None, {}, "", "no es json", {"value": "{}"}, []])
 def test_leer_estado_tolera_cualquier_basura(guardado):
-    incidentes, previa = barrido.leer_estado(guardado)
+    incidentes, previa, trabadas = barrido.leer_estado(guardado)
     assert incidentes == {}
     assert previa is None
+    assert trabadas == {}
 
 
 # --- apertura de incidentes ------------------------------------------------
@@ -232,3 +238,87 @@ def test_la_busqueda_de_fallas_usa_los_filtros_que_la_api_entiende():
     assert filtros["filters[timeRange][EQUALS]"] == "PT20M"
     # STARTS_WITH es el operador correcto: PREFIX devuelve 0 en silencio.
     assert filtros["filters[namespace][STARTS_WITH]"] == barrido.PREFIJO
+
+
+# --- ejecuciones trabadas --------------------------------------------------
+
+def trabada(flow="uno", minutos=60, ident="t1", estado="RUNNING"):
+    return ejecucion("redunisol.prod.crm", flow, minutos, ident, estado)
+
+
+def test_una_ejecucion_trabada_se_avisa_una_sola_vez():
+    espia = Espia(trabadas=[trabada()])
+    _, salida = correr(espia)
+    assert [a[0] for a in espia.avisos] == ["Ejecucion trabada"]
+    assert salida["trabadas"] == 1
+
+    espia2 = Espia(trabadas=[trabada()])
+    _, salida2 = correr(espia2, salida["estado"])
+    assert espia2.avisos == []
+    assert salida2["trabadas"] == 1
+
+
+def test_busca_running_queued_y_killing_mas_viejas_que_el_umbral():
+    espia = Espia(trabadas=[
+        trabada(ident="a", estado="RUNNING"),
+        trabada(ident="b", estado="QUEUED"),
+        trabada(ident="c", estado="KILLING"),
+    ])
+    _, salida = correr(espia)
+    assert set(salida["estado"]["trabadas"]) == {"a", "b", "c"}
+    consultas = [c for c in espia.consultas if "filters[startDate][LESS_THAN]" in c]
+    assert {c["filters[state][EQUALS]"] for c in consultas} == {"RUNNING", "QUEUED", "KILLING"}
+    limite = (AHORA - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert all(c["filters[startDate][LESS_THAN]"] == limite for c in consultas)
+    assert all(c["filters[namespace][STARTS_WITH]"] == barrido.PREFIJO for c in consultas)
+
+
+def test_el_aviso_dice_estado_y_desde_cuando_en_hora_argentina():
+    espia = Espia(trabadas=[trabada(minutos=60, ident="t1", estado="KILLING")])
+    avisos = []
+    b = barrido.Barrido(espia.consultar, lambda *a: avisos.append(a) or True, ahora=AHORA)
+    b.correr({}, "redunisol.prod.system")
+    # AHORA es 12:00 UTC: una hora antes son las 08:00 en Argentina.
+    assert avisos[0][3] == "t1 (KILLING desde 25/09 08:00 AR)"
+
+
+def test_al_destrabarse_avisa_y_la_quita_del_estado():
+    _, salida = correr(Espia(trabadas=[trabada()]))
+    espia = Espia()
+    _, salida2 = correr(espia, salida["estado"])
+    assert [a[0] for a in espia.avisos] == ["Ejecucion destrabada"]
+    assert salida2["trabadas"] == 0
+
+
+def test_si_el_aviso_de_trabada_falla_se_reintenta_y_no_anuncia_destrabe():
+    _, salida = correr(Espia(trabadas=[trabada()], romper=True))
+    assert salida["estado"]["trabadas"]["t1"]["avisado"] is False
+
+    espia = Espia(trabadas=[trabada()])
+    _, salida2 = correr(espia, salida["estado"])
+    assert [a[0] for a in espia.avisos] == ["Ejecucion trabada"]
+
+    # Si nunca se aviso que estaba trabada, al destrabarse no se avisa nada.
+    _, sin_aviso = correr(Espia(trabadas=[trabada()], romper=True))
+    espia3 = Espia()
+    _, salida3 = correr(espia3, sin_aviso["estado"])
+    assert espia3.avisos == []
+    assert salida3["trabadas"] == 0
+
+
+def test_ignora_el_propio_barrido_y_los_excluidos():
+    espia = Espia(trabadas=[
+        ejecucion("redunisol.prod.system", barrido.FLOW_PROPIO, 60, "propio", "RUNNING"),
+        trabada(flow="largo", ident="largo"),
+    ])
+    _, salida = correr(espia, excluidos_trabada=["redunisol.prod.crm/largo"])
+    assert espia.avisos == []
+    assert salida["trabadas"] == 0
+
+
+def test_un_estado_guardado_sin_trabadas_sigue_funcionando():
+    """El KV de produccion no tiene la clave trabadas hasta la primera corrida nueva."""
+    viejo = {"ultima_corrida": (AHORA - timedelta(minutes=8)).isoformat(), "incidentes": {}}
+    espia = Espia(trabadas=[trabada()])
+    _, salida = correr(espia, viejo)
+    assert [a[0] for a in espia.avisos] == ["Ejecucion trabada"]
