@@ -26,6 +26,9 @@ if (config('edna.assistance_test_mode')) {
     $assistancePoll->everyMinute();
 }
 
+Schedule::command('sales:chat-transfers')->everyMinute()->withoutOverlapping(5)->runInBackground()
+    ->when(fn () => config('edna.kestra_chat_transfer_delivery_enabled'));
+
 Schedule::command('sales:inbox poll')->everyMinute()->withoutOverlapping(8)->runInBackground()
     ->when(fn () => config('edna.sales_inbox_enabled') && config('edna.intake_crm_enabled'));
 

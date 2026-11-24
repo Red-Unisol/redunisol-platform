@@ -33,7 +33,8 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
         bool $reconcileAcknowledgement = false,
     ) {
         $this->reconcileAcknowledgement = $reconcileAcknowledgement;
-        $this->guardedDelivery = $reconcileAcknowledgement;
+        // Pin the wire format at admission, including across worker restarts and producer rollbacks.
+        $this->guardedDelivery = $reconcileAcknowledgement && config('services.kestra.guarded_form_delivery') === true;
     }
 
     public function handle(
@@ -72,7 +73,7 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
             throw new RuntimeException('Kestra no pudo persistir el formulario en Bitrix24.');
         }
 
-        if ($this->qualified && $this->guardedDelivery) {
+        if ($this->qualified && $this->reconcileAcknowledgement) {
             $receipts->reportLead($this->input, $this->clientContext, $metaConversionsApi);
         } elseif ($this->qualified) {
             $metaConversionsApi->sendLead($this->input, $this->clientContext);

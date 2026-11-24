@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from inspect import signature
 from datetime import date, datetime, timedelta
 import json
 import os
@@ -163,6 +164,7 @@ def process_pending_catamarca_deals(
         "event_count": len(events),
         "deferred_count": len(selected) - len(events),
         "events_json": json.dumps(events, ensure_ascii=False),
+        "chat_delivery_totals_json": _chat_delivery_totals_json(events),
     }
 
 
@@ -714,15 +716,14 @@ def qualify_catamarca_deal(
         "seller_selected",
         assignment.strategy,
     )
-    assigned_by_id = assignment.assigned_by_id
-    assigned_by_name = user_display_name(
-        client,
-        assigned_by_id=assigned_by_id,
-        logger=active_logger,
-    )
     fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
     if guard_reason or fresh_sessions != guarded_sessions:
         return _routing_preserved(client, config, deal, processed_at, guard_reason or "session_changed_before_assignment", active_logger)
+    handoff, pending = _prepare_chat_handoff(
+        client, config, source, deal, guarded_sessions, decision.stage_id, assignment, active_logger, processed_at)
+    if pending:
+        return pending
+    assigned_by_id = handoff.target_id if handoff is not None else assignment.assigned_by_id
     update_fields: dict[str, Any] = {
         "stageId": decision.stage_id,
         "assignedById": assigned_by_id,
@@ -732,17 +733,19 @@ def qualify_catamarca_deal(
         update_fields[config.deal.commercial_line_field] = decision.commercial_line
 
     preserved = _update_routing_owners(client, config, deal, update_fields,
-                                      guarded_sessions, active_logger, processed_at)
+                                      guarded_sessions, active_logger, processed_at, guard_writes=handoff is not None)
     if preserved:
         return preserved
+    assigned_by_name = user_display_name(client, assigned_by_id=assigned_by_id, logger=active_logger)
     linked_activity_count = bind_open_line_activities_to_deal(
         client,
         lead_id=lead_id,
-        contact_id=contact_id,
+        # In durable mode a historical contact activity is not proof for this loan.
+        contact_id=contact_id if handoff is None else None,
         deal_id=deal_id_int,
         logger=active_logger,
     )
-    chat_transfer = assign_open_line_chats_to_user(
+    chat_transfer = handoff or _legacy_chat_transfer(
         client,
         lead_id=lead_id,
         contact_id=contact_id,
@@ -750,7 +753,6 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=active_logger,
-        transfer_timeout_seconds=config.timeout_seconds,
         expected_stage=decision.stage_id,
         expected_sessions=guarded_sessions,
     )
@@ -763,6 +765,7 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         assigned_by_name=assigned_by_name,
         action=decision.action,
+        **({"chat_delivery_status": handoff.status} if handoff else {}),
         chat_transferred=chat_transfer.transferred_count > 0,
         logger=active_logger,
     )
@@ -802,6 +805,7 @@ def qualify_catamarca_deal(
         linked_activity_count=linked_activity_count,
         transferred_chat_count=chat_transfer.transferred_count,
         chat_transfer_status=chat_transfer.status,
+        delivery_states=getattr(chat_transfer, "states", ()),
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
@@ -849,7 +853,7 @@ def process_distribution_queue(
         try:
             events.append(_retry_queued_deal(
                 client, config, deal, active_logger, processed_at,
-                within_business_hours=within_business_hours,
+                within_business_hours=within_business_hours, env=source,
             ))
         except Exception as exc:
             active_logger.error(f"No se pudo distribuir el bucket de vendedor unico {bucket_key}: {exc}")
@@ -914,7 +918,7 @@ def process_distribution_queue(
             events.append(
                 _retry_queued_deal(
                     client, config, oldest, active_logger, processed_at,
-                    current_time=lambda: _local_datetime(source, now),
+                    current_time=lambda: _local_datetime(source, now), env=source,
                 )
             )
         except Exception as exc:
@@ -1050,10 +1054,45 @@ def _routing_preflight(client, config, deal, logger):
         return {}, "attention_inspection_unavailable"
 
 
-def _update_routing_owners(client, config, deal, fields, sessions, logger, processed_at):
+def _legacy_chat_transfer(client, *, expected_stage, **kwargs):
+    # The qualifier and its helper are uploaded as separate namespace files.
+    # The main-branch helper still in flight during upload has no stage argument.
+    if "expected_stage" in signature(assign_open_line_chats_to_user).parameters:
+        kwargs["expected_stage"] = expected_stage
+    return assign_open_line_chats_to_user(client, **kwargs)
+
+
+def _prepare_chat_handoff(client, config, env, deal, sessions, stage, assignment, logger, processed_at):
+    # Old flow definitions omit this key. Avoid importing files which a rolling
+    # namespace upload may not have installed yet, or calling a new Laravel API.
+    if env.get("SALES_CHAT_DELIVERY_MODE", "legacy") == "legacy":
+        return None, None
+    from .chat_delivery_rollout import chat_delivery_mode
+    from .transfer_requests import reserve_sessions
+    mode = chat_delivery_mode(env)
+    handoff = reserve_sessions(mode, env, sessions, deal, stage, assignment, client=client)
+    if handoff.blocked:
+        # Keep the selector (including the queue markers) and both owners intact.
+        # The next ordinary scan can reacquire the same immutable receipt.
+        return handoff, _result(
+            action="chat_delivery_pending", has_pending=True, reason=handoff.blocked,
+            stage_id=deal["stageId"], deal_id=int(deal["id"]), lead_id=int(deal["leadId"]),
+            contact_id=_optional_int(deal.get("contactId")), assigned_by_id=_optional_int(deal.get("assignedById")),
+            processed_at=processed_at, distribution_action="waiting", distribution_reason=handoff.blocked,
+            chat_transfer_status=handoff.status, found_chat_ids=handoff.found_chat_ids, delivery_states=handoff.states,
+            message="La asignación espera la confirmación de custodia de la entrega de chat.")
+    # A human may have taken the chat while the handoff was in flight.
+    fresh_sessions, reason = _routing_preflight(client, config, deal, logger)
+    if reason or fresh_sessions != sessions:
+        return handoff, _routing_preserved(client, config, deal, processed_at,
+            reason or "session_changed_before_assignment", logger)
+    return handoff, None
+
+
+def _update_routing_owners(client, config, deal, fields, sessions, logger, processed_at, *, guard_writes=False):
     lead_id, deal_id = int(deal["leadId"]), int(deal["id"])
     target = fields["assignedById"]
-    new_policy = deal.get("_new_owner_policy", False)
+    new_policy = deal.get("_new_owner_policy", False) or guard_writes
     snapshot = deal.get("_routing_lead_snapshot", {})
 
     def crm_still_matches():
@@ -1189,6 +1228,7 @@ def _retry_queued_deal(
     *,
     within_business_hours: bool = True,
     current_time=None,
+    env=None,
 ) -> dict[str, object]:
     deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
     if preserved is not None:
@@ -1248,10 +1288,6 @@ def _retry_queued_deal(
     deal, preserved = _guard_queued_ownership(client, config, deal, logger, processed_at)
     if preserved is not None:
         return preserved
-    assigned_by_id = assignment.assigned_by_id
-    assigned_by_name = user_display_name(
-        client, assigned_by_id=assigned_by_id, logger=logger
-    )
     target_stage = str(
         deal.get(config.deal.queue_target_stage_field)
         or config.deal.manual_review_stage_id
@@ -1262,25 +1298,31 @@ def _retry_queued_deal(
     waiting = closing_wait()
     if waiting:
         return waiting
+    handoff, pending = _prepare_chat_handoff(
+        client, config, os.environ if env is None else env, deal, guarded_sessions,
+        target_stage, assignment, logger, processed_at)
+    if pending:
+        return pending
+    assigned_by_id = handoff.target_id if handoff is not None else assignment.assigned_by_id
     preserved = _update_routing_owners(client, config, deal, {
         "stageId": target_stage, "assignedById": assigned_by_id,
         config.deal.queue_action_field: "", config.deal.queue_reason_field: "",
         config.deal.queue_target_stage_field: "", config.deal.queue_enqueued_at_field: "",
-    }, guarded_sessions, logger, processed_at)
+    }, guarded_sessions, logger, processed_at, guard_writes=handoff is not None)
     if preserved:
         return preserved
+    assigned_by_name = user_display_name(client, assigned_by_id=assigned_by_id, logger=logger)
     linked = bind_open_line_activities_to_deal(
-        client, lead_id=lead_id, contact_id=contact_id,
+        client, lead_id=lead_id, contact_id=contact_id if handoff is None else None,
         deal_id=deal_id, logger=logger,
     )
-    chat_transfer = assign_open_line_chats_to_user(
+    chat_transfer = handoff or _legacy_chat_transfer(
         client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=logger,
         preserve_existing_ownership=True,
         provisional_user_id=config.deal.provisional_user_id,
-        transfer_timeout_seconds=config.timeout_seconds,
         expected_stage=target_stage,
         expected_sessions=guarded_sessions,
     )
@@ -1289,6 +1331,7 @@ def _retry_queued_deal(
         deal_title=str(deal.get("title") or ""), bucket_label=bucket.label,
         assigned_by_id=assigned_by_id, assigned_by_name=assigned_by_name,
         action=str(deal.get(config.deal.queue_action_field) or "approved"),
+        **({"chat_delivery_status": handoff.status} if handoff else {}),
         chat_transferred=chat_transfer.transferred_count > 0, logger=logger,
     )
     return _queue_context_result(
@@ -1306,6 +1349,7 @@ def _retry_queued_deal(
         linked_activity_count=linked,
         transferred_chat_count=chat_transfer.transferred_count,
         chat_transfer_status=chat_transfer.status,
+        delivery_states=getattr(chat_transfer, "states", ()),
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
@@ -1400,6 +1444,19 @@ def _queue_context_result(
     )
 
 
+def _chat_delivery_totals_json(events):
+    # A contact can appear in several decisions in a batch. Count distinct
+    # chats per observed state. Only an actual write in this run is "transferred".
+    chats_by_state = {}
+    for event in events:
+        for chat_id, state in event.get("chat_delivery_states", {}).items():
+            chats_by_state.setdefault(state, set()).add(chat_id)
+        for chat_id in str(event.get("transferred_chat_ids") or "").split(","):
+            if chat_id:
+                chats_by_state.setdefault("transferred", set()).add(chat_id)
+    return json.dumps({key: len(chats) for key, chats in sorted(chats_by_state.items())})
+
+
 def _queue_batch_result(
     events: list[dict[str, object]], processed_at: datetime
 ) -> dict[str, object]:
@@ -1408,10 +1465,11 @@ def _queue_batch_result(
         "processed_at": processed_at.isoformat(),
         "event_count": len(events),
         "distributed_count": sum(event.get("action") == "queue_distributed" for event in events),
-        "waiting_count": sum(event.get("action") == "queue_waiting" for event in events),
+        "waiting_count": sum(event.get("action") in ("queue_waiting", "chat_delivery_pending") for event in events),
         "closed_count": sum(event.get("action") == "queue_closed" for event in events),
         "events": events,
         "events_json": json.dumps(events, ensure_ascii=False),
+        "chat_delivery_totals_json": _chat_delivery_totals_json(events),
     }
 
 
@@ -2338,6 +2396,7 @@ def _result(
     linked_activity_count: int = 0,
     transferred_chat_count: int = 0,
     chat_transfer_status: str = "not_evaluated",
+    delivery_states: tuple[tuple[int, str], ...] = (),
     found_chat_ids: tuple[int, ...] = (),
     transferred_chat_ids: tuple[int, ...] = (),
     skipped_chats: tuple[tuple[int, str], ...] = (),
@@ -2404,6 +2463,11 @@ def _result(
         "linked_activity_count": linked_activity_count,
         "transferred_chat_count": transferred_chat_count,
         "chat_transfer_status": chat_transfer_status,
+        "chat_delivery_states": {str(chat): state for chat, state in delivery_states},
+        "queued_chat_count": sum(state == "delivery_queued" for _, state in delivery_states),
+        "waiting_chat_count": sum(state in ("delivery_waiting", "delivery_paused", "delivery_target_conflict", "delivery_binding_pending") for _, state in delivery_states),
+        "unverified_chat_binding_count": sum(state == "delivery_binding_unverified" for _, state in delivery_states),
+        "uncertain_chat_count": sum(state in ("delivery_uncertain", "handoff_unconfirmed") for _, state in delivery_states),
         "found_chat_ids": ",".join(str(chat_id) for chat_id in found_chat_ids),
         "transferred_chat_ids": ",".join(
             str(chat_id) for chat_id in transferred_chat_ids

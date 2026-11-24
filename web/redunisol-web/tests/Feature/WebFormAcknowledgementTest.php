@@ -131,3 +131,32 @@ it('keeps conflicting acknowledgements quarantined across subsequent responses',
     expect(DB::table('web_form_receipts')->value('state'))->toBe('uncertain')
         ->and(DB::table('web_form_receipts')->value('crm_ack_conflict_at'))->not->toBeNull();
 });
+
+it('pins the sender format when queued and deduplicates conversions across rollout and rollback', function (bool $v1) {
+    config(['services.kestra.form_webhook_url' => 'https://kestra.example.test/form']);
+    if ($v1) {
+        config(['services.kestra.guarded_form_delivery' => true]);
+    }
+    $queued = serialize(new \App\Jobs\PersistFormSubmission($this->form, true, reconcileAcknowledgement: true));
+    config(['services.kestra.guarded_form_delivery' => ! $v1]);
+    $meta = Mockery::mock(MetaConversionsApiService::class);
+    $meta->shouldReceive('sendLead')->once();
+    app()->instance(MetaConversionsApiService::class, $meta);
+    Http::fake(['https://kestra.example.test/form' => function ($request) use ($v1) {
+        $wire = $request->data();
+        if ($v1) {
+            expect(array_keys($wire))->toBe(['web_crm_delivery_v1']);
+            $this->receipts->claimWrite($this->id, hash('sha256', $wire['web_crm_delivery_v1']));
+        } else {
+            expect($wire['web_submission_id'])->toBe($this->id)->and($wire)->not->toHaveKey('web_crm_delivery_v1');
+        }
+
+        return Http::response(['ok' => true, 'lead_id' => '13', 'contact_id' => '14']);
+    }]);
+    $job = unserialize($queued);
+    $job->handle(new SubmitFormToKestra, $meta);
+    $job->handle(new SubmitFormToKestra, $meta);
+    (new ReconcileWebFormAcknowledgement($this->form, true))->handle(Mockery::mock(EdnaBitrix::class), $this->receipts);
+    Http::assertSentCount(1);
+    expect(DB::table('web_form_receipts')->value('state'))->toBe('synced');
+})->with(['default legacy job on upgraded worker' => [false], 'v1 job on rolled back sender' => [true]]);

@@ -547,10 +547,6 @@ class FakeBcraClient:
 
 class BusinessLogicTests(unittest.TestCase):
     def setUp(self) -> None:
-        window = patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window",
-                       side_effect=lambda *_: (datetime.now(timezone.utc) + timedelta(hours=1), "transferable"))
-        window.start()
-        self.addCleanup(window.stop)
         # These tests supply commercial snapshots directly. The real refresh and its
         # qualification/queue integration are exercised in test_deal_vimarx_refresh.
         refresh = patch(

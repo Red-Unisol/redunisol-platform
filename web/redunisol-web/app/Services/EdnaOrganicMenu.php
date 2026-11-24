@@ -527,7 +527,7 @@ class EdnaOrganicMenu
         if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry, $verifiedContact)) {
             return $this->finish('preserved', 'native_crm_assignment_preserved');
         }
-        $window = app(SalesTransferWindow::class)->inspect($this->crm, (int) $proof['chat_id'], (int) $proof['session_id'], $attention['dialog'] ?? null);
+        $window = SalesTransferWindow::forLocalTransfer($this->crm, (int) $proof['chat_id'], (int) $proof['session_id'], $attention['dialog'] ?? null);
         $this->assertBudget(65);
         $fresh = $this->attention->inspect($proof, $target);
         if (($fresh['status'] ?? '') !== 'ready') {
@@ -544,7 +544,7 @@ class EdnaOrganicMenu
             $verifiedContact, $case['ID'], $target, $case['contact_deal_stage'])) {
             return $this->finish('preserved', 'contact_deal_or_attention_changed');
         }
-        if ($reason = SalesTransferWindow::blockReason($window)) {
+        if ($reason = SalesTransferWindow::localBlockReason($window)) {
             $state = SalesTransferWindow::blockedState($reason);
 
             return $state === 'waiting' ? $this->wait($reason) : $this->finish($state, $reason);
@@ -557,7 +557,7 @@ class EdnaOrganicMenu
         $this->write(['transfer_state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
             'seller_id' => (string) $target, 'transfer_acknowledged' => false]);
         $this->assertLease();
-        if ($reason = SalesTransferWindow::blockReason($window)) {
+        if ($reason = SalesTransferWindow::localBlockReason($window)) {
             return $this->wait($reason, ['transfer_intent' => null, 'transfer_state' => 'pending']);
         }
         try {

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\EdnaBitrix;
+use App\Services\SalesChatTransfer;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use RuntimeException;
@@ -157,6 +158,7 @@ class SalesDistribution extends Command
             'sessions_opened' => count($sessions), 'unique_chats' => count($chats), 'chats_by_distribution' => $groups,
             'chats_with_confirmed_human_work_including_partial' => $human, 'fully_attributed_distributed_chats' => $confirmed,
             'human_work_pct_fully_attributed' => $confirmed ? round(100 * ($groups['only_human'] + $groups['both']) / $confirmed, 1) : null,
+            'current_kestra_delivery_requests_for_opened_sessions' => SalesChatTransfer::counts(array_keys($sessions)),
             'technical_restorations' => $maintenance, 'other_native_events' => $nonDistribution, 'native_transfer_counts' => $events, 'events_by_initiator_id' => $actors], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;

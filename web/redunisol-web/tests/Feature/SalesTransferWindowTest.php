@@ -154,3 +154,35 @@ test('the scoped Kestra endpoint reads only the requested chat and session and r
         'chat_id' => 601, 'session_id' => 501, 'state' => 'open', 'expires_at' => '2026-11-25T12:00:00.000000Z',
     ]);
 });
+
+test('local rollout preserves the legacy preflight until activated and never disables the proof on rollback', function () {
+    $crm = salesWindowFixture();
+    salesWindowCallback('2026-11-22T10:00:00Z');
+    $legacy = SalesTransferWindow::forLocalTransfer($crm, 601, 501);
+    expect($legacy['state'])->toBe('legacy')->and(SalesTransferWindow::localBlockReason($legacy))->toBeNull();
+    // The scoped service and sales inbox can already request strict proof independently.
+    expect(SalesTransferWindow::forLocalTransfer($crm, 601, 501, requireWindow: true)['state'])->toBe('expired');
+    config(['edna.local_transfer_window_enabled' => true]);
+    expect(SalesTransferWindow::localBlockReason($legacy))->toBe('customer_window_unknown');
+    config(['edna.local_transfer_window_enabled' => false]);
+    $strict = SalesTransferWindow::forLocalTransfer($crm, 601, 501);
+    expect(SalesTransferWindow::localBlockReason($strict))->toBe('customer_window_expired');
+    Http::assertNothingSent();
+});
+
+test('a newly queued Kestra handoff fences a local writer at its last check even during rollback', function () {
+    $crm = salesWindowFixture();
+    $before = SalesTransferWindow::forLocalTransfer($crm, 601, 501);
+    expect(SalesTransferWindow::localBlockReason($before))->toBeNull();
+    DB::table('sales_chat_transfer_requests')->insert([
+        'scope' => config('chat_response.scope'), 'chat_id' => 601, 'session_id' => 501,
+        'deal_id' => 30, 'lead_id' => 20, 'target_id' => 300, 'stage_id' => 'NEW', 'deadline_at' => now()->addHour(),
+    ]);
+    config(['edna.kestra_chat_transfer_delivery_enabled' => false]);
+    expect(SalesTransferWindow::localBlockReason($before))->toBe('kestra_delivery_pending')
+        ->and(SalesTransferWindow::forLocalTransfer($crm, 601, 501)['state'])->toBe('delivery_pending')
+        ->and(SalesTransferWindow::forLocalTransfer($crm, 601, 502)['state'])->toBe('legacy');
+    DB::table('sales_chat_transfer_requests')->update(['state' => 'uncertain', 'intent_at' => now()]);
+    expect(SalesTransferWindow::localBlockReason($before))->toBe('kestra_delivery_pending');
+    Http::assertNothingSent();
+});

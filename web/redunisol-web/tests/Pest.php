@@ -49,6 +49,7 @@ function something()
 /** Other feature fakes model native ownership, not Edna history. Window behavior has its own contract fixtures. */
 function fakeSalesTransferWindow(string $state = 'open'): void
 {
+    config(['edna.local_transfer_window_enabled' => true]);
     $guard = Mockery::mock(App\Services\SalesTransferWindow::class);
     $guard->shouldReceive('inspect')->andReturnUsing(fn ($crm, $chat, $session) =>
         ['state' => $state, 'expires_at' => $state === 'open' ? now()->addHour()->toIso8601String() : null,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import json
 from pathlib import Path
 import sys
@@ -109,9 +109,7 @@ class SingleSellerDistributionTests(unittest.TestCase):
                     if method == "imopenlines.operator.transfer" and payload["CHAT_ID"] == 77:
                         raise RuntimeError("Offline seller cannot accept this chat")
                     return original_call(method, payload)
-                with patch.object(self.client, "call", side_effect=call), \
-                        patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window",
-                              return_value=(datetime.now(timezone.utc) + timedelta(hours=1), "transferable")):
+                with patch.object(self.client, "call", side_effect=call):
                     result = self.qualify_at()
                 self.assertTrue(result["ok"])
                 self.assertEqual(result["distribution_action"], "assigned")

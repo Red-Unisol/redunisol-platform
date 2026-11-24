@@ -46,7 +46,13 @@ class WebFormChatGuard
         return $this->inspectSession(['chat_id' => $chatId, 'session_id' => $sessionId], (string) $sellerId, $source, $sameInbound);
     }
 
-    private function inspectSession(array $proof, string $sellerId, string $source, ?\Closure $sameInbound = null): array
+    /** Kestra only relinquishes the unattended default desk. A queued commercial operator is protected too. */
+    public function inspectSalesDelivery(int $chatId, int $sessionId, int $sellerId, \Closure $sameCase): array
+    {
+        return $this->inspectSession(['chat_id' => $chatId, 'session_id' => $sessionId], (string) $sellerId, 'whatsappbyedna', $sameCase, true);
+    }
+
+    private function inspectSession(array $proof, string $sellerId, string $source, ?\Closure $sameInbound = null, bool $delivery = false): array
     {
         $this->calls = 0;
         $this->deadline = microtime(true) + 30;
@@ -92,6 +98,9 @@ class WebFormChatGuard
                 }
                 $allowed[] = $id;
             }
+            if ($delivery) {
+                $allowed = array_intersect($allowed, [0, 57, 74827]);
+            }
             if (! in_array($owner, $allowed, true)) {
                 return $this->result('preserved', 'chat_owner_preserved', $owner, $sessionId, $dialog);
             }
@@ -100,14 +109,7 @@ class WebFormChatGuard
             if ($reason = $this->attention($session, $allowed)) {
                 return $this->result('preserved', $reason, $owner, $sessionId, $dialog);
             }
-            $stats = $this->call('imopenlines.v2.Session.Stat.get', ['sessionId' => [$sessionId]]);
-            $rows = $stats['sessions'] ?? null;
-            if (! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1
-                || $this->id($rows[0]['sessionId'] ?? null) !== $sessionId) {
-                throw new RuntimeException('Session statistics are incomplete.');
-            }
-            $operatorMessages = $this->count($rows[0]['messagesOperatorCount'] ?? null);
-            $transfers = $this->count($rows[0]['transfersCount'] ?? null);
+            [$operatorMessages, $transfers] = $this->statistics($sessionId);
             if ($operatorMessages > 0) {
                 return $this->result('preserved', 'operator_message_preserved', $owner, $sessionId, $dialog);
             }
@@ -123,6 +125,12 @@ class WebFormChatGuard
             $session = $this->session($chatId, $sessionId, $epoch);
             if ($reason = $this->attention($session, $allowed)) {
                 return $this->result('preserved', $reason, $owner, $sessionId, $dialog);
+            }
+            if ($delivery) {
+                [$operatorMessages, $transfers] = $this->statistics($sessionId);
+                if ($operatorMessages > 0) {
+                    return $this->result('preserved', 'operator_message_preserved', $owner, $sessionId, $dialog);
+                }
             }
             if ($reason = $this->transfers($sessionId, $transfers)) {
                 return $this->result('preserved', $reason, $owner, $sessionId, $dialog);
@@ -218,6 +226,20 @@ class WebFormChatGuard
         }
 
         return null;
+    }
+
+    private function statistics(int $sessionId): array
+    {
+        $stats = $this->call('imopenlines.v2.Session.Stat.get', ['sessionId' => [$sessionId]]);
+        $rows = $stats['sessions'] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1
+            || $this->id($rows[0]['sessionId'] ?? null) !== $sessionId) {
+            throw new RuntimeException('Session statistics are incomplete.');
+        }
+        $operatorMessages = $this->count($rows[0]['messagesOperatorCount'] ?? null);
+        $transfers = $this->count($rows[0]['transfersCount'] ?? null);
+
+        return [$operatorMessages, $transfers];
     }
 
     private function transfers(int $sessionId, int $expectedCount): ?string

@@ -12,6 +12,50 @@ use Throwable;
 /** Read-only. Each verdict describes one native session, not an owner or a transferable CRM case. */
 class SalesTransferWindow
 {
+    private const LOCAL_CUTOVER = 'sales-local-transfer-window-v1';
+
+    /** Existing Laravel routes keep their native checks during deployment. The dedicated verifier always uses inspect(). */
+    public static function forLocalTransfer(EdnaBitrix $crm, int $chatId, int $sessionId, ?array $dialog = null, bool $requireWindow = false): array
+    {
+        $session = ['chat_id' => $chatId, 'session_id' => $sessionId];
+        if (SalesChatTransfer::ownsSession($chatId, $sessionId)) {
+            return $session + ['state' => 'delivery_pending'];
+        }
+        if (! $requireWindow && ! self::localWindowActive()) {
+            return $session + ['state' => 'legacy'];
+        }
+
+        return $session + app(self::class)->inspect($crm, $chatId, $sessionId, $dialog);
+    }
+
+    public static function localBlockReason(array $window): ?string
+    {
+        if ($window['state'] === 'delivery_pending' || SalesChatTransfer::ownsSession($window['chat_id'], $window['session_id'])) {
+            return 'kestra_delivery_pending';
+        }
+        if ($window['state'] === 'legacy') {
+            // Another worker may have activated strict proof since the native preflight.
+            return self::localWindowActive() ? 'customer_window_unknown' : null;
+        }
+
+        return self::blockReason($window);
+    }
+
+    private static function localWindowActive(): bool
+    {
+        $cutovers = DB::table('edna_intake_cutovers');
+        if ($cutovers->where('name', self::LOCAL_CUTOVER)->exists()) {
+            return true;
+        }
+        if (config('edna.local_transfer_window_enabled') !== true) {
+            return false;
+        }
+        // Latch the opt-in in the shared database so that older environment settings cannot reopen an expired window.
+        $cutovers->insertOrIgnore(['name' => self::LOCAL_CUTOVER, 'entry_id_after' => 0, 'starts_at' => now()]);
+
+        return true;
+    }
+
     public function inspect(EdnaBitrix $crm, int $chatId, int $sessionId, ?array $guardedDialog = null): array
     {
         $result = ['chat_id' => $chatId, 'session_id' => $sessionId, 'state' => 'unknown', 'expires_at' => null];

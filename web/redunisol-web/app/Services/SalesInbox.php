@@ -184,7 +184,7 @@ class SalesInbox
             }
             // Reread the seller and inbound after Edna's window lookup and before the last native human-attention checks.
             $sameDecision = fn () => $this->decide($r, $dialog) === $decision;
-            $window = $decision['action'] === 'transfer' ? app(SalesTransferWindow::class)->inspect($this->crm, (int) $r->chat_id, (int) $r->session_id, $check['dialog'] ?? null) : null;
+            $window = $decision['action'] === 'transfer' ? SalesTransferWindow::forLocalTransfer($this->crm, (int) $r->chat_id, (int) $r->session_id, $check['dialog'] ?? null, requireWindow: true) : null;
             $last = $this->attention->inspectListed((int) $r->chat_id, (int) $r->session_id, $r->channel, $decision['target_id'] ?: 5737, $sameDecision);
             if (($last['status'] ?? '') !== 'ready' || $last['owner_id'] !== $check['owner_id'] || $last['dialog'] !== $check['dialog']
                 || ! $lock->isOwnedByCurrentProcess()) {
@@ -192,7 +192,7 @@ class SalesInbox
 
                 return;
             }
-            if ($window !== null && ($reason = SalesTransferWindow::blockReason($window))) {
+            if ($window !== null && ($reason = SalesTransferWindow::localBlockReason($window))) {
                 $this->finish($r, SalesTransferWindow::blockedState($reason), $reason);
 
                 return;
@@ -206,7 +206,7 @@ class SalesInbox
             if (! $lock->isOwnedByCurrentProcess()) {
                 return;
             }
-            if ($window !== null && ($reason = SalesTransferWindow::blockReason($window))) {
+            if ($window !== null && ($reason = SalesTransferWindow::localBlockReason($window))) {
                 $this->row($r)->update(['state' => 'waiting', 'reason' => $reason, 'intent' => null, 'available_at' => now()->addSeconds(10), 'updated_at' => now()]);
 
                 return;
@@ -410,31 +410,10 @@ class SalesInbox
                 }
             }
         } else {
-            $stats = $this->crm->call('imopenlines.v2.Session.Stat.get', ['sessionId' => [(int) $r->session_id]]);
-            $statsRows = $stats['sessions'] ?? [];
-            $count = filter_var($statsRows[0]['transfersCount'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
-            $data = $this->crm->call('imopenlines.v2.Session.Transfer.list', ['sessionId' => [(int) $r->session_id]]);
-            $at = CarbonImmutable::parse($intent['created_at']);
-            preg_match('#^/rest/([1-9][0-9]*)/#', (string) parse_url((string) config('edna.bitrix_url'), PHP_URL_PATH), $actor);
-            $matches = [];
-            if (isset($actor[1]) && is_array($statsRows) && count($statsRows) === 1 && (int) ($statsRows[0]['sessionId'] ?? 0) === (int) $r->session_id
-                && $count !== false && is_array($data['transfers'] ?? null) && array_is_list($data['transfers'])
-                && count($data['transfers']) >= $count && ($data['hasNextPage'] ?? false) === false) {
-                foreach ($data['transfers'] ?? [] as $t) {
-                    if ((int) ($t['sessionId'] ?? 0) === (int) $r->session_id && (string) ($t['initiatorId'] ?? '') === $actor[1]
-                        && (string) ($t['fromOperatorId'] ?? '') === $actor[1] && (int) ($t['toOperatorId'] ?? 0) === $intent['target_id']
-                        && ($t['type'] ?? '') === 'USER' && ($t['mode'] ?? '') === 'MANUAL' && (int) ($t['fromConfigId'] ?? 0) === 1
-                        && in_array($t['toConfigId'] ?? null, [null, 1, '1'], true)
-                        && (! isset($t['chatId']) || (int) $t['chatId'] === (int) $r->chat_id)
-                        && is_string($t['date'] ?? null) && preg_match('/(?:Z|[+-]\d\d:\d\d)$/D', $t['date'])
-                        && CarbonImmutable::parse($t['date'])->betweenIncluded($at, $at->addMinutes(2)->min(now()->addSeconds(5)))) {
-                        $matches[] = hash('sha256', json_encode([(int) $r->chat_id, (int) $r->session_id, (int) $actor[1],
-                            $intent['target_id'], CarbonImmutable::parse($t['date'])->utc()->toIso8601String()], JSON_THROW_ON_ERROR));
-                    }
-                }
-            }
-            if (count($matches) === 1) {
-                $this->row($r)->update(['native_event_sha256' => $matches[0]]);
+            $fingerprint = SalesNativeTransfer::fingerprint($this->crm, (int) $r->chat_id, (int) $r->session_id,
+                $intent['target_id'], CarbonImmutable::parse($intent['created_at']), $intent['owner_before'] ?? null);
+            if ($fingerprint !== null) {
+                $this->row($r)->update(['native_event_sha256' => $fingerprint]);
                 $this->finish($r, $r->acknowledged ? 'transferred' : 'observed', 'native_transfer_found');
 
                 return;

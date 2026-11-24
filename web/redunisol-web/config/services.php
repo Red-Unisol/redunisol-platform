@@ -49,6 +49,7 @@ return [
     ],
 
     'kestra' => [
+        'guarded_form_delivery' => env('WEB_FORM_GUARDED_DELIVERY_ENABLED', false) === true,
         'form_webhook_url' => env('KESTRA_FORM_WEBHOOK_URL'),
         'form_webhook_timeout_seconds' => (int) env('KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS', 60),
         'prequalification_webhook_url' => env('KESTRA_PREQUALIFICATION_WEBHOOK_URL'),

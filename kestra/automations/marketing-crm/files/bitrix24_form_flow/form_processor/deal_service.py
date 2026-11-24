@@ -13,7 +13,6 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .logger import Logger
 from .receipt_file import build_bitrix_file_data
-from .transfer_window import read_transfer_window
 from .volume_compensation import apply_volume_compensation
 
 
@@ -600,7 +599,6 @@ def assign_open_line_chats_to_user(
             chat_id=chat_id,
             distributable_open_line_ids=distributable_open_line_ids,
             logger=logger,
-            transfer_timeout_seconds=transfer_timeout_seconds,
             expected_deal=expected_deal,
             expected_session_id=expected_sessions.get(chat_id, 0) if expected_sessions is not None else None,
         )
@@ -636,7 +634,6 @@ def _open_line_session_transferability(
     chat_id: int,
     distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
-    transfer_timeout_seconds: int,
     expected_deal: dict,
     expected_session_id: int | None = None,
 ) -> tuple[bool, str]:
@@ -672,18 +669,8 @@ def _open_line_session_transferability(
     owner = dialog.get("owner", dialog.get("OWNER", 0))
     if _is_positive_int(owner) and int(str(owner)) not in (0, 57, 74827):
         return False, "manual_owner_preserved"
-    deadline, reason = read_transfer_window(chat_id, session_id)
-    if deadline is None:
-        return False, reason
-    ready, reason = _unattended_sales_session(client, chat_id, dialog, expected_deal=expected_deal)
-    if not ready:
-        return False, reason
-    remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
-    if remaining <= 0:
-        return False, "customer_window_expired"
-    if remaining <= transfer_timeout_seconds:
-        return False, "customer_window_closing"
-    return True, "transferable"
+    # Legacy writer: publishing files alone must work with the current Laravel version.
+    return _unattended_sales_session(client, chat_id, dialog, expected_deal=expected_deal)
 
 
 def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
@@ -705,8 +692,9 @@ def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
             line = _open_line_id(dialog)
             if line is None:
                 return sessions, "attention_inspection_unavailable"
-            sessions[chat_id] = active_open_line_session_id(dialog) or 0
-            if line not in distributable_open_line_ids or not sessions[chat_id]:
+            # An active session on a different Open Line cannot be handed to the sales writer.
+            sessions[chat_id] = (active_open_line_session_id(dialog) or 0) if line in distributable_open_line_ids else 0
+            if not sessions[chat_id]:
                 continue
             owner = _counter(dialog.get("owner"))
             if owner not in (0, 57, 74827):
@@ -880,6 +868,7 @@ def notify_distribution_supervisor(
     assigned_by_name: str | None = None,
     action: str,
     chat_transferred: bool,
+    chat_delivery_status: str = "",
     logger: Logger,
 ) -> bool:
     recipient_id = config.deal.distribution_notification_user_id
@@ -894,6 +883,12 @@ def notify_distribution_supervisor(
         client, assigned_by_id=assigned_by_id, logger=logger
     )
     chat_label = "Sí" if chat_transferred else "No"
+    if chat_delivery_status in ("delivery_queued", "delivery_waiting"):
+        chat_label = "Pendiente de entrega"
+    elif chat_delivery_status == "delivery_uncertain":
+        chat_label = "Pendiente de confirmación"
+    elif chat_delivery_status in ("delivery_previously_confirmed", "delivery_observed"):
+        chat_label = "Ya atendido por el destino"
     message = (
         "[B]Nueva negociación comercial asignada[/B]\n"
         f"Nombre: {safe_deal_title}\n"

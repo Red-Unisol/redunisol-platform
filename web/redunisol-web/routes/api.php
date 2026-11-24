@@ -10,6 +10,7 @@ use App\Http\Controllers\FormSubmissionController;
 use App\Http\Controllers\JourneyEventsController;
 use App\Http\Controllers\JourneyExportController;
 use App\Http\Controllers\PdfSearchController;
+use App\Http\Controllers\SalesChatTransferController;
 use App\Http\Controllers\SalesTransferWindowController;
 use App\Http\Controllers\WebFormReceiverController;
 use App\Http\Middleware\DecryptAttributionCookie;
@@ -28,6 +29,7 @@ Route::match(['HEAD', 'POST'], '/webhooks/edna/incoming', EdnaIncomingController
     ->name('api.edna.incoming');
 Route::match(['HEAD', 'POST'], '/webhooks/edna/probe/{probe}', EdnaProbeController::class)
     ->whereUuid('probe')->name('api.edna.probe');
+Route::post('/internal/sales-chat/transfer-requests', SalesChatTransferController::class);
 Route::post('/internal/sales-chat/transfer-window', SalesTransferWindowController::class);
 Route::post('/internal/web-form-receiver/claim', WebFormReceiverController::class);
 Route::get('/internal/bitrix-routing', BitrixRoutingConfigController::class)->name('api.bitrix-routing.show');

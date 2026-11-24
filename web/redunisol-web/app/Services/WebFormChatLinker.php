@@ -299,7 +299,7 @@ class WebFormChatLinker
                 $this->decide('preserved', 'web_responsible_changed');
             }
             $this->nativeIdentity($receipt, $fresh, $native);
-            $window = app(SalesTransferWindow::class)->inspect($this->crm, (int) $this->proof['chat_id'], (int) $this->proof['session_id'], $attention['dialog'] ?? null);
+            $window = SalesTransferWindow::forLocalTransfer($this->crm, (int) $this->proof['chat_id'], (int) $this->proof['session_id'], $attention['dialog'] ?? null);
             $attention = $this->guard->inspect($this->proof, $fresh['seller_id']);
             $this->validateDialogCase($attention['dialog'] ?? null, $fresh);
             if ($attention['status'] === 'already_assigned') {
@@ -314,7 +314,7 @@ class WebFormChatLinker
             }
             $this->finalCheck($receipt, $fresh, $attention, $native);
             $this->assertContext();
-            if ($reason = SalesTransferWindow::blockReason($window)) {
+            if ($reason = SalesTransferWindow::localBlockReason($window)) {
                 return $this->finish(SalesTransferWindow::blockedState($reason), $reason);
             }
             $this->proof['transfer_intent'] = ['seller_id' => $fresh['seller_id'], 'session_id' => (string) $this->proof['session_id'],
@@ -328,7 +328,7 @@ class WebFormChatLinker
             }
             $this->write(['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'sending']);
             $this->assertLease();
-            if ($reason = SalesTransferWindow::blockReason($window)) {
+            if ($reason = SalesTransferWindow::localBlockReason($window)) {
                 unset($this->proof['transfer_intent']);
 
                 return $this->finish('waiting', $reason, ['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'pending']);

@@ -48,3 +48,12 @@ def test_routing_never_treats_a_guarded_envelope_as_a_legacy_submission():
         with pytest.raises(ValueError):
             _process_payload({**envelope, "cuil": FORM["cuil"]})
         ingest.assert_not_called()
+
+def test_upgraded_receiver_accepts_unenveloped_jobs_without_contacting_new_laravel():
+    from bitrix24_form_flow.kestra_form_intake_entrypoint import _process_payload
+
+    with patch("bitrix24_form_flow.form_processor.web_crm_delivery._claim") as claim, \
+         patch("bitrix24_form_flow.kestra_form_intake_entrypoint.ingest_submission", return_value={"ok": True}) as ingest:
+        assert _process_payload(FORM) == {"ok": True}
+        ingest.assert_called_once_with(FORM)
+        claim.assert_not_called()

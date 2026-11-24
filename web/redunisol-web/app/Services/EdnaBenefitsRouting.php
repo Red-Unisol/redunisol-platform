@@ -210,7 +210,7 @@ class EdnaBenefitsRouting
                 $this->decide('preserved', 'benefits_case_changed');
             }
             $this->activeTarget($target);
-            $window = app(SalesTransferWindow::class)->inspect($this->crm, (int) $proof['chat_id'], (int) $proof['session_id'], $attention['dialog'] ?? null);
+            $window = SalesTransferWindow::forLocalTransfer($this->crm, (int) $proof['chat_id'], (int) $proof['session_id'], $attention['dialog'] ?? null);
             $attention = $this->guard->inspect($proof, $target);
             if (($attention['status'] ?? '') === 'already_assigned') {
                 $observed = $this->currentCase($proof);
@@ -224,7 +224,7 @@ class EdnaBenefitsRouting
             if (! $this->matchesDialog($fresh['snapshot']['dialog_tuple'] ?? [], $attention['dialog'] ?? null)) {
                 $this->decide('preserved', 'benefits_native_dialog_changed');
             }
-            if ($reason = SalesTransferWindow::blockReason($window)) {
+            if ($reason = SalesTransferWindow::localBlockReason($window)) {
                 $this->decide(SalesTransferWindow::blockedState($reason), $reason);
             }
             $intent = ['entry_event_id' => $entryId, 'entry_message_id' => $proof['entry_message_id'],
@@ -234,7 +234,7 @@ class EdnaBenefitsRouting
             $this->write(['case_snapshot' => json_encode($fresh, JSON_THROW_ON_ERROR), 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
                 'state' => 'sending', 'transfer_state' => 'sending']);
             $this->assertLease();
-            if ($reason = SalesTransferWindow::blockReason($window)) {
+            if ($reason = SalesTransferWindow::localBlockReason($window)) {
                 return $this->finish('waiting', $reason, ['transfer_intent' => null, 'transfer_state' => 'pending']);
             }
             try {

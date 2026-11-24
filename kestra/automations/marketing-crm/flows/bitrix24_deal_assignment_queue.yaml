@@ -91,6 +91,7 @@ tasks:
       BITRIX24_VOLUME_COMPENSATION_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
       BITRIX24_VOLUME_COMPENSATION_SCOPE: "{{ flow.namespace }}"
       SALES_CHAT_WINDOW_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
+      SALES_CHAT_DELIVERY_MODE: "{{ kv('sales_chat_delivery_mode', flow.namespace, false) ?? 'legacy' }}"
       SALES_CHAT_WINDOW_SCOPE: "{{ flow.namespace }}"
       BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
       BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
@@ -119,6 +120,9 @@ outputs:
   - id: closed_count
     type: INT
     value: "{{ outputs.procesar_colas.vars.closed_count ?? 0 }}"
+  - id: chat_delivery_totals_json
+    type: STRING
+    value: "{{ outputs.procesar_colas.vars.chat_delivery_totals_json ?? '{}' }}"
   - id: events_json
     type: STRING
     value: "{{ outputs.procesar_colas.vars.events_json ?? '[]' }}"

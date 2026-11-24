@@ -253,6 +253,18 @@ class EdnaOrganicAttention
         }
         $this->id($source[3]);
         $this->id($parts[6]);
+        return ['chat_id' => $this->id($dialog['id']), 'session_id' => $this->id($parts[5]),
+            'source_hash' => $this->keyedHash('organic-source:', (string) $dialog['entity_id']),
+            'session_epoch' => $parts[6], 'owner' => $this->optionalId($dialog['owner'] ?? null)] + $this->caseBindings($dialog);
+    }
+
+    /** Current primary entity and explicit case bindings, with conflicting native identities rejected. */
+    public function caseBindings(array $dialog): array
+    {
+        $parts = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
+        if (count($parts) < 3) {
+            throw new RuntimeException('Native CRM identity is incomplete.');
+        }
         $bindings = [];
         $raw = (string) ($dialog['entity_data_2'] ?? '');
         $pairs = $raw === '' ? [] : explode('|', $raw);
@@ -282,10 +294,7 @@ class EdnaOrganicAttention
         }
         ksort($bindings, SORT_STRING);
 
-        return ['chat_id' => $this->id($dialog['id']), 'session_id' => $this->id($parts[5]),
-            'source_hash' => $this->keyedHash('organic-source:', (string) $dialog['entity_id']),
-            'session_epoch' => $parts[6], 'owner' => $this->optionalId($dialog['owner'] ?? null),
-            'primary_entity' => $primaryEntity, 'primary_id' => $primaryId, 'bindings' => $bindings];
+        return ['primary_entity' => $primaryEntity, 'primary_id' => $primaryId, 'bindings' => $bindings];
     }
 
     private function record(string $entity, string $id, mixed $body, bool $native): array

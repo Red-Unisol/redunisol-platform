@@ -1,6 +1,6 @@
 """Human attention always wins over a scheduled commercial transfer."""
 import copy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
@@ -74,37 +74,117 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
         self.assertFalse(any(".answer" in method or ".start" in method or ".join" in method for method, _ in self.client.calls))
 
-    def test_expiry_during_final_attention_read_skips_chat_but_allows_crm_distribution(self):
-        deadline = datetime(2026, 11, 24, 12, tzinfo=timezone.utc)
-        module = "bitrix24_form_flow.form_processor.deal_service"
-        with patch(module + ".read_transfer_window", return_value=(deadline, "transferable")) as receipt, \
-                patch(module + ".datetime", wraps=datetime) as clock:
-            clock.now.return_value = deadline
+    def enable_durable(self):
+        self.client.open_line_chats[("lead", 920)] = [777]
+        self.client.open_line_dialogs[777] = {
+            **self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777}),
+            "entity_data_2": "CONTACT|101|LEAD|920|DEAL|930"}
+        self.fixture.env.update(SALES_CHAT_DELIVERY_MODE="durable",
+            SALES_CHAT_WINDOW_SCOPE="redunisol.dev.marketing-crm", SALES_CHAT_WINDOW_TOKEN="synthetic")
+
+    def test_legacy_flow_has_no_dependency_on_laravel(self):
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register") as register:
             result = self.run_qualification()
+        self.assertEqual(result["transferred_chat_count"], 1)
+        register.assert_not_called()
+
+    def test_publishing_qualifier_before_legacy_namespace_helper_accepts_the_old_signature(self):
+        def old_helper(client, *, lead_id, contact_id, deal_id, assigned_by_id,
+                       distributable_open_line_ids, logger, expected_sessions):
+            return assign_open_line_chats_to_user(client, lead_id=lead_id, contact_id=contact_id,
+                deal_id=deal_id, assigned_by_id=assigned_by_id, logger=logger,
+                distributable_open_line_ids=distributable_open_line_ids, expected_sessions=expected_sessions)
+        with patch.object(qualify, "assign_open_line_chats_to_user", old_helper):
+            self.assertEqual(self.run_qualification()["transferred_chat_count"], 1)
+
+    def test_contact_only_chat_is_visible_and_not_reserved_or_attached_to_this_deal(self):
+        self.enable_durable()
+        self.client.open_line_chats[("lead", 920)] = []
+        self.client.open_line_dialogs[777]["entity_data_2"] = "CONTACT|101|LEAD|0|DEAL|0"
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register") as store, \
+                patch.object(qualify, "bind_open_line_activities_to_deal", return_value=0) as bind:
+            result = self.run_qualification()
+        store.assert_not_called()
+        self.assertIsNone(bind.call_args.kwargs["contact_id"])
         self.assertEqual(result["action"], "approved")
-        receipt.assert_called_once_with(777, 1777)
+        self.assertEqual(result["chat_transfer_status"], "delivery_binding_unverified")
+        self.assertEqual(result["unverified_chat_binding_count"], 1)
+        self.assertEqual(result["transferred_chat_count"], 0)
+        self.assertFalse(self.client.chat_transfers)
+
+    def test_current_lead_binding_can_precede_the_native_crm_list_index(self):
+        self.enable_durable()
+        self.client.open_line_chats[("lead", 920)] = []
+        self.client.open_line_chats[("deal", 930)] = []
+        self.client.open_line_dialogs[777]["entity_data_2"] = "CONTACT|101|LEAD|920|DEAL|0"
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register",
+                   side_effect=lambda origin, token, request: {**request, "status": "pending"}) as store:
+            result = self.run_qualification()
+        self.assertEqual(result["chat_transfer_status"], "delivery_queued")
+        self.assertEqual(store.call_args.args[2]["lead_id"], 920)
+
+    def test_current_session_for_b_cannot_be_reserved_by_historical_deal_a(self):
+        self.enable_durable()
+        self.client.leads[921] = {**self.client.leads[920], "ID": "921"}
+        self.client.deals[931] = {**self.client.deals[930], "id": 931, "leadId": 921}
+        self.client.open_line_chats[("deal", 930)] = [777]
+        self.client.open_line_chats[("deal", 931)] = [777]
+        self.client.open_line_dialogs[777]["entity_data_2"] = "CONTACT|101|LEAD|921|DEAL|931"
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register",
+                   side_effect=lambda origin, token, request: {**request, "status": "pending"}) as store:
+            first = self.run_qualification()
+            store.assert_not_called()
+            second = qualify.qualify_catamarca_deal(931, env=self.fixture.env, bitrix_client=self.client,
+                                                    logger=fixtures.SilentLogger())
+        self.assertEqual(first["chat_transfer_status"], "delivery_binding_unverified")
+        self.assertEqual(second["chat_transfer_status"], "delivery_queued")
+        self.assertEqual(store.call_args.args[2]["deal_id"], 931)
+
+    def test_lost_handoff_response_retains_both_owners_and_reuses_the_same_session(self):
+        self.enable_durable()
+        requests = []
+        def store(origin, token, request):
+            requests.append(request)
+            self.assertEqual(self.client.deals[930]["stageId"], "C1:KESTRA_PENDING")
+            self.assertEqual(self.client.deals[930]["assignedById"], 57)
+            return None if len(requests) == 1 else {**request, "status": "pending"}
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register", side_effect=store):
+            first = self.run_qualification()
+            self.assertEqual(first["chat_transfer_status"], "handoff_unconfirmed")
+            self.assertEqual(first["uncertain_chat_count"], 1)
+            self.assertTrue(first["has_pending"])
+            self.assertFalse(any(method == "crm.lead.update" and "ASSIGNED_BY_ID" in body.get("fields", {})
+                                 for method, body in self.client.calls))
+            second = self.run_qualification()
+            third = self.run_qualification()
+        self.assertEqual(requests[0], requests[1])
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["session_id"], 1777)
+        self.assertEqual(second["action"], "approved")
+        self.assertEqual(second["chat_transfer_status"], "delivery_queued")
+        self.assertEqual(second["queued_chat_count"], 1)
+        self.assertEqual(second["transferred_chat_count"], 0)
         self.assertEqual(self.client.deals[930]["assignedById"], 68579)
-        self.assertFalse(self.client.chat_transfers)
-        self.assertIn("777:customer_window_expired", result["skipped_chat_reasons"])
-
-    def test_commercial_reassignment_while_checking_edna_preserves_the_new_seller(self):
-        def reassign(chat, session):
-            self.client.deals[930]["assignedById"] = 29
-            return datetime.now(timezone.utc) + timedelta(hours=1), "transferable"
-        with patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window", side_effect=reassign):
-            result = self.run_qualification()
-        self.assertEqual(self.client.deals[930]["assignedById"], 29)
-        self.assertIn("777:commercial_assignment_changed_before_transfer", result["skipped_chat_reasons"])
+        self.assertEqual(third["reason"], "deal_not_pending")
         self.assertFalse(self.client.chat_transfers)
 
-    def test_remaining_window_must_cover_native_write_timeout(self):
-        from bitrix24_form_flow.form_processor import deal_service
-        now = datetime(2026, 11, 24, 12, tzinfo=timezone.utc)
-        with patch.object(deal_service, "read_transfer_window", return_value=(now + timedelta(seconds=2), "transferable")), \
-                patch.object(deal_service, "datetime", wraps=datetime) as clock:
-            clock.now.return_value = now
+    def test_takeover_by_nico_while_registering_preserves_attention_and_responsibles(self):
+        self.enable_durable()
+        def takeover(origin, token, request):
+            self.client.session_changes.update(operatorId=74827, status="answered")
+            return {**request, "status": "pending"}
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register", side_effect=takeover):
             result = self.run_qualification()
-        self.assertIn("777:customer_window_closing", result["skipped_chat_reasons"])
+        self.assertEqual(result["reason"], "operator_attention_preserved")
+        self.assert_no_assignment()
+
+    def test_paused_retains_selector_and_does_not_write_chat(self):
+        self.fixture.env["SALES_CHAT_DELIVERY_MODE"] = "paused"
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register") as register:
+            result = self.run_qualification()
+        register.assert_not_called()
+        self.assertEqual(result["chat_transfer_status"], "delivery_paused")
+        self.assertEqual(self.client.deals[930]["stageId"], "C1:KESTRA_PENDING")
         self.assertFalse(self.client.chat_transfers)
 
     def test_false_transfer_ack_is_not_counted(self):
@@ -118,21 +198,27 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(result["chat_transfer_status"], "transfer_unacknowledged")
         self.assertEqual(result["transferred_chat_count"], 0)
 
-    def test_queue_opening_does_not_revive_an_expired_or_unverified_chat(self):
+    def test_queue_waits_for_durable_receipt_before_removing_its_selector(self):
+        self.enable_durable()
         stamp = "2026-12-01T12:00:00-03:00"
-        for reason in ("customer_window_expired", "customer_window_unverified"):
-            with self.subTest(reason=reason):
-                self.reset_client()
-                deal = self.fixture._queued_deal(930, 920, "catamarca_general", stamp)
-                self.client.deals[930] = deal
-                self.client.leads[920].update(DATE_CREATE=stamp, ASSIGNED_BY_ID=57)
-                with patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window",
-                           return_value=(None, reason)):
-                    result = qualify._retry_queued_deal(self.client, qualify.load_config(self.fixture.env),
-                        dict(deal), fixtures.SilentLogger(), datetime.fromisoformat(stamp))
-                self.assertEqual(result["action"], "queue_distributed")
-                self.assertIn("777:" + reason, result["skipped_chat_reasons"])
-                self.assertFalse(self.client.chat_transfers)
+        deal = self.fixture._queued_deal(930, 920, "catamarca_general", stamp)
+        self.client.deals[930] = deal
+        self.client.leads[920].update(DATE_CREATE=stamp, ASSIGNED_BY_ID=57)
+        def scan():
+            return qualify._retry_queued_deal(self.client, qualify.load_config(self.fixture.env),
+                dict(deal), fixtures.SilentLogger(), datetime.fromisoformat(stamp), env=self.fixture.env)
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register", return_value=None):
+            self.assertEqual(scan()["reason"], "handoff_unconfirmed")
+        self.assertEqual(self.client.deals[930]["stageId"], "C1:KESTRA_QUEUE")
+        self.assertEqual(self.client.deals[930]["assignedById"], 57)
+        with patch("bitrix24_form_flow.form_processor.transfer_requests.register",
+                   side_effect=lambda origin, token, request: {**request, "status": "waiting"}):
+            result = scan()
+        self.assertEqual(result["action"], "queue_distributed")
+        self.assertEqual(result["chat_transfer_status"], "delivery_waiting")
+        self.assertEqual(result["waiting_chat_count"], 1)
+        self.assertEqual(result["transferred_chat_count"], 0)
+        self.assertFalse(self.client.chat_transfers)
 
     def test_acceptance_status_or_reply_preserves_even_the_default_owner(self):
         for field, value in [("dateOperatorAnswer", "2026-11-10T18:00:01Z"),

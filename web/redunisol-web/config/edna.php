@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'local_transfer_window_enabled' => env('SALES_LOCAL_TRANSFER_WINDOW_ENABLED', false) === true,
+    'kestra_chat_transfer_delivery_enabled' => (bool) env('KESTRA_CHAT_TRANSFER_DELIVERY_ENABLED', false),
     'sales_inbox_enabled' => (bool) env('SALES_INBOX_ENABLED', false),
     'sales_social_operator_id' => (int) env('SALES_SOCIAL_OPERATOR_ID', 0),
     'rejection_close_enabled' => (bool) env('EDNA_REJECTION_CLOSE_ENABLED', true),
