@@ -113,6 +113,8 @@ return [
         'timeout_seconds' => (int) env('ANALISIS_CREDITO_TIMEOUT_SECONDS', 30),
         'cache_timeout_seconds' => (int) env('ANALISIS_CREDITO_CACHE_TIMEOUT_SECONDS', 3),
     ],
+    // Login de Vimarx que valida usuario y clave (el mismo que usa vimarx-oauth-gateway).
+    'vimarx_login_url' => env('VIMARX_LOGIN_URL', 'https://celesol.dyndns.org:35010/api/auth/login_user'),
     'contabilidad' => [
         'path' => 'contabilidad/'.env('CONTABILIDAD_TRANSFER_PRIVATE_SLUG', '77q330j56z'),
         'output_root' => env('CONTABILIDAD_TRANSFER_OUTPUT_ROOT', '/data/contabilidad-transfer'),
