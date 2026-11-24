@@ -6,6 +6,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
     $this->withoutVite();
+    config()->set('finalizar.legacy_clients.caja.evaluate_base_url', '');
+    config()->set('finalizar.legacy_clients.solicitudes.evaluate_base_url', '');
 });
 
 it('explains paid signature links and keeps unrelated api failures generic', function (string $path, int $status, string $code, string $message, string $expected) {

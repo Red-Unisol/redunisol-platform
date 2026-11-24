@@ -40,6 +40,8 @@ interface LoanData {
     monto_cuota: string;
     monto_cuota_display: string;
     cuotas: string;
+    lleva_iva?: boolean | null;
+    tasas_estado?: 'original' | 'complete' | 'partial' | 'unavailable';
     prestamo_cft: string;
     prestamo_tem: string;
     prestamo_tna: string;
@@ -109,7 +111,11 @@ function RateItem({ label, value }: { label: string; value: string }) {
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0 sm:py-3">
             <span className="text-sm text-gray-600">{label}</span>
             <span className="text-sm font-semibold text-gray-800">
-                {value ? `${value}%` : <span className="text-gray-400">-</span>}
+                {value ? (
+                    `${value}%`
+                ) : (
+                    <span className="text-gray-500">No disponible</span>
+                )}
             </span>
         </div>
     );
@@ -209,11 +215,14 @@ export default function Finalizar() {
         };
     }, [metamapReady, metadata]);
 
+    // Query-only previews have no resolved loan or signature metadata.
+    // They retain the configured disclosures; resolved loans share MetaMap rates.
+    const ratesLoan = finalizar.metamap.metadata ? loan : null;
     const rates = {
-        tna: loan?.prestamo_tna || settings.tna,
-        tea: loan?.prestamo_tea || settings.tea,
-        tem: loan?.prestamo_tem || settings.tnm,
-        cft: loan?.prestamo_cft || settings.cft,
+        tna: ratesLoan ? ratesLoan.prestamo_tna : settings.tna,
+        tea: ratesLoan ? ratesLoan.prestamo_tea : settings.tea,
+        tem: ratesLoan ? ratesLoan.prestamo_tem : settings.tnm,
+        cft: ratesLoan ? ratesLoan.prestamo_cft : settings.cft,
     };
 
     const installmentPlan =
@@ -321,19 +330,19 @@ export default function Finalizar() {
 
                                     <div>
                                         <RateItem
-                                            label="Tasa Nominal Anual (TNA)"
+                                            label={`Tasa Nominal Anual (TNA)${loan?.lleva_iva ? ' sin IVA' : ''}`}
                                             value={rates.tna}
                                         />
                                         <RateItem
-                                            label="Tasa Efectiva Anual (TEA)"
+                                            label={`Tasa Efectiva Anual (TEA)${loan?.lleva_iva ? ' sin IVA' : ''}`}
                                             value={rates.tea}
                                         />
                                         <RateItem
-                                            label="Tasa Nominal Mensual (TEM)"
+                                            label={`Tasa Efectiva Mensual (TEM)${loan?.lleva_iva ? ' sin IVA' : ''}`}
                                             value={rates.tem}
                                         />
                                         <RateItem
-                                            label="Costo Financiero Total Efectivo Anual (CFT)"
+                                            label={`Costo Financiero Total Efectivo Anual (CFT)${loan?.lleva_iva ? ' con IVA' : ''}`}
                                             value={rates.cft}
                                         />
                                     </div>

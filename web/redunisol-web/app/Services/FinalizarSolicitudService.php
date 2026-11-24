@@ -36,7 +36,7 @@ class FinalizarSolicitudService
             'error' => null,
         ];
 
-        if (!$sol) {
+        if (! $sol) {
             return $result;
         }
 
@@ -49,7 +49,7 @@ class FinalizarSolicitudService
 
     public function fallbackLoanFromQuery(?string $monto, ?string $cuotas, ?string $nro): ?array
     {
-        if (!$monto && !$cuotas && !$nro) {
+        if (! $monto && ! $cuotas && ! $nro) {
             return null;
         }
 
@@ -102,7 +102,7 @@ class FinalizarSolicitudService
             return $result;
         }
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             $result['error'] = 'La API de consulta de solicitudes respondio con error.';
 
             // Solo mostrar este aviso cuando la API confirma que ya fue pagada.
@@ -118,11 +118,11 @@ class FinalizarSolicitudService
         }
 
         $payload = $response->json();
-        if (!is_array($payload)) {
+        if (! is_array($payload)) {
             $payload = json_decode($response->body(), true);
         }
 
-        if (!is_array($payload)) {
+        if (! is_array($payload)) {
             $result['error'] = 'La API de consulta de solicitudes devolvio una respuesta invalida.';
 
             return $result;
@@ -167,6 +167,7 @@ class FinalizarSolicitudService
         }
 
         $result['loan'] = $this->mapLegacyLoan($payload, $sol, $ntrans, $linea);
+        $result['loan'] = app(FinalizarIvaService::class)->apply($result['loan'], $client);
         $result['metamap']['metadata'] = $this->buildMetamapMetadata($result['loan'], $result['metamap']['doc_id']);
 
         return $result;
@@ -208,7 +209,7 @@ class FinalizarSolicitudService
         }
 
         $token = $tokenResponse->json('token');
-        if (!$tokenResponse->successful() || !$token) {
+        if (! $tokenResponse->successful() || ! $token) {
             $result['error'] = 'ITS no devolvio token valido.';
 
             return $result;
@@ -229,7 +230,7 @@ class FinalizarSolicitudService
         }
 
         $solicitud = $solicitudResponse->json('solicitud');
-        if (!$solicitudResponse->successful() || !is_array($solicitud)) {
+        if (! $solicitudResponse->successful() || ! is_array($solicitud)) {
             $result['error'] = 'ITS no devolvio datos de solicitud.';
 
             return $result;
@@ -347,6 +348,8 @@ class FinalizarSolicitudService
 
     private function buildMetamapMetadata(array $loan, string $docId): array
     {
+        $iva = ($loan['lleva_iva'] ?? null) === true;
+
         return [
             'eSignature' => [
                 'customVariables' => [
@@ -354,10 +357,10 @@ class FinalizarSolicitudService
                     'variableKey2' => ['title' => 'Importe solicitado', 'value' => $loan['monto_total_display'], 'documents' => [$docId]],
                     'variableKey3' => ['title' => 'Cuotas a pagar', 'value' => $loan['cuotas'], 'documents' => [$docId]],
                     'variableKey4' => ['title' => 'Importe cuota', 'value' => $loan['monto_cuota_display'], 'documents' => [$docId]],
-                    'variableKey5' => ['title' => 'TNA', 'value' => $this->withPercent($loan['prestamo_tna']), 'documents' => [$docId]],
-                    'variableKey6' => ['title' => 'TEA', 'value' => $this->withPercent($loan['prestamo_tea']), 'documents' => [$docId]],
-                    'variableKey7' => ['title' => 'CFT', 'value' => $this->withPercent($loan['prestamo_cft']), 'documents' => [$docId]],
-                    'variableKey8' => ['title' => 'TEM', 'value' => $this->withPercent($loan['prestamo_tem']), 'documents' => [$docId]],
+                    'variableKey5' => ['title' => $iva ? 'TNA sin IVA' : 'TNA', 'value' => $this->withPercent($loan['prestamo_tna']), 'documents' => [$docId]],
+                    'variableKey6' => ['title' => $iva ? 'TEA sin IVA' : 'TEA', 'value' => $this->withPercent($loan['prestamo_tea']), 'documents' => [$docId]],
+                    'variableKey7' => ['title' => $iva ? 'CFT con IVA' : 'CFT', 'value' => $this->withPercent($loan['prestamo_cft']), 'documents' => [$docId]],
+                    'variableKey8' => ['title' => $iva ? 'TEM sin IVA' : 'TEM', 'value' => $this->withPercent($loan['prestamo_tem']), 'documents' => [$docId]],
                     'variableKey9' => ['title' => 'NumeroPrestamo', 'value' => $loan['numero_prestamo'], 'documents' => [$docId]],
                     'variableKey10' => ['title' => 'Importe liquidado', 'value' => $loan['capital_original'], 'documents' => [$docId]],
                     'variableKey11' => ['title' => 'Importe total', 'value' => $loan['monto_prestamo'], 'documents' => [$docId]],
