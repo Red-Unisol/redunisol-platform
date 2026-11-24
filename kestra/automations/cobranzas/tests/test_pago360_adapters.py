@@ -131,3 +131,26 @@ class AdaptersTests(unittest.TestCase):
         legacy.read_receipt.assert_called_once_with(receipt,claim.operation.installments[0])
         self.assertEqual(client.record.call_args.args[2],'verified')
         repo.finish(TOKEN,Status.PENDING,'read_unavailable');client.release.assert_called_once();client.finish.assert_not_called()
+
+
+class IntegratedAdaptersTests(unittest.TestCase):
+    def test_repository_provider_and_processor_complete_then_skip_duplicate(self):
+        from pago360.portal import normalize_operation
+        client=Mock();data=snapshot();data['trabajo']={'estado':'en_proceso'}
+        client.claim.return_value={'resultado':'tomado','token':TOKEN,'fencing':7,'snapshot':data}
+        client.verify_payment.return_value={'proveedor_ref':'816','external_reference':OP,'ambiente':'live',
+            'moneda':'ARS','estado':'paid','importe_cobrado':'1500.00','pagado_el':'2026-11-16'}
+        client.begin.return_value={'attempt_id':ATTEMPT,'cupo':{'operacion_id':OP,'reservado_centavos':150000,'limite_centavos':5000000}}
+        legacy=Mock();op=normalize_operation(data);item=op.installments[0]
+        legacy.debt.return_value=Debt(item.installment_id,item.loan_id,item.number,item.due_on,999999,False)
+        legacy.charge.return_value=Receipt('800',item.loan_id,item.installment_id,item.amount_cents)
+        legacy.verify.return_value=True
+        legacy.read_receipt.return_value={'cuota_prestamo_id':item.installment_id,'importe':'1500.00','referencia':'800'}
+        client.snapshot.return_value={'trabajo':{'estado':'aplicado'}}
+        processor=Processor(Repository(client,legacy),Provider(client),legacy,contracts_verified=True,apply_collected_amount=True)
+        self.assertEqual(processor.run(OP,'exec').status,'APPLIED')
+        self.assertEqual([call.args[2] for call in client.record.call_args_list],['received','verified'])
+        client.finish.assert_called_once_with(OP,'aplicado',TOKEN,7,None)
+        client.claim.side_effect=PortalError(409,'terminal')
+        self.assertEqual(processor.run(OP,'exec2').reason,'ALREADY_TERMINAL')
+        legacy.charge.assert_called_once();client.verify_payment.assert_called_once();client.begin.assert_called_once()

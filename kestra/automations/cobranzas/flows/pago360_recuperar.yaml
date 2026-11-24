@@ -25,7 +25,7 @@ tasks:
       - pip install requests > /dev/null
     env:
       PAGO360_MODE: enabled
-      VIMARX_EVAL_BASE_URL: "{{ envs.vimarx_eval_base_url }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       KESTRA_EXECUTION_ID: "{{ execution.id }}"
       PAGO360_PORTAL_API_URL: "{{ envs.pago360_portal_api_url }}"
       PAGO360_PORTAL_API_SECRET: "{{ secret('PAGO360_PORTAL_API_SECRET') }}"
