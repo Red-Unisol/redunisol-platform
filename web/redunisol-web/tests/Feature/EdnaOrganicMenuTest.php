@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
+    fakeSalesTransferWindow();
     $this->travelTo(now()->setDate(2026, 11, 11)->setTime(15, 0));
     config()->set('app.key', 'base64:'.base64_encode(str_repeat('m', 32)));
     config()->set('edna', ['enabled' => true, 'router_enabled' => true, 'intake_enabled' => true,
@@ -231,6 +232,24 @@ test('the native session flow prevents a second welcome and an explicit contact 
         Queue::assertPushed(PrepareEdnaOrganicLoan::class, 1);
     }
 })->with([[true], [false]]);
+
+test('another explicit entry in the same campaign session can renew its reservation without ever duplicating the menu', function () {
+    config(['edna.sales_inbox_enabled' => true]);
+    $h = organicMenuHarness();
+    $entry = organicMenuEvent(['messageContent' => ['text' => 'Quiero solicitar un préstamo']]);
+    $prior = organicMenuCapture($h['service'], $entry);
+    organicMenuDue($prior->id, ['chat_id' => '601', 'session_id' => '501', 'state' => 'preserved', 'reason' => 'commercial_continuation_reserved']);
+    $next = organicMenuEvent(['messageContent' => ['text' => 'Quiero solicitar un préstamo']]);
+    $second = organicMenuCapture($h['service'], $next);
+    $campaign = Mockery::mock(\App\Services\SalesCampaignReply::class);
+    $campaign->shouldReceive('reserve')->once()->with(organicMenuPayload($next), organicMenuProof($next), true)->andReturnTrue();
+    app()->instance(\App\Services\SalesCampaignReply::class, $campaign);
+    $h['transport']->shouldNotReceive('schedule');
+    $h['service']->process($second->id);
+    $row = DB::table('edna_organic_menus')->find($second->id);
+    expect($row->state)->toBe('preserved')->and($row->reason)->toBe('commercial_continuation_reserved')
+        ->and((int) $row->canonical_menu_id)->toBe((int) $prior->id)->and($row->send_started_at)->toBeNull();
+});
 
 test('duplicate and contrary callbacks cannot change the first choice or schedule another case', function () {
     $h = organicMenuHarness();
@@ -837,4 +856,16 @@ test('a temporary chat lock preserves the acknowledged commercial route for a re
     $deal['CONTACT_ID'] = '211';
     $h['crm']->shouldReceive('call')->once()->with('crm.deal.get', ['id' => '110'])->andReturn($deal);
     expect($h['service']->process($menu->id)['reason'])->toBe('commercial_assignment_changed');
+});
+
+test('an organic choice cannot send an expired chat to the commercial desk', function () {
+    fakeSalesTransferWindow('expired');
+    $h = organicMenuHarness();
+    $h['attention']->shouldReceive('canTransfer', 'compatible')->andReturnTrue();
+    $menu = organicMenuConfirmed($h);
+    $choice = organicMenuChoice($menu, 'other');
+    $h['service']->receiveChoice($choice, organicMenuPayload($choice));
+    expect($h['service']->process($menu->id))->toMatchArray(['state' => 'expired', 'reason' => 'customer_window_expired'])
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->transfer_intent)->toBeNull();
+    $h['crm']->shouldNotHaveReceived('call', ['imopenlines.operator.transfer', Mockery::any()]);
 });

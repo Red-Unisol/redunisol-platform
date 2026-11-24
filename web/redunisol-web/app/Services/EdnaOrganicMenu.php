@@ -18,7 +18,7 @@ use Throwable;
 /** Durable organic intake: authenticated inbox capture, then bounded provider work. */
 class EdnaOrganicMenu
 {
-    private const RESPONSE_STAGE = 'C1:UC_ZH5DGU';
+    public const RESPONSE_STAGE = 'C1:UC_ZH5DGU';
 
     private EdnaBitrix $crm;
 
@@ -218,6 +218,13 @@ class EdnaOrganicMenu
             $other = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)
                 ->where('chat_id', $proof['chat_id'])->where('session_id', $proof['session_id'])->where('id', '!=', $menu->id)->first();
             if ($other) {
+                // A campaign reply owns this session without ever sending a menu. A *new* explicit reply can
+                // reopen its handoff after the provider window ended; keep the canonical menu and its receipts.
+                if ($other->reason === 'commercial_continuation_reserved' && config('edna.sales_inbox_enabled') && config('edna.intake_crm_enabled')
+                    && ! app(WebChatContinuity::class)->blocksOutbound($event, $proof)
+                    && app(SalesCampaignReply::class)->reserve($payload, $proof, resumeOnly: true) === true) {
+                    return $this->finish('preserved', 'commercial_continuation_reserved', ['canonical_menu_id' => $other->id]);
+                }
                 return $this->finish('duplicate', 'menu_already_reserved_for_session', [
                     'canonical_menu_id' => $other->canonical_menu_id ?: $other->id,
                 ]);
@@ -520,6 +527,7 @@ class EdnaOrganicMenu
         if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry, $verifiedContact)) {
             return $this->finish('preserved', 'native_crm_assignment_preserved');
         }
+        $window = app(SalesTransferWindow::class)->inspect($this->crm, (int) $proof['chat_id'], (int) $proof['session_id'], $attention['dialog'] ?? null);
         $this->assertBudget(65);
         $fresh = $this->attention->inspect($proof, $target);
         if (($fresh['status'] ?? '') !== 'ready') {
@@ -536,6 +544,11 @@ class EdnaOrganicMenu
             $verifiedContact, $case['ID'], $target, $case['contact_deal_stage'])) {
             return $this->finish('preserved', 'contact_deal_or_attention_changed');
         }
+        if ($reason = SalesTransferWindow::blockReason($window)) {
+            $state = SalesTransferWindow::blockedState($reason);
+
+            return $state === 'waiting' ? $this->wait($reason) : $this->finish($state, $reason);
+        }
         $intent = ['target_id' => (string) $target, 'session_id' => (string) $proof['session_id'],
             'owner_before' => (string) $fresh['owner_id'], 'snapshot' => $fresh['native_snapshot'],
             'commercial_case' => $case, 'routing_policy' => $otherInquiry ? 'other_inquiry' : 'commercial',
@@ -544,6 +557,9 @@ class EdnaOrganicMenu
         $this->write(['transfer_state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
             'seller_id' => (string) $target, 'transfer_acknowledged' => false]);
         $this->assertLease();
+        if ($reason = SalesTransferWindow::blockReason($window)) {
+            return $this->wait($reason, ['transfer_intent' => null, 'transfer_state' => 'pending']);
+        }
         try {
             $ack = $this->crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $proof['chat_id'], 'USER_ID' => $target]);
             $this->write(['transfer_acknowledged' => $ack === true, 'transfer_state' => 'unknown']);

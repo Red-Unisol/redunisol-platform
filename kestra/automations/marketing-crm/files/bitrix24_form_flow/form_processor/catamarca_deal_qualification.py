@@ -750,6 +750,8 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=active_logger,
+        transfer_timeout_seconds=config.timeout_seconds,
+        expected_stage=decision.stage_id,
         expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(
@@ -1278,6 +1280,8 @@ def _retry_queued_deal(
         logger=logger,
         preserve_existing_ownership=True,
         provisional_user_id=config.deal.provisional_user_id,
+        transfer_timeout_seconds=config.timeout_seconds,
+        expected_stage=target_stage,
         expected_sessions=guarded_sessions,
     )
     notify_distribution_supervisor(

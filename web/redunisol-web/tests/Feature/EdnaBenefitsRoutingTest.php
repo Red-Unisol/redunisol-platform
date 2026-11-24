@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
+    fakeSalesTransferWindow();
     $this->travelTo(CarbonImmutable::parse('2026-11-18T15:00:00Z'));
     config()->set(['edna.enabled' => true, 'edna.intake_crm_enabled' => true, 'edna.subject_id' => '2423',
         'edna.bitrix_url' => 'https://redunisol.bitrix24.es/rest/71283/testingToken/',
@@ -464,4 +465,11 @@ test('activation is immutable and status never schedules work or reads CRM', fun
     $this->artisan('edna:benefits-chats status')->assertSuccessful();
     expect(DB::table('edna_benefit_chat_routes')->count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+test('a benefits reply with no confirmed window waits without writing an intent', function () {
+    fakeSalesTransferWindow('unknown');
+    $f = benefitsRouteFixture();
+    expect($f->service->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'customer_window_unknown'])
+        ->and(benefitsRouteRow($f)->transfer_intent)->toBeNull()->and($f->crm->posts)->toBe(0);
 });

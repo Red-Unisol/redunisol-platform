@@ -13,6 +13,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .logger import Logger
 from .receipt_file import build_bitrix_file_data
+from .transfer_window import read_transfer_window
 from .volume_compensation import apply_volume_compensation
 
 
@@ -102,6 +103,8 @@ class ChatTransferResult:
             for _chat_id, reason in self.skipped_chats
         ):
             return "non_distributable_open_line"
+        if any(reason == "transfer_unacknowledged" for _chat_id, reason in self.skipped_chats):
+            return "transfer_unacknowledged"
         if any(reason == "transfer_error" for _chat_id, reason in self.skipped_chats):
             return "transfer_failed"
         return "no_transferable_session"
@@ -580,25 +583,32 @@ def assign_open_line_chats_to_user(
     deal_id: int, assigned_by_id: int,
     distributable_open_line_ids: tuple[int, ...], logger: Logger,
     preserve_existing_ownership: bool = False, provisional_user_id: int = 57,
-    expected_sessions: dict[int, int] | None = None,
+    expected_sessions: dict[int, int] | None = None, transfer_timeout_seconds: int = 30,
+    expected_stage: str | None = None,
 ) -> ChatTransferResult:
     found_chat_ids = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id)
     transferred_chat_ids: list[int] = []
     skipped_chats: list[tuple[int, str]] = []
+    expected_deal = {"id": deal_id, "leadId": lead_id, "assignedById": assigned_by_id}
+    if contact_id is not None:
+        expected_deal["contactId"] = contact_id
+    if expected_stage is not None:
+        expected_deal["stageId"] = expected_stage
     for chat_id in found_chat_ids:
         transferable, reason = _open_line_session_transferability(
             client,
             chat_id=chat_id,
             distributable_open_line_ids=distributable_open_line_ids,
             logger=logger,
-            allowed_owner_ids=(0, 57, 74827),
+            transfer_timeout_seconds=transfer_timeout_seconds,
+            expected_deal=expected_deal,
             expected_session_id=expected_sessions.get(chat_id, 0) if expected_sessions is not None else None,
         )
         if not transferable:
             skipped_chats.append((chat_id, reason))
             continue
         try:
-            client.call(
+            acknowledged = client.call(
                 "imopenlines.operator.transfer",
                 {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
             )
@@ -607,6 +617,9 @@ def assign_open_line_chats_to_user(
             # undo it or turn successful distribution into a technical failure.
             logger.error(f"No se pudo transferir el chat {chat_id} al vendedor {assigned_by_id}: {exc}")
             skipped_chats.append((chat_id, "transfer_error"))
+            continue
+        if acknowledged is not True:
+            skipped_chats.append((chat_id, "transfer_unacknowledged"))
             continue
         transferred_chat_ids.append(chat_id)
         logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
@@ -623,7 +636,8 @@ def _open_line_session_transferability(
     chat_id: int,
     distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
-    allowed_owner_ids: tuple[int, ...] | None = None,
+    transfer_timeout_seconds: int,
+    expected_deal: dict,
     expected_session_id: int | None = None,
 ) -> tuple[bool, str]:
     try:
@@ -649,15 +663,27 @@ def _open_line_session_transferability(
         )
         return False, "non_distributable_open_line"
 
-    if active_open_line_session_id(dialog) is None:
+    session_id = active_open_line_session_id(dialog)
+    if session_id is None:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
-    if expected_session_id is not None and active_open_line_session_id(dialog) != expected_session_id:
+    if expected_session_id is not None and session_id != expected_session_id:
         return False, "session_changed_before_transfer"
     owner = dialog.get("owner", dialog.get("OWNER", 0))
     if _is_positive_int(owner) and int(str(owner)) not in (0, 57, 74827):
         return False, "manual_owner_preserved"
-    return _unattended_sales_session(client, chat_id, dialog)
+    deadline, reason = read_transfer_window(chat_id, session_id)
+    if deadline is None:
+        return False, reason
+    ready, reason = _unattended_sales_session(client, chat_id, dialog, expected_deal=expected_deal)
+    if not ready:
+        return False, reason
+    remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+    if remaining <= 0:
+        return False, "customer_window_expired"
+    if remaining <= transfer_timeout_seconds:
+        return False, "customer_window_closing"
+    return True, "transferable"
 
 
 def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
@@ -700,7 +726,7 @@ def _counter(value):
     return int(value)
 
 
-def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
+def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, expected_deal=None):
     """Read the exact current session twice, then reread its identity/owner.
 
     No accepting/starting/transfer is used for inspection. The external transfer
@@ -805,6 +831,16 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
                         entry_matches.append((str(mid), str(sender)))
             if entry_binding is not None and entry_matches != [(entry_binding["message_id"], channel[3])]:
                 return False, "native_message_unverified"
+        if expected_deal is not None:
+            # Ownership can change while Edna or the native session history is being read.
+            record = read("crm.item.get", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": expected_deal["id"]})
+            item = record.get("item") if isinstance(record, dict) else None
+            lead = read("crm.lead.get", {"id": expected_deal["leadId"]})
+            if (not isinstance(item, dict) or not isinstance(lead, dict)
+                    or any(str(item.get(key)) != str(value) for key, value in expected_deal.items())
+                    or str(lead.get("ID")) != str(expected_deal["leadId"])
+                    or str(lead.get("ASSIGNED_BY_ID")) != str(expected_deal["assignedById"])):
+                return False, "commercial_assignment_changed_before_transfer"
         last = read("imopenlines.dialog.get", {"CHAT_ID": chat_id})
         if not isinstance(last, dict) or active_open_line_session_id(last) != session_id:
             return False, "session_changed_before_transfer"

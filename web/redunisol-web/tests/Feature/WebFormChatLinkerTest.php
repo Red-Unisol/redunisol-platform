@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
+    fakeSalesTransferWindow();
     $this->travelTo(now()->setDate(2026, 11, 10)->setTime(12, 0));
     config()->set('app.key', 'base64:'.base64_encode(str_repeat('l', 32)));
     config()->set('edna.enabled', true);
@@ -1193,4 +1194,27 @@ test('fresh seller waits wake on one matching reservation and still read the act
     $next = webChatLinkerRow($f)->available_at;
     $router->poll();
     expect(webChatLinkerRow($f)->available_at)->toBe($next);
+});
+
+test('a slow durable intent write cannot race the dispatch deadline or leave a fictitious transfer intent', function () {
+    $f = webChatContextLinkerFixture();
+    $window = Mockery::mock(App\Services\SalesTransferWindow::class);
+    $window->shouldReceive('inspect')->once()->andReturn(['state' => 'open', 'expires_at' => now()->addSeconds(8)->toIso8601String()]);
+    app()->instance(App\Services\SalesTransferWindow::class, $window);
+    DB::listen(function (Illuminate\Database\Events\QueryExecuted $q) {
+        if (str_contains($q->sql, 'web_form_chat_routes') && str_starts_with($q->sql, 'update') && in_array('sending', $q->bindings, true)) {
+            $this->travel(4)->seconds();
+        }
+    });
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'customer_window_closing'])
+        ->and($f->crm->transferCalls)->toBe(0)->and(webChatLinkerRow($f)->transfer_state)->toBe('pending');
+    expect(json_decode(webChatLinkerRow($f)->proof, true))->not->toHaveKey('transfer_intent');
+});
+
+test('a linked deal cannot transfer its chat once the customer window expires', function () {
+    fakeSalesTransferWindow('expired');
+    $f = webChatContextLinkerFixture();
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'expired', 'reason' => 'customer_window_expired'])
+        ->and($f->crm->transferCalls)->toBe(0);
+    expect(json_decode(webChatLinkerRow($f)->proof, true))->not->toHaveKey('transfer_intent');
 });

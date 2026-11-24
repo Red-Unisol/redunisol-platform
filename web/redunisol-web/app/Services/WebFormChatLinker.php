@@ -299,6 +299,7 @@ class WebFormChatLinker
                 $this->decide('preserved', 'web_responsible_changed');
             }
             $this->nativeIdentity($receipt, $fresh, $native);
+            $window = app(SalesTransferWindow::class)->inspect($this->crm, (int) $this->proof['chat_id'], (int) $this->proof['session_id'], $attention['dialog'] ?? null);
             $attention = $this->guard->inspect($this->proof, $fresh['seller_id']);
             $this->validateDialogCase($attention['dialog'] ?? null, $fresh);
             if ($attention['status'] === 'already_assigned') {
@@ -313,6 +314,9 @@ class WebFormChatLinker
             }
             $this->finalCheck($receipt, $fresh, $attention, $native);
             $this->assertContext();
+            if ($reason = SalesTransferWindow::blockReason($window)) {
+                return $this->finish(SalesTransferWindow::blockedState($reason), $reason);
+            }
             $this->proof['transfer_intent'] = ['seller_id' => $fresh['seller_id'], 'session_id' => (string) $this->proof['session_id'],
                 'owner_before' => (string) $attention['owner_id'], 'web_lead_id' => (string) $fresh['lead']['ID'],
                 'contact_id' => $fresh['contact_id'], 'contact_owner_before' => (string) ($fresh['contact']['ASSIGNED_BY_ID'] ?? ''),
@@ -324,8 +328,13 @@ class WebFormChatLinker
             }
             $this->write(['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'sending']);
             $this->assertLease();
+            if ($reason = SalesTransferWindow::blockReason($window)) {
+                unset($this->proof['transfer_intent']);
+
+                return $this->finish('waiting', $reason, ['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'pending']);
+            }
             try {
-                $ack = $this->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->proof['chat_id'], 'USER_ID' => (int) $fresh['seller_id']]);
+                $ack = $this->crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->proof['chat_id'], 'USER_ID' => (int) $fresh['seller_id']]);
                 if ($ack !== true) {
                     $this->decide('unknown', 'transfer_acknowledgement_uncertain');
                 }
@@ -917,7 +926,7 @@ class WebFormChatLinker
             $fields += ['deal_id' => $this->salesHold['deal_id'], 'sales_opening_at' => $next,
                 'retry_expires_at' => $policy->expiresAt($route)->addSeconds($credit),
                 'attempts' => max(0, $route->attempts - 1)];
-        } elseif ($route && in_array($state, ['waiting', 'unknown', 'expired'], true)
+        } elseif ($route && $reason !== 'customer_window_expired' && in_array($state, ['waiting', 'unknown', 'expired'], true)
             && ($policy->expired($route) || $deadline?->lessThanOrEqualTo(now()))) {
             $expiration = $policy->expiration($route);
             $state = $expiration['state'];

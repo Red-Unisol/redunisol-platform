@@ -90,6 +90,8 @@ tasks:
       BITRIX24_VOLUME_COMPENSATION_URL: "{{ envs.bitrix24_volume_compensation_url ?? 'https://redunisol.com.ar/api/internal/bitrix-routing/allocate' }}"
       BITRIX24_VOLUME_COMPENSATION_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
       BITRIX24_VOLUME_COMPENSATION_SCOPE: "{{ flow.namespace }}"
+      SALES_CHAT_WINDOW_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
+      SALES_CHAT_WINDOW_SCOPE: "{{ flow.namespace }}"
       BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
       BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
       BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '00:00' }}"

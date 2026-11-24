@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
+    fakeSalesTransferWindow();
     $this->travelTo(now()->setDate(2026, 11, 17)->setTime(12, 0));
     config()->set('app.key', 'base64:'.base64_encode(str_repeat('n', 32)));
     config()->set('edna', ['enabled' => true, 'router_enabled' => true, 'subject_id' => '2423',
@@ -376,4 +377,16 @@ test('cutover activation is idempotent and never moves its old-entry boundary', 
     $this->artisan('edna:intake-cutover activate')->assertSuccessful();
     expect(DB::table('edna_intake_cutovers')->first())->toEqual($cut);
     Queue::assertNotPushed(RouteEdnaIntakeChat::class);
+});
+
+test('a fresh intake with an expired customer window keeps the owner', function () {
+    fakeSalesTransferWindow('expired');
+    [$request, , $crm] = freshRouteFixture();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('targetActive', 'canTransfer', 'compatible')->andReturnTrue();
+    $attention->shouldReceive('inspect')->twice()->andReturn(['status' => 'ready', 'owner_id' => '74827', 'native_snapshot' => ['before' => true]]);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    (new EdnaIntakeChatRouting)->route($request->id);
+    expect(DB::table('edna_intake_chat_routes')->first()->reason)->toBe('customer_window_expired')
+        ->and(DB::table('edna_intake_chat_routes')->first()->transfer_intent)->toBeNull()->and($crm->transfers)->toBe(0);
 });

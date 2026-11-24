@@ -163,6 +163,15 @@ class WebFormChatGuard
             in_array($dialog['text_field_enabled'], [true, 'Y', 'y', 1, '1'], true)];
     }
 
+    /** A single exact, native read for the window API. Ownership is checked independently before a handoff. */
+    public function currentSession(int $chatId, int $sessionId, ?int $epoch): array
+    {
+        $this->calls = 0;
+        $this->deadline = microtime(true) + 6;
+
+        return $this->session($chatId, $sessionId, $epoch);
+    }
+
     private function session(int $chatId, int $sessionId, ?int $epoch): array
     {
         if (! $epoch) {

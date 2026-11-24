@@ -104,6 +104,7 @@ class EdnaIntakeChatRouting
 
                 return;
             }
+            $window = app(SalesTransferWindow::class)->inspect($crm, (int) $proof['chat_id'], (int) $proof['session_id'], $before['dialog'] ?? null);
             $fresh = $attention->inspect($proof, $target);
             if (($fresh['status'] ?? '') !== 'ready'
                 || ! $attention->compatible($before['native_snapshot'], $fresh['native_snapshot'] ?? [], $target, false, false, $verifiedContact)) {
@@ -120,6 +121,16 @@ class EdnaIntakeChatRouting
 
                 return;
             }
+            if ($reason = SalesTransferWindow::blockReason($window)) {
+                $state = SalesTransferWindow::blockedState($reason);
+                if ($state === 'waiting') {
+                    $this->finish($requestId, 'pending', $reason);
+                    throw new RuntimeException('Customer window evidence pending.');
+                }
+                $this->finish($requestId, $state, $reason);
+
+                return;
+            }
             $intent = ['target_id' => (string) $target, 'session_id' => $proof['session_id'],
                 'owner_before' => (string) $fresh['owner_id'], 'created_at' => now()->toIso8601String(),
                 'snapshot' => $fresh['native_snapshot'], 'commercial_case' => $beforeCase];
@@ -128,6 +139,11 @@ class EdnaIntakeChatRouting
                 'state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR), 'updated_at' => now(),
             ]) !== 1) {
                 throw new RuntimeException('Fresh chat transfer lease expired.');
+            }
+            if ($reason = SalesTransferWindow::blockReason($window)) {
+                DB::table('edna_intake_chat_routes')->where('request_id', $requestId)->where('state', 'sending')
+                    ->update(['transfer_intent' => null, 'state' => 'pending', 'reason' => $reason, 'updated_at' => now()]);
+                throw new RuntimeException('Customer window changed before dispatch.');
             }
             try {
                 $ack = $crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $proof['chat_id'], 'USER_ID' => $target]);

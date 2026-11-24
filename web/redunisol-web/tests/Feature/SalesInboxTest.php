@@ -278,3 +278,60 @@ test('courtesy never masks an outstanding request or a media message', function 
     $history['message'] = [$m + ['params' => ['FILE_ID' => [29]]]];
     expect($p->conversation($history, $s)['reason'])->toBe('customer_request');
 });
+
+test('a queued social handoff cannot distribute an expired session after reopening', function () {
+    $crm = new SalesInboxCrmFake;
+    $inbox = newSalesInbox($crm);
+    $inbox->poll();
+    $this->travel(25)->hours();
+    DB::table('sales_inbox_sessions')->insert(['chat_id' => 601, 'session_id' => 501, 'channel' => 'facebook',
+        'opened_at' => '2026-11-25 12:01:00', 'state' => 'pending', 'available_at' => now()]);
+    $inbox->poll();
+    expect(DB::table('sales_inbox_sessions')->first()->reason)->toBe('customer_window_expired')
+        ->and(DB::table('sales_inbox_sessions')->first()->intent)->toBeNull()->and($crm->posts)->toBe(0);
+});
+
+test('a seller change during provider window lookup cancels the stale handoff', function () {
+    $crm = new SalesInboxCrmFake;
+    $crm->dealOwner = 371;
+    $inbox = newSalesInbox($crm);
+    $inbox->poll();
+    $this->travel(4)->minutes();
+    $window = Mockery::mock(\App\Services\SalesTransferWindow::class);
+    $window->shouldReceive('inspect')->once()->andReturnUsing(function () use ($crm) {
+        $crm->dealOwner = 799;
+
+        return ['state' => 'open', 'expires_at' => now()->addHour()->toIso8601String()];
+    });
+    app()->instance(\App\Services\SalesTransferWindow::class, $window);
+    $inbox->poll();
+    $row = DB::table('sales_inbox_sessions')->first();
+    expect($row->reason)->toBe('session_changed_before_effect')->and($row->intent)->toBeNull()->and($crm->posts)->toBe(0);
+});
+
+test('a fresh campaign allocation wakes only its retained deal and scope even for a session older than three days', function (int $allocatedDeal, string $scope) {
+    config(['chat_response.scope' => 'redunisol.prod.marketing-crm']);
+    $matches = $allocatedDeal === 17 && $scope === 'redunisol.prod.marketing-crm';
+    $crm = new SalesInboxCrmFake;
+    $crm->source = 'whatsappbyedna';
+    $inbox = newSalesInbox($crm);
+    $inbox->poll();
+    $this->travel(5)->days();
+    $time = now()->utc();
+    DB::table('sales_inbox_sessions')->insert(['chat_id' => 601, 'session_id' => 501, 'channel' => $crm->source,
+        'opened_at' => '2026-11-25 12:01:00', 'state' => 'waiting', 'reason' => 'commercial_seller_pending', 'attempts' => 4,
+        'available_at' => $time->copy()->addMinutes(20), 'updated_at' => $time->copy()->subMinute(),
+        'campaign' => json_encode(['deal_id' => 17, 'received_at' => $time->copy()->subHour()->toIso8601String()])]);
+    DB::table('bitrix_routing_allocations')->insert(['scope' => $scope, 'business_date' => $time->toDateString(),
+        'bucket' => 'test', 'deal_id' => $allocatedDeal, 'online_user_ids' => '[]', 'assigned_user_id' => 99, 'proposed_user_id' => 99,
+        'recurring' => false, 'compensation_turn' => false, 'compensated' => false,
+        'created_at' => $time->copy()->subSeconds(30), 'updated_at' => $time->copy()->subSeconds(30)]);
+    $campaign = Mockery::mock(\App\Services\SalesCampaignReply::class);
+    $campaign->shouldReceive('decision')->times($matches ? 1 : 0)
+        ->andReturn(['state' => 'waiting', 'reason' => 'commercial_seller_pending']);
+    app()->instance(\App\Services\SalesCampaignReply::class, $campaign);
+    $inbox->poll();
+    $row = DB::table('sales_inbox_sessions')->first();
+    expect($row->reason)->toBe('commercial_seller_pending')->and($row->attempts)->toBe($matches ? 5 : 4)
+        ->and($crm->posts)->toBe(0);
+})->with([[17, 'redunisol.prod.marketing-crm'], [99, 'redunisol.prod.marketing-crm'], [17, 'redunisol.dev.marketing-crm']]);

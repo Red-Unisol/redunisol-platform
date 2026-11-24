@@ -9,9 +9,10 @@ use RuntimeException;
 
 class SalesDistribution extends Command
 {
-    protected $signature = 'sales:distribution {--day= : Day of session opening (YYYY-MM-DD, Argentina)}';
+    protected $signature = 'sales:distribution {--day= : Day of session opening (YYYY-MM-DD, Argentina)}
+        {--first-24-hours : Compare the complete day of openings at equal follow-up age}';
 
-    protected $description = 'Count distinct VENTAS chats with new sessions and their native transfers through the end of the selected day';
+    protected $description = 'Count distinct VENTAS chats with new sessions and their native transfers for the selected opening cohort';
 
     // Native VENTAS receipts cross-checked with the 10 November 2026 default-operator change.
     // Indexed by native session. The chat id and exact UTC second must also match.
@@ -38,7 +39,13 @@ class SalesDistribution extends Command
             return self::INVALID;
         }
         $end = $start->addDay()->min($now);
-        $sessions = $chats = [];
+        $fixedAge = (bool) $this->option('first-24-hours');
+        if ($fixedAge && $start->addDay()->addHours(24)->gt($now)) {
+            $this->error('La cohorte todavía no completó las primeras 24 horas de seguimiento.');
+
+            return self::INVALID;
+        }
+        $openedAt = $sessions = $chats = [];
         $offset = 0;
         do {
             $page = $crm->call('imopenlines.v2.Session.list', ['configId' => 1,
@@ -58,6 +65,7 @@ class SalesDistribution extends Command
                 if ($opened->lt($start) || $opened->gte($end)) {
                     continue;
                 }
+                $openedAt[(int) $s['id']] = $opened;
                 $sessions[(int) $s['id']] = (int) $s['chatId'];
                 $chats[(int) $s['chatId']] ??= ['automatic' => false, 'human' => false, 'unattributed' => false];
             }
@@ -84,7 +92,8 @@ class SalesDistribution extends Command
                 }
                 $counts[$sid]++;
                 $time = CarbonImmutable::parse($t['date']);
-                if ($time->lt($start) || $time->gte($end)) {
+                $limit = $fixedAge ? $openedAt[$sid]->addHours(24) : $end;
+                if ($time->lt($openedAt[$sid]) || $time->gte($limit)) {
                     continue;
                 }
                 if (($t['type'] ?? '') !== 'USER' || (int) ($t['toOperatorId'] ?? 0) < 1
@@ -144,6 +153,7 @@ class SalesDistribution extends Command
         }
         $confirmed = $groups['only_automatic'] + $groups['only_human'] + $groups['both'];
         $this->line(json_encode(['from' => $start->toIso8601String(), 'until_exclusive' => $end->toIso8601String(),
+            'transfer_window' => $fixedAge ? 'first_24_hours_per_session' : 'opening_calendar_day',
             'sessions_opened' => count($sessions), 'unique_chats' => count($chats), 'chats_by_distribution' => $groups,
             'chats_with_confirmed_human_work_including_partial' => $human, 'fully_attributed_distributed_chats' => $confirmed,
             'human_work_pct_fully_attributed' => $confirmed ? round(100 * ($groups['only_human'] + $groups['both']) / $confirmed, 1) : null,

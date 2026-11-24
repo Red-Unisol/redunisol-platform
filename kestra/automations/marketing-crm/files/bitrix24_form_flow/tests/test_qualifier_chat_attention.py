@@ -1,6 +1,6 @@
 """Human attention always wins over a scheduled commercial transfer."""
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
@@ -73,6 +73,66 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(result["action"], "approved")
         self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
         self.assertFalse(any(".answer" in method or ".start" in method or ".join" in method for method, _ in self.client.calls))
+
+    def test_expiry_during_final_attention_read_skips_chat_but_allows_crm_distribution(self):
+        deadline = datetime(2026, 11, 24, 12, tzinfo=timezone.utc)
+        module = "bitrix24_form_flow.form_processor.deal_service"
+        with patch(module + ".read_transfer_window", return_value=(deadline, "transferable")) as receipt, \
+                patch(module + ".datetime", wraps=datetime) as clock:
+            clock.now.return_value = deadline
+            result = self.run_qualification()
+        self.assertEqual(result["action"], "approved")
+        receipt.assert_called_once_with(777, 1777)
+        self.assertEqual(self.client.deals[930]["assignedById"], 68579)
+        self.assertFalse(self.client.chat_transfers)
+        self.assertIn("777:customer_window_expired", result["skipped_chat_reasons"])
+
+    def test_commercial_reassignment_while_checking_edna_preserves_the_new_seller(self):
+        def reassign(chat, session):
+            self.client.deals[930]["assignedById"] = 29
+            return datetime.now(timezone.utc) + timedelta(hours=1), "transferable"
+        with patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window", side_effect=reassign):
+            result = self.run_qualification()
+        self.assertEqual(self.client.deals[930]["assignedById"], 29)
+        self.assertIn("777:commercial_assignment_changed_before_transfer", result["skipped_chat_reasons"])
+        self.assertFalse(self.client.chat_transfers)
+
+    def test_remaining_window_must_cover_native_write_timeout(self):
+        from bitrix24_form_flow.form_processor import deal_service
+        now = datetime(2026, 11, 24, 12, tzinfo=timezone.utc)
+        with patch.object(deal_service, "read_transfer_window", return_value=(now + timedelta(seconds=2), "transferable")), \
+                patch.object(deal_service, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            result = self.run_qualification()
+        self.assertIn("777:customer_window_closing", result["skipped_chat_reasons"])
+        self.assertFalse(self.client.chat_transfers)
+
+    def test_false_transfer_ack_is_not_counted(self):
+        original = self.client.call
+        def call(method, payload):
+            if method == "imopenlines.operator.transfer":
+                return False
+            return original(method, payload)
+        with patch.object(self.client, "call", side_effect=call):
+            result = self.run_qualification()
+        self.assertEqual(result["chat_transfer_status"], "transfer_unacknowledged")
+        self.assertEqual(result["transferred_chat_count"], 0)
+
+    def test_queue_opening_does_not_revive_an_expired_or_unverified_chat(self):
+        stamp = "2026-12-01T12:00:00-03:00"
+        for reason in ("customer_window_expired", "customer_window_unverified"):
+            with self.subTest(reason=reason):
+                self.reset_client()
+                deal = self.fixture._queued_deal(930, 920, "catamarca_general", stamp)
+                self.client.deals[930] = deal
+                self.client.leads[920].update(DATE_CREATE=stamp, ASSIGNED_BY_ID=57)
+                with patch("bitrix24_form_flow.form_processor.deal_service.read_transfer_window",
+                           return_value=(None, reason)):
+                    result = qualify._retry_queued_deal(self.client, qualify.load_config(self.fixture.env),
+                        dict(deal), fixtures.SilentLogger(), datetime.fromisoformat(stamp))
+                self.assertEqual(result["action"], "queue_distributed")
+                self.assertIn("777:" + reason, result["skipped_chat_reasons"])
+                self.assertFalse(self.client.chat_transfers)
 
     def test_acceptance_status_or_reply_preserves_even_the_default_owner(self):
         for field, value in [("dateOperatorAnswer", "2026-11-10T18:00:01Z"),

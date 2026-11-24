@@ -31,6 +31,15 @@ class SalesInbox
             report(new RuntimeException('Sales inbox discovery failed; checkpoint retained.'));
         }
         $started = microtime(true);
+        // A seller allocation is only a wake-up hint; the worker checks the exact deal and its current seller again.
+        $dealId = DB::connection()->getQueryGrammar()->wrap('sales_inbox_sessions.campaign->deal_id');
+        DB::table('sales_inbox_sessions')->where('state', 'waiting')->where('reason', 'commercial_seller_pending')
+            ->whereNotNull('campaign')->whereNull('intent')->where('available_at', '>', now())
+            ->whereExists(function (Builder $q) use ($dealId): void {
+                $q->selectRaw('1')->from('bitrix_routing_allocations as a')->where('a.scope', config('chat_response.scope'))
+                    ->whereRaw("a.deal_id = CAST({$dealId} AS BIGINT)")->whereColumn('a.created_at', '>=', 'sales_inbox_sessions.updated_at')
+                    ->where('a.created_at', '<=', now()->subSeconds(15));
+            })->update(['available_at' => now(), 'updated_at' => now()]);
         $due = DB::table('sales_inbox_sessions')->whereIn('state', ['pending', 'waiting', 'waiting_customer', 'uncertain'])
             ->where('available_at', '<=', now())->orderBy('available_at')->orderBy('session_id');
         $fresh = (clone $due)->where('attempts', 0)->limit(20)->get();
@@ -123,7 +132,7 @@ class SalesInbox
 
                 return;
             }
-            if (CarbonImmutable::parse($r->opened_at, 'UTC')->addDays(3)->isPast()) {
+            if ($this->retryDeadline($r)->isPast()) {
                 $this->finish($r, 'needs_attention', 'session_effect_window_elapsed');
 
                 return;
@@ -168,24 +177,23 @@ class SalesInbox
 
                 return;
             }
-            // All CRM identity, employee, campaign and Edna delivery reads precede the final attention guard.
-            if ($this->decide($r, $dialog) !== $decision || ! $lock->isOwnedByCurrentProcess()) {
+            if (! $lock->isOwnedByCurrentProcess()) {
                 $this->finish($r, 'waiting', 'session_changed');
 
                 return;
             }
-            $sameInbound = function () use ($r, $decision) {
-                $history = $this->crm->call('imopenlines.session.history.get', ['SESSION_ID' => (int) $r->session_id]);
-                $message = $this->policy->conversation($history, $r);
-
-                return $message['message_id'] === $decision['message_id']
-                    && in_array($message['reason'], ['explicit_terminal_reply', 'customer_request'], true)
-                    && ($decision['reason'] !== 'explicit_terminal_reply' || $message['reason'] === 'explicit_terminal_reply');
-            };
-            $last = $this->attention->inspectListed((int) $r->chat_id, (int) $r->session_id, $r->channel, $decision['target_id'] ?: 5737, $sameInbound);
+            // Reread the seller and inbound after Edna's window lookup and before the last native human-attention checks.
+            $sameDecision = fn () => $this->decide($r, $dialog) === $decision;
+            $window = $decision['action'] === 'transfer' ? app(SalesTransferWindow::class)->inspect($this->crm, (int) $r->chat_id, (int) $r->session_id, $check['dialog'] ?? null) : null;
+            $last = $this->attention->inspectListed((int) $r->chat_id, (int) $r->session_id, $r->channel, $decision['target_id'] ?: 5737, $sameDecision);
             if (($last['status'] ?? '') !== 'ready' || $last['owner_id'] !== $check['owner_id'] || $last['dialog'] !== $check['dialog']
                 || ! $lock->isOwnedByCurrentProcess()) {
                 $this->finish($r, 'waiting', 'session_changed_before_effect');
+
+                return;
+            }
+            if ($window !== null && ($reason = SalesTransferWindow::blockReason($window))) {
+                $this->finish($r, SalesTransferWindow::blockedState($reason), $reason);
 
                 return;
             }
@@ -196,6 +204,11 @@ class SalesInbox
                 return;
             }
             if (! $lock->isOwnedByCurrentProcess()) {
+                return;
+            }
+            if ($window !== null && ($reason = SalesTransferWindow::blockReason($window))) {
+                $this->row($r)->update(['state' => 'waiting', 'reason' => $reason, 'intent' => null, 'available_at' => now()->addSeconds(10), 'updated_at' => now()]);
+
                 return;
             }
             $ack = $decision['action'] === 'close'
@@ -227,7 +240,7 @@ class SalesInbox
         }
         if ($r->channel === 'whatsappbyedna') {
             if ($r->campaign) {
-                return app(SalesCampaignReply::class)->decision($r, $message);
+                return app(SalesCampaignReply::class)->decision($r, $message, $history);
             }
             if ($native = app(SalesCampaignReply::class)->directNative($r, $history, $message)) {
                 return $native;
@@ -438,7 +451,7 @@ class SalesInbox
     private function finish(object $r, string $state, string $reason): void
     {
         $retry = in_array($state, ['waiting', 'uncertain'], true);
-        $deadline = CarbonImmutable::parse($r->opened_at, 'UTC')->addDays(3);
+        $deadline = $this->retryDeadline($r);
         if ($reason === 'no_verified_channel_outcome') {
             $deadline = CarbonImmutable::parse($r->opened_at, 'UTC')->addHours(8);
         }
@@ -446,8 +459,20 @@ class SalesInbox
             $state = 'needs_attention';
             $retry = false;
         }
-        $next = $retry ? now()->addSeconds((new WebFormChatRetryPolicy)->delaySeconds((int) $r->attempts + 1)) : null;
+        $maxDelay = $reason === 'commercial_deal_pending' ? 300 : 1800;
+        $next = $retry ? now()->addSeconds((new WebFormChatRetryPolicy)->delaySeconds((int) $r->attempts + 1, $maxDelay)) : null;
         $this->row($r)->update(['state' => $state, 'reason' => $reason, 'available_at' => $next, 'updated_at' => now()]);
+    }
+
+    private function retryDeadline(object $row): CarbonImmutable
+    {
+        $start = CarbonImmutable::parse($row->opened_at, 'UTC');
+        $campaign = json_decode($row->campaign ?? 'null', true, flags: JSON_THROW_ON_ERROR);
+        if (isset($campaign['received_at'])) {
+            $start = $start->max(CarbonImmutable::parse($campaign['received_at']));
+        }
+
+        return $start->addDays(3);
     }
 
     private function positive(mixed $id): bool

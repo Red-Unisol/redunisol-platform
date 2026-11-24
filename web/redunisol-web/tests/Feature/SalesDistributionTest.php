@@ -28,6 +28,27 @@ it('counts distinct chats, repeated events, mixed handling and pending separatel
         ->and($data['unique_chats'])->toBe(3)->and($data['human_work_pct_fully_attributed'])->toBe(50);
 });
 
+it('counts next-day transfers only before the exact 24h anniversary for a mature opening cohort', function () {
+    $this->travelTo(now()->setDate(2026, 11, 24));
+    $crm = Mockery::mock(EdnaBitrix::class);
+    app()->instance(EdnaBitrix::class, $crm);
+    $crm->shouldReceive('call')->once()->with('imopenlines.v2.Session.list', Mockery::any())->andReturn(['sessions' =>
+        [['id' => 1, 'configId' => 1, 'chatId' => 10, 'dateCreate' => '2026-11-20T12:30:00-03:00']], 'hasNextPage' => false]);
+    $event = ['sessionId' => 1, 'type' => 'USER', 'fromOperatorId' => 1, 'toOperatorId' => 2];
+    $crm->shouldReceive('call')->once()->with('imopenlines.v2.Session.Transfer.list', Mockery::any())->andReturn(['transfers' => [
+        $event + ['date' => '2026-11-20T12:29:59-03:00', 'initiatorId' => 57],
+        $event + ['date' => '2026-11-21T12:29:59-03:00', 'initiatorId' => 71283],
+        $event + ['date' => '2026-11-21T12:30:00-03:00', 'initiatorId' => 74827],
+    ]]);
+    $crm->shouldReceive('call')->once()->with('imopenlines.v2.Session.Stat.get', Mockery::any())
+        ->andReturn(['sessions' => [['sessionId' => 1, 'transfersCount' => 3]]]);
+    expect(Artisan::call('sales:distribution', ['--day' => '2026-11-20', '--first-24-hours' => true]))->toBe(0);
+    $data = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($data['transfer_window'])->toBe('first_24_hours_per_session')
+        ->and($data['native_transfer_counts'])->toBe(['automatic' => 1, 'human' => 0, 'unattributed' => 0]);
+    expect(Artisan::call('sales:distribution', ['--day' => '2026-11-24', '--first-24-hours' => true]))->toBe(2);
+});
+
 it('withholds the report if native event totals and returned transfers disagree', function () {
     $crm = Mockery::mock(EdnaBitrix::class);
     app()->instance(EdnaBitrix::class, $crm);

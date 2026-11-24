@@ -4,33 +4,28 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request
 from uuid import UUID
 
+from .internal_web import internal_web_origin, open_without_redirects
 from .input_parser import normalize_business_input
 from .result import failure_result, intake_success_result
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def _claim(submission_id, digest):
     scope = os.environ.get("WEB_CRM_RECEIVER_SCOPE", "")
-    hosts = {"redunisol.prod.marketing-crm": "redunisol.com.ar",
-             "redunisol.dev.marketing-crm": "dev.redunisol.com.ar"}
+    origin = internal_web_origin(scope)
     token = os.environ.get("WEB_CRM_RECEIVER_TOKEN")
-    if scope not in hosts or not token:
+    if not origin or not token:
         raise RuntimeError("Web CRM receiver is not configured.")
     request = Request(
-        "https://" + hosts[scope] + "/api/internal/web-form-receiver/claim",
+        origin + "/api/internal/web-form-receiver/claim",
         data=json.dumps({"scope": scope, "submission_id": submission_id, "digest": digest}).encode(),
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json",
                  "Accept": "application/json", "User-Agent": "redunisol-web-crm/1"},
         method="POST",
     )
-    with build_opener(_NoRedirect()).open(request, timeout=8) as response:
+    with open_without_redirects(request, timeout=8) as response:
         return json.load(response)
 
 
