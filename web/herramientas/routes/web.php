@@ -93,6 +93,12 @@ Route::post('/api/tools/consulta-empleador/login', [HerramientasController::clas
     ->name('tools.consulta-empleador.login');
 Route::post('/api/tools/consulta-empleador/logout', [HerramientasController::class, 'empleadorLogout'])
     ->name('tools.consulta-empleador.logout');
+Route::middleware(EmpleadorAccess::class)->group(function () {
+    Route::get('/api/tools/consulta-empleador/registro', [HerramientasController::class, 'empleadorRegistro'])
+        ->name('tools.consulta-empleador.registro');
+    Route::get('/api/tools/consulta-empleador/registro.csv', [HerramientasController::class, 'empleadorRegistroCsv'])
+        ->name('tools.consulta-empleador.registro-csv');
+});
 Route::post('/api/tools/consulta-empleador', [HerramientasController::class, 'consultaEmpleador'])
     ->middleware(EmpleadorAccess::class)
     ->withoutMiddleware([PreventRequestForgery::class])

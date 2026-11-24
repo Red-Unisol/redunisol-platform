@@ -125,6 +125,83 @@ function EmpleadorLogin({ tool, onLogin }) {
     );
 }
 
+const registroFecha = (value) => new Date(value).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+const registroMes = (mes) => {
+    const [year, month] = mes.split('-').map(Number);
+    const nombre = new Date(year, month - 1, 1).toLocaleString('es-AR', { month: 'long' });
+    return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${year}`;
+};
+
+// Quién consultó y cuándo: se recarga después de cada consulta.
+function EmpleadorRegistro({ tool, version }) {
+    const [mes, setMes] = React.useState('');
+    const [data, setData] = React.useState(null);
+    const [error, setError] = React.useState('');
+
+    React.useEffect(() => {
+        const url = new URL(tool.registroEndpoint, window.location.origin);
+        if (mes) {
+            url.searchParams.set('mes', mes);
+        }
+        let vigente = true;
+        fetch(url.toString(), { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } })
+            .then(async (response) => {
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.message || 'No pudimos leer el registro.');
+                }
+                return payload;
+            })
+            .then((payload) => { if (vigente) { setData(payload); setError(''); } })
+            .catch((loadError) => { if (vigente) { setError(loadError.message); } });
+        return () => { vigente = false; };
+    }, [tool.registroEndpoint, mes, version]);
+
+    const mesActual = data?.mes ?? mes;
+    const meses = data?.meses?.length ? data.meses : (mesActual ? [mesActual] : []);
+    const consultas = data?.consultas ?? [];
+    const csvUrl = mesActual ? `${tool.registroCsvEndpoint}?mes=${encodeURIComponent(mesActual)}` : tool.registroCsvEndpoint;
+
+    return (
+        <section className="result empleador-registro">
+            <h3 className="result__headline">Registro de consultas</h3>
+            <div className="actions">
+                {meses.length > 0 && (
+                    <select value={mesActual} onChange={(event) => setMes(event.target.value)} aria-label="Mes">
+                        {meses.map((item) => <option key={item} value={item}>{registroMes(item)}</option>)}
+                    </select>
+                )}
+                <span className="field__hint">{consultas.length} consultas</span>
+                <a className="button button--ghost button--small" href={csvUrl}>Descargar</a>
+            </div>
+            {error && <p className="result__empty" role="alert">{error}</p>}
+            {!error && consultas.length === 0 && <p className="result__empty">Todavía no hay consultas en este mes.</p>}
+            {consultas.length > 0 && (
+                <div className="result__tableWrap empleador-registro__tabla">
+                    <table className="result__table">
+                        <thead>
+                            <tr><th>Fecha y hora</th><th>Usuario</th><th>DNI/CUIL</th><th>Estado</th></tr>
+                        </thead>
+                        <tbody>
+                            {consultas.map((fila, index) => (
+                                <tr key={`${fila.fecha}-${index}`}>
+                                    <td>{registroFecha(fila.fecha)}</td>
+                                    <td>{fila.usuario}</td>
+                                    <td>{fila.identificador}</td>
+                                    <td>{fila.estado === 'ok' ? 'OK' : 'Error'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
 function App({ branding, tools }) {
     const [selectedToolId, setSelectedToolId] = React.useState(null);
     const [formValues, setFormValues] = React.useState({
@@ -136,6 +213,7 @@ function App({ branding, tools }) {
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
+    const [registroVersion, setRegistroVersion] = React.useState(0);
     const [empleadorUsuario, setEmpleadorUsuario] = React.useState(
         tools.find((tool) => tool.id === 'consulta-empleador')?.usuario ?? null,
     );
@@ -236,6 +314,7 @@ function App({ branding, tools }) {
             setError(submitError.message);
         } finally {
             setLoading(false);
+            setRegistroVersion((version) => version + 1);
         }
     };
 
@@ -633,6 +712,9 @@ function App({ branding, tools }) {
                                     </div>
                                 )}
                             </section>
+                        )}
+                        {selectedTool?.id === 'consulta-empleador' && empleadorUsuario && (
+                            <EmpleadorRegistro tool={selectedTool} version={registroVersion} />
                         )}
                     </section>
                 </div>

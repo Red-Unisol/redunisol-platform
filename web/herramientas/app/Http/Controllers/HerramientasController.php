@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\EmpleadorAccess;
+use App\Services\EmpleadorRegistro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
@@ -48,6 +51,8 @@ class HerramientasController extends Controller
                     $tool['endpoint'] = route('tools.consulta-empleador');
                     $tool['loginEndpoint'] = route('tools.consulta-empleador.login');
                     $tool['logoutEndpoint'] = route('tools.consulta-empleador.logout');
+                    $tool['registroEndpoint'] = route('tools.consulta-empleador.registro');
+                    $tool['registroCsvEndpoint'] = route('tools.consulta-empleador.registro-csv');
                     $tool['usuario'] = EmpleadorAccess::usuario(request());
                 }
                 if (($tool['id'] ?? null) === 'consulta-cuad') {
@@ -317,7 +322,38 @@ class HerramientasController extends Controller
         return response()->json(['ok' => true])->header('Cache-Control', 'no-store');
     }
 
-    public function consultaEmpleador(Request $request): JsonResponse
+    public function empleadorRegistro(Request $request, EmpleadorRegistro $registro): JsonResponse
+    {
+        $meses = $registro->meses();
+        $mes = (string) $request->query('mes', $meses[0] ?? $registro->mesActual());
+
+        return response()->json([
+            'mes' => $mes,
+            'meses' => $meses,
+            'consultas' => $registro->consultas($mes),
+        ])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function empleadorRegistroCsv(Request $request, EmpleadorRegistro $registro)
+    {
+        $mes = (string) $request->query('mes', $registro->mesActual());
+        abort_unless(preg_match('/^\d{4}-\d{2}$/', $mes) === 1, 404);
+
+        // BOM + punto y coma para que Excel en español lo abra bien.
+        $csv = "\u{FEFF}Fecha y hora;Usuario;DNI/CUIL;Estado\n";
+        foreach (array_reverse($registro->consultas($mes)) as $fila) {
+            $fecha = Carbon::parse($fila['fecha'] ?? '')->format('d/m/Y H:i:s');
+            $csv .= implode(';', [$fecha, $fila['usuario'] ?? '', $fila['identificador'] ?? '', $fila['estado'] ?? ''])."\n";
+        }
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="consultas-empleador-'.$mes.'.csv"',
+            'Cache-Control' => 'no-store, private',
+        ]);
+    }
+
+    public function consultaEmpleador(Request $request, EmpleadorRegistro $registro): JsonResponse
     {
         if (! $this->isEnabled()) {
             return $this->disabledJsonResponse();
@@ -342,6 +378,14 @@ class HerramientasController extends Controller
         $payload = strlen($digits) === 11
             ? ['cuil' => $identifier]
             : ['dni' => $identifier];
+        $anotar = function (bool $ok) use ($registro, $request, $digits): void {
+            try {
+                $registro->anotar((string) EmpleadorAccess::usuario($request), $digits, $ok);
+            } catch (Throwable $exception) {
+                // Si falla el registro, la consulta igual se responde.
+                Log::warning('No se pudo anotar la consulta de empleador.', ['error' => $exception->getMessage()]);
+            }
+        };
 
         try {
             $response = Http::acceptJson()
@@ -349,6 +393,8 @@ class HerramientasController extends Controller
                 ->timeout((int) config('tools.proxy.timeout_seconds', 30))
                 ->post($targetUrl, $payload);
         } catch (Throwable $exception) {
+            $anotar(false);
+
             return response()->json([
                 'ok' => false,
                 'message' => 'No pudimos conectar con el servicio de empleador en este momento.',
@@ -356,6 +402,8 @@ class HerramientasController extends Controller
                 'detail' => $exception->getMessage(),
             ], 502);
         }
+
+        $anotar($response->successful() && $response->json('ok') !== false);
 
         if (! $response->successful()) {
             return response()->json([

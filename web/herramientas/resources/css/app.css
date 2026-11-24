@@ -1756,3 +1756,12 @@ input {
         max-height: 94vh;
     }
 }
+
+.empleador-registro__tabla {
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.empleador-registro__tabla .result__table {
+    min-width: 520px;
+}
