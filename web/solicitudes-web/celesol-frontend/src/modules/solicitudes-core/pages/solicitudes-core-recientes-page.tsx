@@ -20,7 +20,10 @@ import { cn } from "@/shared/utils/cn";
 
 import { ListaPaginacion } from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
 import { useLineasDelAgenteQuery } from "@/modules/solicitudes-core/hooks/use-lineas-del-agente-query";
-import { useSolicitudesCoreRecientesQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
+import {
+  useSolicitudesCoreRecientesQuery,
+  type VistaRecientes,
+} from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
 import {
   LISTA_HEADER_CELL,
   buildRowStyleLista,
@@ -148,7 +151,17 @@ function RecientesList({ user }: { user: AuthUser }) {
     : esVendedor ? "Pendientes de mi lado"
     : areas[0] ? areaName(areas[0]) : "Sin área asignada";
   const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
-  const [vista, setVista] = useState<"mi-area" | "todas">(() =>
+  // Riesgo tambien sigue las que quedaron en Verificar firma y documentacion,
+  // que son de Legajos Digitales.
+  const vistas: VistaRecientes[] = hasArea(user, "RIESGO")
+    ? ["mi-area", "todas", "verificar-firma"]
+    : ["mi-area", "todas"];
+  const vistaLabel: Record<VistaRecientes, string> = {
+    "mi-area": areaLabel,
+    todas: todasLabel,
+    "verificar-firma": "Verificar firma y documentación",
+  };
+  const [vista, setVista] = useState<VistaRecientes>(() =>
     !user.isSystemAdmin && (areas.length > 1 || hasArea(user, "RIESGO")) ? "mi-area" : "todas",
   );
   const navigate = useNavigate();
@@ -315,7 +328,7 @@ function RecientesList({ user }: { user: AuthUser }) {
             className="order-last flex h-10 w-full items-center rounded-full border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto"
             role="group"
           >
-            {(["mi-area", "todas"] as const).map((value) => (
+            {vistas.map((value) => (
               <button
                 aria-pressed={vista === value}
                 className={cn(
@@ -333,7 +346,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 }}
                 type="button"
               >
-                {value === "mi-area" ? areaLabel : todasLabel}
+                {vistaLabel[value]}
               </button>
             ))}
           </div>
@@ -388,7 +401,9 @@ function RecientesList({ user }: { user: AuthUser }) {
                     ? "No hay solicitudes que coincidan con la búsqueda"
                     : vista === "mi-area"
                       ? "No hay solicitudes pendientes de tu lado"
-                      : "No hay solicitudes recientes"}
+                      : vista === "verificar-firma"
+                        ? "No hay solicitudes en Verificar firma y documentación"
+                        : "No hay solicitudes recientes"}
                 </p>
                 {vista === "mi-area" && !searchTerm.trim() ? (
                   <p className="max-w-sm text-sm text-foreground-secondary">
