@@ -325,14 +325,14 @@ function RecientesList({ user }: { user: AuthUser }) {
         {!onlyArea(user, "TESORERIA") ? (
           <div
             aria-label="Vista por área"
-            className="order-last flex h-10 w-full items-center rounded-full border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto"
+            className="order-last flex min-h-10 w-full flex-wrap items-center gap-y-1 rounded-2xl border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto sm:flex-nowrap sm:rounded-full"
             role="group"
           >
             {vistas.map((value) => (
               <button
                 aria-pressed={vista === value}
                 className={cn(
-                  "h-8 flex-1 rounded-full px-3 text-[13px] font-medium whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none sm:px-4 sm:text-sm",
+                  "min-h-8 flex-auto rounded-full px-3 py-1 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none sm:px-4 sm:py-0 sm:text-sm sm:whitespace-nowrap",
                   vista === value
                     ? "bg-verde text-white"
                     : "text-foreground-secondary hover:text-foreground",
