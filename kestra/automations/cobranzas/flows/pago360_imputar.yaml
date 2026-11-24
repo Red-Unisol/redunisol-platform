@@ -1,6 +1,6 @@
 id: pago360_imputar
 namespace: redunisol
-# This integration is deliberately inert until its contracts and rollout are approved.
+# Activate only after the portal migration, service API and credentials are verified.
 disabled: true
 concurrency:
   limit: 1
@@ -9,7 +9,7 @@ labels:
   domain: cobranzas
   integration: pago360
   schedule_scope: prod_only
-description: Consulta el motor de cuotas vencidas para una operacion de Pago360. Los contratos de cobro siguen bloqueados.
+description: Consulta el motor de cuotas vencidas para una operacion de Pago360. Ejecuta el adaptador de PagoDeuda y verifica el comprobante por ID.
 inputs:
   - id: operacion_id
     type: STRING
@@ -25,7 +25,13 @@ tasks:
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
     containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install requests > /dev/null
     env:
+      PAGO360_PORTAL_API_URL: "{{ envs.pago360_portal_api_url }}"
+      PAGO360_PORTAL_API_SECRET: "{{ secret('PAGO360_PORTAL_API_SECRET') }}"
+      PAGO360_MODE: enabled
+      VIMARX_EVAL_BASE_URL: "{{ envs.vimarx_eval_base_url }}"
       KESTRA_EXECUTION_ID: "{{ execution.id }}"
       OPERATION_ID: "{{ inputs.operacion_id }}"
       TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | toJson) : '{}' }}"

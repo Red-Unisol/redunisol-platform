@@ -1,8 +1,4 @@
-"""Motor preparado para Kestra, sin adaptadores ni escritura productiva habilitada.
-
-Repository es una interfaz TRANSACCIONAL persistente, no el KV de una tarea.
-Su implementación y la del legado se integrarán al inspeccionar el portal.
-"""
+"""Motor de imputación; runtime conecta los adaptadores y la persistencia del portal."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,6 +19,12 @@ class DefiniteRejection(Exception):
 
 class OperationNotFound(Exception):
     pass
+
+
+class OperationTerminal(Exception):
+    def __init__(self, status: Status):
+        self.status = status
+        super().__init__(status.value)
 
 
 class ClaimConflict(Exception):
@@ -131,7 +133,7 @@ class Legacy(Protocol):
         ...
 
     def verify(self, receipt: Receipt, installment: Installment) -> bool:
-        """Reconsulta cobro vinculado inequívocamente a esa cuota, importe y saldo.
+        """Reconsulta cobro vinculado inequívocamente a esa cuota e importe.
 
         Una fecha de cobro o saldo cero sin identidad del cobro NO es evidencia.
         """
@@ -147,15 +149,15 @@ class Result:
 
 class Processor:
     def __init__(self, repository: Repository | None = None, provider: Provider | None = None,
-                 legacy: Legacy | None = None, *, contracts_verified: bool = False):
+                 legacy: Legacy | None = None, *, contracts_verified: bool = False,
+                 apply_collected_amount: bool = False):
         if contracts_verified and (repository is None or provider is None or legacy is None):
             raise ValueError("Los contratos verificados requieren repositorio, proveedor y legacy")
         self.repo = repository
         self.provider = provider
         self.legacy = legacy
-        # No hay adaptador productivo en esta entrega. No exponer como flag de
-        # entorno que se pueda activar sin implementar/verificar esos contratos.
         self.contracts_verified = contracts_verified
+        self.apply_collected_amount = apply_collected_amount
 
     def _publish(self, operation_id: str, status: Status, reason: str | None) -> Result:
         try:
@@ -191,6 +193,8 @@ class Processor:
             claim = self.repo.claim(operation_id, executor_id)
         except OperationNotFound:
             return Result("NOT_FOUND", "OPERATION_NOT_FOUND")
+        except OperationTerminal as terminal:
+            return Result(terminal.status.value, "ALREADY_TERMINAL", True)
         if claim is None:
             return Result("BUSY")
         if claim.operation.operation_id != operation_id:
@@ -221,7 +225,7 @@ class Processor:
         reason = validate_payment(operation, payment)
         if reason:
             return self._finish(claim, Status.RECONCILIATION, reason)
-        paid_on = payment.paid_at.astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).date()
+        paid_on = payment.paid_on or payment.paid_at.astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).date()
         # Recuperar respuestas conocidas solo con lecturas. No crear otro intento.
         for attempt in attempts.values():
             if attempt.status == AttemptStatus.RECEIVED:
@@ -241,7 +245,7 @@ class Processor:
                 debt = self.legacy.debt(installment)
             except Exception:
                 return self._finish(claim, Status.PENDING, "DEBT_UNAVAILABLE")
-            reason = validate_debt(installment, debt, paid_on)
+            reason = validate_debt(installment, debt, paid_on, exact_balance=not self.apply_collected_amount)
             if reason:
                 return self._finish(claim, Status.RECONCILIATION, reason)
         for installment in remaining:
@@ -251,7 +255,7 @@ class Processor:
                 debt = self.legacy.debt(installment)
             except Exception:
                 return self._finish(claim, Status.PENDING, "DEBT_UNAVAILABLE")
-            reason = validate_debt(installment, debt, paid_on)
+            reason = validate_debt(installment, debt, paid_on, exact_balance=not self.apply_collected_amount)
             if reason:
                 return self._finish(claim, Status.RECONCILIATION, reason)
             try:

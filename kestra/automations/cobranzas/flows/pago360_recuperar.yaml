@@ -1,6 +1,6 @@
 id: pago360_recuperar
 namespace: redunisol
-# This integration is deliberately inert until its contracts and rollout are approved.
+# Activate only after the portal migration, service API and credentials are verified.
 disabled: true
 concurrency:
   limit: 1
@@ -24,6 +24,8 @@ tasks:
     beforeCommands:
       - pip install requests > /dev/null
     env:
+      PAGO360_MODE: enabled
+      VIMARX_EVAL_BASE_URL: "{{ envs.vimarx_eval_base_url }}"
       KESTRA_EXECUTION_ID: "{{ execution.id }}"
       PAGO360_PORTAL_API_URL: "{{ envs.pago360_portal_api_url }}"
       PAGO360_PORTAL_API_SECRET: "{{ secret('PAGO360_PORTAL_API_SECRET') }}"
