@@ -71,6 +71,7 @@ export const solicitudesCoreQueryKeys = {
     createdFrom: string;
     createdTo: string;
     excludeEstado?: string;
+    estado?: string;
     limit: number;
     nroDocumento?: string;
     offset: number;
