@@ -98,3 +98,44 @@ test('a deferred batch retains its progress and does not spin immediately', func
     $this->travel(181)->seconds();
     chatQueue('claim')->assertJsonPath('mode', 'event')->assertJsonPath('cursor', 22);
 });
+
+test('response worker reserves alternate turns for fresh generations and overdue work', function () {
+    $queue = new BitrixChatResponseQueue;
+    $queue->deal(100, 'old');
+    $queue->deal(101, 'old');
+    $this->travel(2)->hours();
+    $queue->deal(102, 'fresh');
+    $queue->deal(103, 'fresh');
+    $this->travel(16)->seconds();
+
+    foreach ([102, 100, 103, 101] as $expected) {
+        $claim = chatQueue('claim')->assertOk()->assertJsonPath('payload.deal_id', $expected)->json();
+        chatQueue('finish', ['lease' => $claim['lease'], 'outcome' => 'completed', 'cursor' => 0])->assertOk();
+    }
+});
+
+test('an updated old key counts as a fresh generation and an unattempted old key keeps its turn', function () {
+    $queue = new BitrixChatResponseQueue;
+    $queue->deal(10, 'old');
+    $queue->deal(20, 'old');
+    $this->travel(2)->hours();
+    $queue->deal(20, 'new');
+    $claim = chatQueue('claim')->assertJsonPath('payload.deal_id', 20)->json();
+    chatQueue('finish', ['lease' => $claim['lease'], 'outcome' => 'retry', 'cursor' => 7])->assertOk();
+    chatQueue('claim')->assertJsonPath('payload.deal_id', 10);
+});
+
+test('a continuously nonempty queue leaves a bounded turn for CRM reconciliation', function () {
+    $queue = new BitrixChatResponseQueue;
+    $queue->deal(100, 'old');
+    $queue->deal(101, 'old');
+    $this->travel(16)->seconds();
+    $event = chatQueue('claim')->assertJsonPath('mode', 'event')->json();
+    chatQueue('finish', ['lease' => $event['lease'], 'outcome' => 'completed', 'cursor' => 0])->assertOk();
+    $this->travel(901)->seconds();
+    $sweep = chatQueue('claim')->assertJsonPath('mode', 'fallback')->json();
+    // Simulate a crashed worker: an expired fallback must not immediately reclaim.
+    $this->travel(181)->seconds();
+    chatQueue('claim')->assertJsonPath('mode', 'event')->assertJsonPath('payload.deal_id', 101);
+    chatQueue('finish', ['lease' => $sweep['lease'], 'outcome' => 'completed', 'cursor' => 0])->assertConflict();
+});

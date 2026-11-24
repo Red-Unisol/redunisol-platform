@@ -58,7 +58,7 @@ class EdnaOrganicLoan
             return;
         }
         try {
-            if (! $this->enabled() || $menu->choice !== 'loan' || $menu->send_state !== 'confirmed') {
+            if (! $this->enabled() || $menu->choice !== 'loan' || ($menu->send_state !== 'confirmed' && ! SalesLoanIntent::verified($menu))) {
                 $this->finish($menu, 'preserved', 'organic_loan_disabled');
 
                 return;
@@ -83,6 +83,11 @@ class EdnaOrganicLoan
             }
             $snapshot = $this->attention->snapshot($proof);
             $proof['contact_id'] = ($snapshot['dialog_tuple']['bindings']['contact'] ?? null) ?: null;
+            if (isset($proof['direct_loan_contact']) && (string) $proof['contact_id'] !== (string) $proof['direct_loan_contact']) {
+                $this->finish($menu, 'preserved', 'explicit_loan_contact_changed');
+
+                return;
+            }
             $profile = $this->profiles->resolve($menu, $proof);
             if (($profile['status'] ?? '') === 'pending') {
                 $this->finish($menu, $menu->attempts >= 12 ? 'review' : 'loan_pending', $profile['reason']);
@@ -101,7 +106,7 @@ class EdnaOrganicLoan
             $binding['contact_id'] = $contactId ?: null;
             $binding['native_lead_id'] = $proof['native_lead_id'] ?: null;
             if (! $binding['native_lead_id'] && ! $binding['contact_id']) {
-                $this->finish($menu, 'review', 'organic_native_crm_identity_unavailable');
+                $this->fallback($menu, 'organic_native_crm_identity_unavailable');
 
                 return;
             }
@@ -205,6 +210,9 @@ class EdnaOrganicLoan
                     'received_at' => CarbonImmutable::parse($payload['receivedAt'])->toIso8601String(), 'origin' => $frozen['origin']]];
             if (app(WebChatContinuity::class)->eligibleEntry($entry)) {
                 $body['routing_policy'] = WebChatContinuity::NAME;
+                if (app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::ORGANIC_SELLER_WAIT)) {
+                    $body['follow_pending_seller'] = true;
+                }
                 if (empty($body['crm_binding']['native_lead_id']) && ! empty($body['crm_binding']['contact_id'])
                     && app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::CONTACT_DEAL)) {
                     $body['contact_deal_activity'] = true;
@@ -260,6 +268,12 @@ class EdnaOrganicLoan
                     'profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result,
                         array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
                 $this->fallback($menu, 'profile_requires_fresh_confirmation');
+            } elseif (($body['follow_pending_seller'] ?? false) && ($waiting = self::waitingCase($result, $answer)) !== null) {
+                $this->finish($menu, 'seller_wait', 'commercial_seller_not_ready', [
+                    'deal_id' => $result['deal_id'], 'seller_id' => null, 'attempts' => 0, 'enqueued_at' => null,
+                    'available_at' => now()->addMinute(),
+                    'profile_evidence' => json_encode($evidence + ['waiting_case' => $waiting], JSON_THROW_ON_ERROR),
+                ]);
             } elseif ($action === 'assigned_case' && $result['write_attempted'] === false
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['deal_id'] ?? ''))
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['seller_id'] ?? ''))) {
@@ -272,7 +286,7 @@ class EdnaOrganicLoan
                 }
                 $assigned['profile_identity_hash'] = (new WebFormReceipt)->identityHash($answer['cuil']);
                 $this->finish($menu, 'route_pending', 'existing_commercial_case', ['deal_id' => (string) $result['deal_id'],
-                    'seller_id' => (string) $result['seller_id'], 'available_at' => now(), 'enqueued_at' => null,
+                    'seller_id' => (string) $result['seller_id'], 'available_at' => now(), 'enqueued_at' => null, 'attempts' => 0,
                     'profile_evidence' => json_encode($evidence + ['assigned_case' => $assigned], JSON_THROW_ON_ERROR)]);
             } elseif (in_array($action, ['queued', 'already_processed', 'rejected'], true)
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['lead_id'] ?? ''))) {
@@ -289,6 +303,24 @@ class EdnaOrganicLoan
                 // Owner-aware lock expiration cannot replay an external POST.
             }
         }
+    }
+
+    public static function waitingCase(array $ack, array $answer): ?array
+    {
+        if (($ack['action'] ?? '') !== 'awaiting_seller' || ($ack['write_attempted'] ?? null) !== false
+            || ($ack['seller_id'] ?? null) !== '' || ($ack['reason'] ?? '') !== 'provisional_commercial_queue'
+            || ! in_array($ack['initial_stage'] ?? null, ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE'], true)
+            || ! is_bool($ack['contact_deal_activity'] ?? null)
+            || ! preg_match('/^[1-9][0-9]{0,17}$/D', (string) ($ack['deal_id'] ?? ''))
+            || ! preg_match('/^[1-9][0-9]{0,17}$/D', (string) ($ack['contact_id'] ?? ''))
+            || ! is_string($ack['lead_id'] ?? null)
+            || ($ack['lead_id'] !== '' && ! preg_match('/^[1-9][0-9]{0,17}$/D', $ack['lead_id']))
+            || ! ($identity = (new WebFormReceipt)->identityHash($answer['cuil'] ?? ''))) {
+            return null;
+        }
+
+        return ['deal_id' => (string) $ack['deal_id'], 'contact_id' => (string) $ack['contact_id'], 'lead_id' => $ack['lead_id'],
+            'initial_stage' => $ack['initial_stage'], 'contact_deal_activity' => $ack['contact_deal_activity'], 'profile_identity_hash' => $identity];
     }
 
     private function fallback(object $menu, string $reason): void
@@ -332,6 +364,13 @@ class EdnaOrganicLoan
 
     private function preserveWebContext(object $menu, array $proof): bool
     {
+        if (isset($proof['direct_loan_contact'])) {
+            $flows = app(SalesSessionFlow::class);
+            if ($flows->find((int) $menu->chat_id, (int) $menu->session_id) || $flows->hasRecentActive($menu->subject_id, $menu->phone_hash)) {
+                $this->finish($menu, 'preserved', 'existing_v3_during_direct_loan');
+                return true;
+            }
+        }
         $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
         if (! $entry || ! app(WebChatContinuity::class)->blocksOutbound($entry, $proof)) {
             return false;

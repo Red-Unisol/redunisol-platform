@@ -338,7 +338,8 @@ class CredixsaFlowContractsTests(unittest.TestCase):
         root = ROOT / "kestra/automations/marketing-crm/flows"
         parent = yaml.safe_load((root / "bitrix24_lead_prefill.yaml").read_text())
         child = yaml.safe_load((root / "bitrix24_lead_prefill_one.yaml").read_text())
-        self.assertEqual(parent["concurrency"]["limit"], 1)
+        self.assertEqual(parent["concurrency"], {"limit": 1, "behavior": "CANCEL"})
+        self.assertEqual(parent["triggers"][0]["recoverMissedSchedules"], "NONE")
         self.assertEqual([task["id"] for task in parent["tasks"]],
                          ["hay_pendientes", "seleccionar_lote", "procesar_lote", "verificar_lote"])
         # The pre-check asks Bitrix without a container and only publishes the count:

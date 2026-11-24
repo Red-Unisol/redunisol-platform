@@ -95,8 +95,12 @@ class IntakeV3Tests(unittest.TestCase):
             self.assertEqual(lead['UF_CRM_WA_ORGANISMO'], organism)
             self.assertEqual(lead['UF_CRM_WA_SEGMENT'], 'cordoba_pensionado')
             data.pop('banco_jubilado')
-            with self.assertRaises(ValueError):
-                normalize_answer(data)
+            if organism == 'caja_cordoba':
+                value = normalize_answer(data)
+                self.assertEqual((value['employment_status'], value['bank'], value['action']), ('Pensionado', '', 'intake'))
+            else:
+                with self.assertRaises(ValueError):
+                    normalize_answer(data)
 
     def test_expanded_provinces_persist_the_same_categories_and_decisions_as_the_web(self):
         profiles = {

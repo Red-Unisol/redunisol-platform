@@ -339,3 +339,11 @@ test('captured historical web data is revalidated against receipt CRM identity a
     };
     expect($service->stillCurrent(organicProfileMenu(), $result['answer'], $result['provenance'], ['records' => []]))->toBeFalse();
 })->with(['cuil', 'phone', 'contact', 'label', 'answer', 'state', 'date', 'receipt_identity', 'receipt_lead', 'newer']);
+
+test('a declared Caja Cordoba pension does not need a bank to reuse its profile', function () {
+    $profile = new EdnaOrganicProfile;
+    $answer = ['provincia' => 'cordoba', 'situacion_cordoba' => 'pensionado', 'organismo' => 'caja_cordoba', 'cuil' => '20301234563'];
+    expect($profile->completeAnswer($answer))->toMatchArray($answer)->not->toHaveKey('banco_jubilado')
+        ->and($profile->completeAnswer($answer + ['banco_jubilado' => 'bancor']))->toHaveKey('banco_jubilado', 'bancor')
+        ->and($profile->completeAnswer(array_replace($answer, ['organismo' => 'anses'])))->toBeNull();
+});

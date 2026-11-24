@@ -6,7 +6,6 @@ use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFreshIntake;
-use App\Services\WebChatContinuity;
 use App\Services\EdnaIntakeBinding;
 use App\Services\EdnaIntakeChatRouting;
 use App\Services\EdnaMessageBinding;
@@ -14,6 +13,7 @@ use App\Services\EdnaNativeIntake;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaPaidFlowGuard;
+use App\Services\WebChatContinuity;
 use App\Services\WebFormContinuation;
 use App\Services\WebFormReceipt;
 use Illuminate\Support\Facades\Crypt;
@@ -169,6 +169,50 @@ test('fresh completed v3 reuses the existing identity contract and enqueues its 
         && $r['provenance']['source_id'] === (string) $request->id && ! isset($r['flow_id']));
 });
 
+test('a completed v3 can resume only the exact originating organic loan menu without another CRM submission', function (string $scenario) {
+    [$request, $send, $proof] = freshCompletedRequest();
+    foreach ([WebChatContinuity::NAME, EdnaFreshIntake::ORGANIC_SELLER_WAIT] as $name) {
+        DB::table('edna_intake_cutovers')->updateOrInsert(['name' => $name], [
+            'entry_id_after' => $scenario === 'old' ? $send->entry_event_id : 0, 'starts_at' => now()->subHour(),
+        ]);
+    }
+    $menuRequest = '11111111-2222-4333-8444-555555555555';
+    if ($scenario !== 'paid') {
+        DB::table('edna_flow_sends')->where('id', $send->id)
+            ->update(['scope' => hash_hmac('sha256', 'organic-menu:'.$menuRequest, (string) config('app.key'))]);
+        $send = DB::table('edna_flow_sends')->find($send->id);
+    }
+    $original = $proof;
+    $original['choice_proof'] = ['verified' => true, 'entry_event_id' => 555,
+        'session_id' => $scenario === 'other-session' ? '990' : $proof['session_id'], 'chat_id' => $proof['chat_id']];
+    $menuId = DB::table('edna_organic_menus')->insertGetId(['request_id' => $menuRequest, 'entry_event_id' => $send->entry_event_id,
+        'choice_event_id' => 555, 'subject_id' => $send->subject_id, 'cascade_id' => '2557', 'recipient' => $send->recipient,
+        'phone_hash' => (new AttributionJourney)->phoneHash('5493510000000'), 'chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+        'flow_send_id' => $send->id, 'proof' => json_encode($original), 'state' => 'flow_scheduled', 'send_state' => 'confirmed',
+        'choice' => 'loan', 'entry_received_at' => now(), 'expires_at' => now()->addDay(), 'created_at' => now(), 'updated_at' => now()]);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->andReturn(['status' => 'ready']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    Http::fake(['example.test/*' => function ($r) use ($send, $scenario) {
+        expect($r['follow_pending_seller'] ?? false)->toBe($scenario === 'fresh');
+
+        return Http::response(['ok' => true, 'contract' => EdnaOrganicLoan::CONTRACT,
+            'case_id' => $send->request_id, 'action' => 'awaiting_seller', 'reason' => 'provisional_commercial_queue',
+            'initial_stage' => 'C1:KESTRA_QUEUE', 'contact_deal_activity' => false, 'write_attempted' => false,
+            'lead_id' => '', 'contact_id' => '101', 'deal_id' => '301', 'seller_id' => '']);
+    }]);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    $menu = DB::table('edna_organic_menus')->find($menuId);
+    expect($menu->state)->toBe($scenario === 'fresh' ? 'seller_wait' : 'flow_scheduled')
+        ->and(DB::table('edna_intake_chat_routes')->count())->toBe(0)->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    if ($scenario === 'fresh') {
+        expect($menu->profile_snapshot)->toBe($request->answer)->and($menu->deal_id)->toBe('301')
+            ->and(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('synced');
+    }
+    Http::assertSentCount(1);
+})->with(['fresh', 'paid', 'old', 'other-session']);
+
 test('the contact deal proof is enabled by the original entry and retained for the queued transfer', function (bool $old) {
     [$request, $send, $proof] = freshCompletedRequest();
     foreach ([WebChatContinuity::NAME, EdnaFreshIntake::CONTACT_DEAL] as $name) {
@@ -198,6 +242,26 @@ test('the contact deal proof is enabled by the original entry and retained for t
         expect(json_decode($receipt->assigned_case, true)['contact_deal_stage'])->toBe('C1:NEW');
     }
 })->with([true, false]);
+
+test('an unavailable native read retries the new completed v3 before the CRM post and stops after eight hours', function () {
+    [$request, $send, $proof] = freshCompletedRequest();
+    config(['edna.sales_inbox_enabled' => true]);
+    DB::table('sales_inbox_cursors')->insert(['line_id' => 1, 'starts_at' => now()->subDay(), 'scanned_until' => now()]);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->andReturn(['status' => 'waiting', 'reason' => 'bitrix_unavailable']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    $worker = new EdnaNativeIntake;
+    $worker->process($request, $send, $proof);
+    $worker->process($request, $send, $proof);
+    $row = DB::table('edna_intake_requests')->find($request->id);
+    expect($row->state)->toBe('pending')->and($row->reason)->toBe('attention_wait:bitrix_unavailable');
+    Queue::assertPushed(\App\Jobs\ProcessEdnaIntake::class, 1);
+    $this->travel(9)->hours();
+    $worker->process($request, $send, $proof);
+    $row = DB::table('edna_intake_requests')->find($request->id);
+    expect($row->state)->toBe('review')->and($row->reason)->toBe('attention_preflight_expired');
+    Http::assertNothingSent();
+});
 
 test('human attention preserves a completed new intake without a CRM application post', function () {
     [$request, $send, $proof] = freshCompletedRequest();

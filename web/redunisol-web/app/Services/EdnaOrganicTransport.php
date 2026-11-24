@@ -46,6 +46,27 @@ class EdnaOrganicTransport
         return ['request_id' => $matches[1], 'choice' => $matches[2]];
     }
 
+    /** Some BUTTON callbacks echo the advertised label and outgoing request ID only. */
+    public static function choiceFromReply(array $payload): ?array
+    {
+        $content = $payload['messageContent'] ?? [];
+        $token = $content['payload'] ?? null;
+        if ($token !== null && $token !== '') {
+            return self::parseChoice($token);
+        }
+        $request = $payload['replyOutMessageExternalRequestId'] ?? null;
+        if (($content['type'] ?? null) !== 'BUTTON' || ! is_string($request) || ! Str::isUuid($request)) {
+            return null;
+        }
+        $choice = match ($content['text'] ?? null) {
+            self::LOAN_LABEL => 'loan',
+            self::OTHER_LABEL => 'other',
+            default => null,
+        };
+
+        return $choice === null ? null : ['request_id' => $request, 'choice' => $choice];
+    }
+
     public function content(object|string $menu): array
     {
         $request = is_string($menu) ? $menu : (string) ($menu->request_id ?? '');
@@ -95,6 +116,14 @@ class EdnaOrganicTransport
     }
 
     public function reconcile(object $menu): array
+    {
+        $evidence = $this->deliveryEvidence($menu);
+        unset($evidence['delivery_status']);
+
+        return $evidence;
+    }
+
+    public function deliveryEvidence(object $menu): array
     {
         $unknown = ['send_state' => 'unknown', 'send_reason' => 'outgoing_history_unconfirmed',
             'outgoing_message_id' => $this->messageId($menu->outgoing_message_id ?? null)];
@@ -153,7 +182,8 @@ class EdnaOrganicTransport
                 return $unknown;
             }
 
-            return ['send_state' => 'confirmed', 'send_reason' => null, 'outgoing_message_id' => $id, 'confirmed_at' => now()];
+            return ['send_state' => 'confirmed', 'send_reason' => null, 'outgoing_message_id' => $id,
+                'confirmed_at' => now(), 'delivery_status' => $message['deliveryStatus']];
         } catch (Throwable) {
             return $unknown;
         }

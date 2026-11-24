@@ -7,6 +7,7 @@ use App\Services\WebFormContinuation;
 use App\Services\WebFormReceipt;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -89,10 +90,28 @@ class WebFormContinuations extends Command
         $applied = 0;
         foreach ($forms as $id => $events) {
             $received = collect($events)->firstWhere('type', 'form.received');
-            $input = $received['data']['input'] ?? [];
-            $hash = (new AttributionJourney)->phoneHash((string) ($input['celular'] ?? ''));
-            if (! $hash || ! hash_equals($hash, (string) ($received['links']['phone_hash'] ?? ''))
-                || DB::table('web_form_receipts')->where('id', $id)->exists()) {
+            if (! $received || DB::table('web_form_receipts')->where('id', $id)->exists()) {
+                continue;
+            }
+            $data = $received['data'] ?? [];
+            $input = $data['input'] ?? [];
+            if (isset($data['input_encoding']) || isset($data['input_encrypted'])) {
+                if (($data['input_encoding'] ?? '') !== 'laravel-crypt-json-v1' || ! is_string($data['input_encrypted'] ?? null)) {
+                    throw new RuntimeException('Unknown protected web form format.');
+                }
+                $snapshot = json_decode(Crypt::decryptString($data['input_encrypted']), true, flags: JSON_THROW_ON_ERROR);
+                if (($snapshot['submission_id'] ?? '') !== $id || ! is_array($snapshot['input'] ?? null)) {
+                    throw new RuntimeException('Journal submission identity mismatch.');
+                }
+                $input = $snapshot['input'];
+            }
+            $phone = (string) ($input['celular'] ?? '');
+            $journey = new AttributionJourney;
+            $hash = $journey->phoneHash($phone);
+            $sourceHash = (string) ($received['links']['phone_hash'] ?? '');
+            $matches = $hash && (hash_equals($hash, $sourceHash) || collect(config('app.previous_keys', []))
+                ->contains(fn ($key) => is_string($key) && hash_equals($journey->phoneHash($phone, $key), $sourceHash)));
+            if (! $matches) {
                 continue;
             }
             $at = CarbonImmutable::parse($received['occurred_at']);
@@ -101,7 +120,7 @@ class WebFormContinuations extends Command
                 'state' => 'uncertain', 'source' => 'tracking_import', 'created_at' => now(), 'updated_at' => now()];
             $successfulLeads = [];
             foreach ($events as $event) {
-                if (! hash_equals($hash, (string) ($event['links']['phone_hash'] ?? ''))) {
+                if (! hash_equals($sourceHash, (string) ($event['links']['phone_hash'] ?? ''))) {
                     throw new RuntimeException('Journal identity conflict.');
                 }
                 $body = $event['data']['result'] ?? [];

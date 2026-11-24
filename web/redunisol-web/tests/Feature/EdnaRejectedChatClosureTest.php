@@ -291,6 +291,26 @@ test('disabled closure neither discovers nor calls Bitrix', function () {
     expect($f->service->poll())->toBe(0)->and($f->service->process($f->id)['state'])->toBe('disabled')->and($f->crm->calls)->toBe([]);
 });
 
+test('a new monitored session can discover a rejection after the one-day input window', function () {
+    $f = rejectedClosureFixture();
+    config(['edna.sales_inbox_enabled' => true]);
+    DB::table('edna_rejected_chat_closures')->delete();
+    $candidate = ['lead_id' => '428407', 'proof' => $f->proof, 'source_type' => 'edna_intake_request',
+        'source_id' => '796', 'source_created_at' => now()->subMinutes(10)->toIso8601String()];
+    $discovery = Mockery::mock(EdnaRejectedChatCandidates::class);
+    $discovery->shouldReceive('discover')->andReturn([$candidate], []);
+    app()->instance(EdnaRejectedChatCandidates::class, $discovery);
+    DB::table('sales_inbox_sessions')->insert(['session_id' => $f->proof['session_id'], 'chat_id' => $f->proof['chat_id'], 'channel' => 'whatsappbyedna',
+        'opened_at' => now()->subMinutes(10), 'state' => 'waiting', 'created_at' => now(), 'updated_at' => now()]);
+    $crm = Mockery::mock(EdnaBitrix::class);
+    $crm->shouldReceive('call')->with('crm.lead.list', Mockery::any())->andReturn([], [['ID' => '428407']]);
+    $service = new EdnaRejectedChatClosure($crm);
+    expect($service->poll())->toBe(0)->and(DB::table('sales_rejection_watches')->count())->toBe(1);
+    $this->travel(49)->hours();
+    expect($service->poll())->toBe(1)->and(DB::table('edna_rejected_chat_closures')->value('session_id'))->toEqual($f->proof['session_id'])
+        ->and(DB::table('sales_rejection_watches')->count())->toBe(0);
+});
+
 test('polling creates only one durable low priority job per rejected native session', function () {
     $f = rejectedClosureFixture();
     DB::table('edna_rejected_chat_closures')->delete();

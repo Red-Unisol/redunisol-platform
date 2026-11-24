@@ -1147,3 +1147,50 @@ test('a sleeping context still discriminates the same session, a replacement and
     }
     expect($f->crm->transferCalls)->toBe(0);
 })->with(['same', 'replacement', 'another_request']);
+
+test('an exact fresh request can resume after the technical retry window and still respects a human pickup', function (bool $taken) {
+    $f = webChatLinkerFixture();
+    // Edna can give the same instant with a non-UTC offset. The database stores UTC.
+    $payload = json_decode(Crypt::decryptString($f->event->payload), true, 32, JSON_THROW_ON_ERROR);
+    $payload['receivedAt'] = now()->setTimezone('America/Argentina/Buenos_Aires')->toIso8601String();
+    DB::table('edna_incoming_events')->where('id', $f->event->id)->update(['payload' => Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR))]);
+    // Reserve through the production capture path instead of opting in a historical row.
+    DB::table('web_form_chat_routes')->where('entry_event_id', $f->event->id)->delete();
+    expect((new WebFormChatRouting)->schedule($f->event->id, $f->submission))->toBeTrue();
+    $limit = now()->addDay();
+    $f->crm->dealPending = true;
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_case_not_ready')
+        ->and(CarbonImmutable::parse(webChatLinkerRow($f)->retry_expires_at)->eq($limit))->toBeTrue();
+    $this->travelTo(now()->addHours(9));
+    $f->crm->dealPending = false;
+    if ($taken) {
+        $f->guard->status = 'preserved';
+    }
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe($taken ? 0 : 1)
+        ->and($f->binding->calls)->toBe(1);
+})->with([true, false]);
+
+test('fresh seller waits wake on one matching reservation and still read the actual CRM owner', function () {
+    $f = webChatLinkerFixture();
+    DB::table('web_form_chat_routes')->where('entry_event_id', $f->event->id)->delete();
+    $router = new WebFormChatRouting;
+    $router->schedule($f->event->id, $f->submission);
+    $f->crm->deal['ASSIGNED_BY_ID'] = '74827';
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_seller_not_ready')
+        ->and(webChatLinkerRow($f)->deal_id)->toBe('900');
+    $now = now();
+    DB::table('web_form_chat_routes')->where('entry_event_id', $f->event->id)->update(['available_at' => $now->copy()->addMinutes(30)]);
+    DB::table('bitrix_routing_allocations')->insert(['scope' => 'redunisol.prod.marketing-crm', 'business_date' => $now->toDateString(),
+        'bucket' => 'test', 'deal_id' => 900, 'online_user_ids' => '[]', 'assigned_user_id' => 888, 'proposed_user_id' => 888,
+        'recurring' => false, 'compensation_turn' => false, 'compensated' => false,
+        'created_at' => $now->copy()->addSecond(), 'updated_at' => $now->copy()->addSecond()]);
+    $this->travelTo($now->copy()->addSeconds(20));
+    $router->poll();
+    expect(CarbonImmutable::parse(webChatLinkerRow($f)->available_at)->lte(now()))->toBeTrue();
+    expect($f->linker->process($f->event->id)['reason'])->toBe('commercial_seller_not_ready')
+        ->and($f->crm->transferCalls)->toBe(0);
+    $next = webChatLinkerRow($f)->available_at;
+    $router->poll();
+    expect(webChatLinkerRow($f)->available_at)->toBe($next);
+});

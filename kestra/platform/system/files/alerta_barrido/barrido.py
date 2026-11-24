@@ -30,6 +30,13 @@ PREFIJO = "redunisol.prod."
 FLOW_PROPIO = "alerta_flows_barrido"
 
 CLAVE_KV = "alerta.barrido.incidentes"
+CRM = "redunisol.prod.marketing-crm"
+CALENDARIOS_CRM = {
+    "bitrix24_lead_prefill": "cada_minuto",
+    "bitrix24_catamarca_deal_qualification": "cada_minuto",
+    "bitrix24_deal_chat_response": "cada_dos_minutos",
+}
+AUSENTE = object()
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +108,8 @@ def leer_estado(guardado):
 class Barrido:
     """Las dependencias entran por constructor para poder sustituirlas en tests."""
 
-    def __init__(self, consultar, avisar, ahora=None, ventana=20, max_dias=30):
+    def __init__(self, consultar, avisar, ahora=None, ventana=20, max_dias=30, leer_calendario=None):
+        self.leer_calendario = leer_calendario
         self.consultar = consultar
         self.avisar = avisar
         self.ahora = ahora or datetime.now(timezone.utc)
@@ -146,6 +154,8 @@ class Barrido:
     def cerrar_incidentes(self, incidentes, nuevas):
         for clave in list(incidentes):
             dato = incidentes[clave]
+            if dato.get("tipo") == "calendario":
+                continue
             # Si volvio a fallar dentro de la ventana no se considera recuperado.
             # Esto es lo que evita el rebote fallido/recuperado en cada ciclo.
             if clave in nuevas:
@@ -168,6 +178,42 @@ class Barrido:
             if (self.ahora - desde).days >= self.max_dias:
                 del incidentes[clave]
         return incidentes
+
+    def revisar_calendarios(self, incidentes):
+        if self.leer_calendario is None:
+            return
+        errores = []
+        for flow, trigger in CALENDARIOS_CRM.items():
+            clave = "calendario/" + CRM + "/" + flow
+            try:
+                motivo = self.leer_calendario(flow, trigger, self.ahora)
+            except Exception as err:
+                self.problemas.append("consulta de calendario " + flow + ": " + type(err).__name__)
+                errores.append(flow)
+                continue
+            previo = incidentes.get(clave, {})
+            if motivo == "pausado":
+                continue
+            if motivo is None:
+                if previo and (not previo.get("avisado") or self._avisar(
+                    "Calendario CRM reanudado", CRM, flow, trigger
+                )):
+                    del incidentes[clave]
+                continue
+            if previo.get("motivo") != motivo or not previo.get("avisado"):
+                avisado = self._avisar("Calendario CRM sin avance", CRM, flow, motivo)
+                incidentes[clave] = {"tipo": "calendario", "motivo": motivo, "avisado": avisado}
+
+        clave = "observacion/calendarios-crm"
+        previo = incidentes.get(clave, {})
+        if errores:
+            if not previo.get("avisado"):
+                avisado = self._avisar("Lectura de calendarios CRM incompleta", CRM, FLOW_PROPIO, ", ".join(errores))
+                incidentes[clave] = {"tipo": "calendario", "avisado": avisado}
+        elif previo and (not previo.get("avisado") or self._avisar(
+            "Lectura de calendarios CRM restablecida", CRM, FLOW_PROPIO, "Tres calendarios legibles"
+        )):
+            del incidentes[clave]
 
     def avisar_hueco(self, corrida_previa, namespace):
         """Avisa si el propio barrido estuvo detenido mas de una ventana."""
@@ -194,6 +240,7 @@ class Barrido:
         nuevas = agrupar_fallas(fallidas)
         incidentes = self.abrir_incidentes(incidentes, nuevas)
         incidentes = self.cerrar_incidentes(incidentes, nuevas)
+        self.revisar_calendarios(incidentes)
         self.avisar_hueco(corrida_previa, namespace)
         return {
             "estado": {
@@ -214,7 +261,7 @@ def construir_api(url, tenant, usuario, clave):
     autorizacion = b64encode((usuario + ":" + clave).encode()).decode()
     base = url.rstrip("/")
 
-    def api(metodo, ruta, cuerpo=None, tipo="application/json"):
+    def api(metodo, ruta, cuerpo=None, tipo="application/json", ausente=None):
         # El KV de Kestra recibe el valor como texto plano, no como JSON: su
         # OpenAPI declara requestBody content text/plain. Mandarlo como
         # application/json devuelve 415. La doc publica dice lo contrario.
@@ -236,7 +283,7 @@ def construir_api(url, tenant, usuario, clave):
                 return json.loads(crudo) if crudo else None
         except urllib.error.HTTPError as err:
             if err.code == 404:
-                return None
+                return ausente
             raise
 
     return api
@@ -259,6 +306,72 @@ def construir_consulta(api, tenant):
         return salida
 
     return consultar
+
+
+def hubo_inicio_programado(api, base, flow, trigger, ahora):
+    # Trigger clocks advance when polled. Require an execution from this exact schedule.
+    consulta = {"filters[namespace][EQUALS]": CRM, "filters[flowId][EQUALS]": flow,
+                "filters[timeRange][EQUALS]": "PT20M", "sort": "state.startDate:desc", "size": 5}
+    for pagina in range(1, 11):
+        consulta["page"] = pagina
+        respuesta = api("GET", base + "/executions/search?" + urllib.parse.urlencode(consulta))
+        if not isinstance(respuesta, dict) or not isinstance(respuesta.get("results"), list):
+            raise ValueError("historial de ejecuciones ilegible")
+        filas = respuesta["results"]
+        for fila in filas:
+            disparador = fila.get("trigger") or {}
+            estado = fila.get("state") or {}
+            inicio = a_utc(estado.get("startDate"))
+            if (fila.get("namespace") == CRM and fila.get("flowId") == flow and disparador.get("id") == trigger
+                    and disparador.get("type") == "io.kestra.plugin.core.trigger.Schedule"
+                    and estado.get("current") in {"RUNNING", "SUCCESS", "WARNING", "FAILED"}
+                    and inicio and ahora - timedelta(minutes=20) <= inicio <= ahora):
+                return True
+        total = respuesta.get("total")
+        if not isinstance(total, int) or (not filas and (pagina - 1) * 5 < total):
+            raise ValueError("paginación de ejecuciones incompleta")
+        if (pagina - 1) * 5 + len(filas) >= total:
+            return False
+    raise ValueError("ventana de ejecuciones no cubierta")
+
+
+def construir_lector_calendario(api, tenant):
+    base = "/api/v1/" + tenant
+
+    def leer(flow, trigger, ahora):
+        consulta = urllib.parse.urlencode({
+            "filters[namespace][EQUALS]": CRM, "filters[flowId][EQUALS]": flow, "size": 100,
+        })
+        respuesta = api("GET", base + "/triggers/search?" + consulta)
+        if not isinstance(respuesta, dict) or not isinstance(respuesta.get("results"), list):
+            raise ValueError("inventario de calendarios ilegible")
+        filas = respuesta["results"]
+        if respuesta.get("total") != len(filas):
+            raise ValueError("inventario de calendarios incompleto")
+        estados = [fila["state"] for fila in filas if fila.get("state", {}).get("namespace") == CRM
+                   and fila["state"].get("flowId") == flow and fila["state"].get("triggerId") == trigger]
+        if not estados:
+            return "No se encontró el disparador " + trigger
+        if len(estados) != 1:
+            raise ValueError("calendario ambiguo")
+        estado = estados[0]
+        if estado.get("disabled") is True:
+            return "pausado"
+        if hubo_inicio_programado(api, base, flow, trigger, ahora):
+            return None
+        eid = estado.get("executionId")
+        if estado.get("locked") is True and eid:
+            ejecucion = api("GET", base + "/executions/" + urllib.parse.quote(str(eid), safe=""), ausente=AUSENTE)
+            if ejecucion is AUSENTE:
+                return "Bloqueo huérfano de " + trigger + ", ejecución ausente " + str(eid)
+            if isinstance(ejecucion, dict) and (ejecucion.get("state") or {}).get("current") == "RUNNING":
+                return "Sin nuevos inicios programados en veinte minutos; revisar ejecución en curso " + str(eid)
+        marcas = [a_utc(estado.get(k)) for k in ("lastTriggeredDate", "evaluatedAt")]
+        if any(fecha and fecha >= ahora - timedelta(minutes=20) for fecha in marcas):
+            return trigger + " se evaluó o disparó, sin ejecución programada iniciada en veinte minutos"
+        return trigger + " lleva veinte minutos sin evaluación reciente ni ejecución programada iniciada"
+
+    return leer
 
 
 def construir_aviso(base_url, ruta_alertas, dialogo):
@@ -293,6 +406,7 @@ def main():
     )
     barrido = Barrido(
         consultar=construir_consulta(api, tenant),
+        leer_calendario=construir_lector_calendario(api, tenant),
         avisar=construir_aviso(
             os.environ["BITRIX_BASE_URL"],
             os.environ["BITRIX_ALERTAS_PATH"],

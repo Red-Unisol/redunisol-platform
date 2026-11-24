@@ -36,7 +36,7 @@ class WebChatContinuity
             || ! $hash || ! is_string($receipt->id ?? null)) {
             return null;
         }
-        $received = CarbonImmutable::parse($payload['receivedAt']);
+        $received = CarbonImmutable::parse($payload['receivedAt'])->utc();
         $receiptId = $receipt->id;
 
         return app(WebFormReceipt::class)->serialized($hash, function () use ($event, $receiptId, $matches, $hash, $received, $cut): ?int {
@@ -55,6 +55,13 @@ class WebChatContinuity
             // Repeating a reference does not renew its anchor, expiry or session.
             $context = DB::table('web_chat_contexts')->where('subject_id', (string) $event->subject_id)
                 ->where('phone_hash', $hash)->where('submission_id', $stored->id)->lockForUpdate()->first();
+            if ($context && $context->state === 'released' && $context->reason === 'newer_explicit_reference_same_session') {
+                // Keep an old link pasted again from falling through to the
+                // legacy reference resolver and overriding the chosen request.
+                $this->continuation($event, $context, 'review', 'web_reference_superseded');
+
+                return (int) $context->id;
+            }
             if ($context && (! $this->active($context, $cut) || (int) $context->anchor_entry_event_id > (int) $event->id)) {
                 return null;
             }
@@ -69,6 +76,13 @@ class WebChatContinuity
                 $context = DB::table('web_chat_contexts')->find($id);
             }
             $ambiguous = $this->contexts((string) $event->subject_id, $hash, $cut)->pluck('submission_id')->unique()->count() > 1;
+            // Only a new, exact reference may queue native verification of a
+            // replacement. Untagged replies still cannot choose between requests.
+            if ($ambiguous && $this->replaceableContexts($context, $event, $cut) !== null) {
+                $this->continuation($event, $context, 'ready', 'explicit_replacement_pending');
+
+                return (int) $context->id;
+            }
             $state = $ambiguous ? 'review' : ($stored->state === 'synced' ? 'ready' : ($stored->state === 'pending' ? 'waiting' : 'review'));
             $reason = $ambiguous ? 'web_context_multiple_submissions' : 'web_context_reference';
             if ($ambiguous) {
@@ -173,7 +187,8 @@ class WebChatContinuity
             if ($context->sales_opening_at && $context->state === 'review') {
                 return $this->result('review', 'web_context_multiple_submissions', $context->id);
             }
-            if ($this->contexts($context->subject_id, $context->phone_hash, $cut)->where('submission_id', '!=', $context->submission_id)->exists()) {
+            if ($this->contexts($context->subject_id, $context->phone_hash, $cut)->where('submission_id', '!=', $context->submission_id)->exists()
+                && ! $this->selectExplicitReference($context, $event, $payload, $proof, $cut)) {
                 $this->markAmbiguous($context->subject_id, $context->phone_hash, $cut);
 
                 return $this->result('review', 'web_context_multiple_submissions', $context->id);
@@ -278,6 +293,28 @@ class WebChatContinuity
             }
             DB::table('web_chat_contexts')->where('id', $context->id)->update($update);
         });
+    }
+
+    /** A proven continuation can wait for qualification, at most one day from the original message. */
+    public function commercialDeadline(int $id, object $route, array $proof, CarbonImmutable $limit): ?CarbonImmutable
+    {
+        $context = DB::table('web_chat_contexts')->where('id', $id)->lockForUpdate()->first();
+        if (! $context || $context->submission_id !== $route->submission_id || ! $this->id($context->chat_id)
+            || ! $this->id($context->session_id) || (string) $context->chat_id !== (string) ($proof['chat_id'] ?? '')
+            || (string) $context->session_id !== (string) ($proof['session_id'] ?? '')
+            || in_array($context->state, ['released', 'expired', 'preserved', 'review'], true)) {
+            return null;
+        }
+        $limit = $limit->min(CarbonImmutable::parse($context->expires_at)->addHours(24 - self::WINDOW_HOURS));
+        $current = CarbonImmutable::parse($context->sales_expires_at ?? $context->expires_at);
+        if ($current->isPast()) {
+            return null;
+        }
+        if ($limit->gt($current)) {
+            DB::table('web_chat_contexts')->where('id', $id)->update(['sales_expires_at' => $limit, 'updated_at' => now()]);
+        }
+
+        return $limit;
     }
 
     /** Called in the route's lease transaction. Follow-ups must still prove this exact chat and session. */
@@ -443,9 +480,81 @@ class WebChatContinuity
         return DB::table('web_form_continuations')->where('entry_event_id', $entryId)->where('state', 'released')->exists();
     }
 
+    /** Caller holds the recipient lock. Only untouched, older requests for the same proven person qualify. */
+    private function replaceableContexts(object $selected, object $event, object $cut): ?array
+    {
+        if ((int) $selected->anchor_entry_event_id !== (int) $event->id
+            || ! in_array($selected->state, ['waiting', 'bound', 'review'], true)
+            || ($selected->state === 'review' && $selected->reason !== 'web_context_multiple_submissions')) {
+            return null;
+        }
+        $others = $this->contexts($selected->subject_id, $selected->phone_hash, $cut)
+            ->where('id', '!=', $selected->id)->limit(5)->get();
+        if ($others->isEmpty() || $others->count() > 4) {
+            return null;
+        }
+        $ids = $others->pluck('submission_id')->push($selected->submission_id);
+        $receipts = DB::table('web_form_receipts')->whereIn('id', $ids)->get()->keyBy('id');
+        $new = $receipts->get($selected->submission_id);
+        if (! $new || $new->state !== 'synced' || ! $this->id($new->lead_id) || ! $this->id($new->contact_id)
+            || ! is_string($new->identity_hash) || ! preg_match('/^[0-9a-f]{64}$/D', $new->identity_hash)) {
+            return null;
+        }
+        foreach ($others as $old) {
+            $receipt = $receipts->get($old->submission_id);
+            if (! $receipt || $receipt->state !== 'synced' || $receipt->identity_hash !== $new->identity_hash
+                || $receipt->contact_id !== $new->contact_id || ! $this->id($receipt->lead_id)
+                || ! $this->id($old->chat_id) || ! $this->id($old->session_id)
+                || (int) $old->anchor_entry_event_id >= (int) $event->id
+                || CarbonImmutable::parse($receipt->received_at)->gte(CarbonImmutable::parse($new->received_at))
+                || ! in_array($old->state, ['bound', 'review'], true)
+                || ($old->state === 'review' && $old->reason !== 'web_context_multiple_submissions')
+                || $old->observed_at || $old->resolved_at || $old->transfer_intent) {
+                return null;
+            }
+        }
+        // An uncertain external action or evidence of human attention keeps the
+        // old request protected even when its journal synchronization was delayed.
+        $protected = DB::table('web_form_chat_routes')->whereIn('submission_id', $others->pluck('submission_id'))
+            ->where(fn ($q) => $q->where('transfer_state', '!=', 'pending')->orWhere('link_state', '!=', 'pending')
+                ->orWhereIn('state', ['preserved', 'routed', 'linked', 'unknown'])->orWhereNotNull('proof->transfer_intent'))
+            ->exists();
+
+        return $protected ? null : $others->all();
+    }
+
+    private function selectExplicitReference(object $context, object $event, array $payload, array $proof, object $cut): bool
+    {
+        if (! $this->validAnchor($context, $payload, $cut)) {
+            return false;
+        }
+        $others = $this->replaceableContexts($context, $event, $cut);
+        if (! $others) {
+            return false;
+        }
+        foreach ($others as $old) {
+            $anchor = DB::table('edna_incoming_events')->find($old->anchor_entry_event_id);
+            $previous = $this->decode($old->proof);
+            $oldPayload = $anchor ? $this->authenticated($anchor) : null;
+            if (! $oldPayload || ! $this->validAnchor($old, $oldPayload, $cut) || ! $this->validProof($previous, $anchor)
+                || (string) $old->chat_id !== (string) $proof['chat_id'] || (string) $old->session_id !== (string) $proof['session_id']
+                || (string) $previous['chat_id'] !== (string) $proof['chat_id'] || (string) $previous['session_id'] !== (string) $proof['session_id']
+                || (int) $previous['message_id'] >= (int) $proof['message_id']
+                || CarbonImmutable::parse($oldPayload['receivedAt'])->gt(CarbonImmutable::parse($payload['receivedAt']))) {
+                return false;
+            }
+        }
+        DB::table('web_chat_contexts')->whereIn('id', array_map(fn ($old) => $old->id, $others))->update([
+            'state' => 'released', 'reason' => 'newer_explicit_reference_same_session', 'updated_at' => now(),
+        ]);
+
+        return true;
+    }
+
     private function markAmbiguous(string $subject, string $hash, object $cut): void
     {
-        $this->contexts($subject, $hash, $cut)->update(['state' => 'review', 'reason' => 'web_context_multiple_submissions', 'updated_at' => now()]);
+        $this->contexts($subject, $hash, $cut)->whereIn('state', ['waiting', 'bound'])
+            ->update(['state' => 'review', 'reason' => 'web_context_multiple_submissions', 'updated_at' => now()]);
     }
 
     private function decode(mixed $value): array

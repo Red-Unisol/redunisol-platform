@@ -214,6 +214,15 @@ class DealBatchRecoveryTests(unittest.TestCase):
         return replace(result, outcome=outcome, http_status=429 if outcome == "rate_limited" else 500,
                        formatted_field_value=None, summary_field_value=None, raw_field_value=None)
 
+    def test_fresh_pending_deal_gets_one_place_and_rest_drains_oldest(self):
+        for deal_id in range(930, 937):
+            self.add_deal(deal_id)
+            self.client.deals[deal_id]["createdTime"] = (NOW - timedelta(days=1)).isoformat()
+        self.client.deals[936]["createdTime"] = (NOW - timedelta(minutes=3)).isoformat()
+        result = self.batch()
+        self.assertEqual([row["deal_id"] for row in json.loads(result["events_json"])],
+                         [936, 930, 931, 932, 933])
+
     def test_processes_five_in_order_and_next_cycle_does_not_repeat_transfers(self):
         for deal_id in range(930, 937):
             self.add_deal(deal_id)

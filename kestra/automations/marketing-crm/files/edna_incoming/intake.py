@@ -87,7 +87,9 @@ def normalize_answer(data, *, retain_invalid_identity=False, flow_id=None):
                 "Jubilado Nacional" if organism == "anses" else "Jubilado Provincial")
     # Meta includes hidden values: never use organism or bank from another branch.
     bank = ""
-    caja_retirement = organism == "caja_cordoba" and situation != "pensionado"
+    caja_retirement = organism == "caja_cordoba" and (
+        situation != "pensionado" or data.get("banco_jubilado") in (None, "")
+    )
     if not caja_retirement:
         bank = data.get("banco_jubilado" if province == "cordoba" and retired else "banco_" + province)
         if not isinstance(bank, str) or bank not in {*BANKS, "ayuda"}:

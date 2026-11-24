@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'sales_inbox_enabled' => (bool) env('SALES_INBOX_ENABLED', false),
+    'sales_social_operator_id' => (int) env('SALES_SOCIAL_OPERATOR_ID', 0),
     'rejection_close_enabled' => (bool) env('EDNA_REJECTION_CLOSE_ENABLED', true),
     'organic_menu_enabled' => (bool) env('EDNA_ORGANIC_MENU_ENABLED', false),
     'organic_menu_start_at' => env('EDNA_ORGANIC_MENU_START_AT', ''),

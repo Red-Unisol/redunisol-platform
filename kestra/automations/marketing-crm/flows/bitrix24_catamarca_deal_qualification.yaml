@@ -5,7 +5,7 @@ description: Clasifica hasta cinco negociaciones pendientes por ciclo, aplica re
 
 concurrency:
   limit: 1
-  behavior: QUEUE
+  behavior: CANCEL
 
 labels:
   env: prod
@@ -296,3 +296,4 @@ triggers:
   - id: cada_minuto
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "* * * * *"
+    recoverMissedSchedules: NONE

@@ -18,6 +18,8 @@ use Throwable;
 /** Durable organic intake: authenticated inbox capture, then bounded provider work. */
 class EdnaOrganicMenu
 {
+    private const RESPONSE_STAGE = 'C1:UC_ZH5DGU';
+
     private EdnaBitrix $crm;
 
     private EdnaMessageBinding $binding;
@@ -59,7 +61,7 @@ class EdnaOrganicMenu
             return false;
         }
         $stored = $this->authenticatedPayload($event, $payload);
-        $choice = $stored ? EdnaOrganicTransport::parseChoice($stored['messageContent']['payload'] ?? null) : null;
+        $choice = $stored ? EdnaOrganicTransport::choiceFromReply($stored) : null;
         if (! $choice || ($stored['messageContent']['type'] ?? '') === 'FLOW') {
             $this->record($event->id, 'organic_choice_unmatched');
 
@@ -80,7 +82,7 @@ class EdnaOrganicMenu
         }
         $claimed = DB::table('edna_organic_menus')->where('id', $menu->id)->whereNull('choice_event_id')->update([
             'choice_event_id' => $event->id, 'choice' => $choice['choice'],
-            'choice_received_at' => CarbonImmutable::parse($stored['receivedAt']),
+            'choice_received_at' => CarbonImmutable::parse($stored['receivedAt'])->utc(), 'attempts' => 0,
             'state' => 'selected', 'available_at' => now(), 'enqueued_at' => now(), 'updated_at' => now(),
         ]);
         if ($claimed) {
@@ -109,7 +111,14 @@ class EdnaOrganicMenu
 
             return true;
         }
-        $received = CarbonImmutable::parse($stored['receivedAt']);
+        if (config('edna.sales_inbox_enabled') && config('edna.intake_crm_enabled') && ($stored['messageContent']['type'] ?? '') === 'TEXT'
+            && SalesInboxPolicy::terminalText($stored['messageContent']['text'] ?? null)
+            && DB::table('sales_inbox_cursors')->where('line_id', 1)->where('starts_at', '<', CarbonImmutable::parse($stored['receivedAt'])->utc())->exists()) {
+            $this->record($event->id, 'terminal_reply_no_welcome');
+
+            return true;
+        }
+        $received = CarbonImmutable::parse($stored['receivedAt'])->utc();
         $phone = $stored['subscriber']['identifier'];
         $inserted = DB::table('edna_organic_menus')->insertOrIgnore([
             'request_id' => (string) Str::uuid(), 'entry_event_id' => $event->id,
@@ -136,7 +145,7 @@ class EdnaOrganicMenu
             $queue = app(EdnaWorkQueue::class);
             $rows = $queue->withoutPending(DB::table('edna_organic_menus'), ProcessEdnaOrganicMenu::class, 'edna_organic_menus.id')
                 ->where(function ($query): void {
-                    $query->whereIn('state', ['pending', 'waiting', 'selected', 'unknown', 'route_pending'])
+                    $query->whereIn('state', ['pending', 'waiting', 'selected', 'unknown', 'route_pending', 'seller_wait'])
                         ->orWhere(fn ($q) => $q->where('state', 'awaiting_choice')->where(fn ($choice) => $choice
                             ->whereNotNull('choice_event_id')->orWhere('expires_at', '<=', now())));
                 })->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
@@ -174,7 +183,7 @@ class EdnaOrganicMenu
             $uncertainTransfer = in_array($menu->transfer_state, ['sending', 'unknown'], true);
             $uncertainSend = in_array($menu->send_state, ['sending', 'accepted', 'unknown'], true);
             if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
-                return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
+                return $this->finish(in_array($menu->state, ['seller_wait', 'route_pending'], true) ? $menu->state : 'waiting', 'organic_menu_disabled_or_outside_pilot');
             }
             if ($menu->send_state === 'pending'
                 && app(WebChatContinuity::class)->blocksOutbound($event, $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null)) {
@@ -250,12 +259,19 @@ class EdnaOrganicMenu
             if ($menu->send_state === 'pending') {
                 return $this->send($menu, $proof);
             }
-            if ($menu->send_state !== 'confirmed') {
+            if ($menu->send_state !== 'confirmed' && ! SalesLoanIntent::verified($menu, $payload)) {
                 return $this->finish('review', 'menu_outgoing_not_confirmed');
             }
-            if ($menu->state === 'route_pending') {
+            if (in_array($menu->state, ['seller_wait', 'route_pending'], true)) {
+                if (app(WebChatContinuity::class)->blocksOutbound($event, $proof)) {
+                    return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
+                }
                 if ($benefits = $this->benefitsDecision($menu, $proof)) {
                     return $benefits;
+                }
+
+                if ($menu->state === 'seller_wait') {
+                    return $this->followPendingSeller($menu, $proof);
                 }
 
                 return $this->transfer($menu, $proof, (int) $menu->seller_id);
@@ -337,6 +353,38 @@ class EdnaOrganicMenu
         if ($benefits = $this->benefitsDecision($menu, $proof)) {
             return $benefits;
         }
+        if (config('edna.sales_inbox_enabled')) {
+            $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+            $payload = $entry ? $this->authenticatedPayload($entry) : null;
+            $flow = app(SalesSessionFlow::class);
+            if ($flow->find((int) $proof['chat_id'], (int) $proof['session_id'])) {
+                return $this->finish('preserved', 'same_session_v3_preserved');
+            }
+            if ($flow->hasRecentActive($menu->subject_id, $menu->phone_hash)) {
+                return $this->wait('recent_recipient_v3_in_progress');
+            }
+            $continuation = $payload && ! app(WebChatContinuity::class)->blocksOutbound($entry, $proof)
+                ? app(SalesCampaignReply::class)->reserve($payload, $proof) : false;
+            if ($continuation === true) {
+                return $this->finish('preserved', 'commercial_continuation_reserved', ['transfer_state' => 'preserved']);
+            }
+            if (is_array($continuation)) {
+                // Entry and choice are the very same authenticated text; there is no outgoing menu receipt.
+                $proof['choice_proof'] = $proof;
+                $proof['direct_loan_contact'] = $continuation['loan_contact'];
+
+                return DB::transaction(function () use ($entry, $menu, $proof): array {
+                    $result = $this->finish('loan_pending', 'explicit_loan_contact_without_deal', ['choice' => 'loan', 'choice_event_id' => $entry->id,
+                        'choice_received_at' => $menu->entry_received_at, 'proof' => json_encode($proof, JSON_THROW_ON_ERROR),
+                        'send_state' => 'not_needed', 'enqueued_at' => null, 'available_at' => now()]);
+                    if ($result['state'] === 'loan_pending') {
+                        app(EdnaOrganicLoan::class)->enqueue($this->menuId);
+                    }
+
+                    return $result;
+                });
+            }
+        }
         $this->assertBudget(35);
         $fresh = $this->attention->inspectWelcome($proof);
         if (($fresh['status'] ?? '') !== 'ready'
@@ -395,6 +443,56 @@ class EdnaOrganicMenu
 
         return $this->finish(($decision['state'] ?? '') === 'review' ? 'review' : 'preserved', $reason,
             ['transfer_state' => 'preserved']);
+    }
+
+    /** Re-read the single proven deal. A waiting menu cannot submit a business request or a Flow. */
+    private function followPendingSeller(object $menu, array $proof): array
+    {
+        $evidence = json_decode($menu->profile_evidence ?? '', true, 32, JSON_THROW_ON_ERROR);
+        $waiting = $evidence['waiting_case'] ?? [];
+        $choice = $proof['choice_proof'] ?? [];
+        if ($menu->choice !== 'loan' || ! $this->positiveId($menu->deal_id)
+            || ($waiting['deal_id'] ?? '') !== (string) $menu->deal_id || ! $this->positiveId($waiting['contact_id'] ?? null)
+            || ! array_key_exists('lead_id', $waiting) || ! is_bool($waiting['contact_deal_activity'] ?? null)
+            || empty($waiting['profile_identity_hash'])
+            || (string) ($choice['entry_event_id'] ?? '') !== (string) $menu->choice_event_id
+            || ($choice['session_id'] ?? null) !== $proof['session_id'] || ($choice['chat_id'] ?? null) !== $proof['chat_id']) {
+            return $this->finish('review', 'provisional_commercial_evidence_invalid');
+        }
+        $this->assertBudget(6);
+        $deal = $this->crm->call('crm.deal.get', ['id' => (string) $menu->deal_id]);
+        $lead = in_array($deal['LEAD_ID'] ?? null, ['', '0', 0, null], true) ? '' : (string) $deal['LEAD_ID'];
+        if (! is_array($deal) || (string) ($deal['ID'] ?? '') !== $waiting['deal_id'] || $lead !== $waiting['lead_id']
+            || (string) ($deal['CONTACT_ID'] ?? '') !== $waiting['contact_id'] || (string) ($deal['CATEGORY_ID'] ?? '') !== '1'
+            || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P' || empty($deal['STAGE_ID'])
+            || in_array($deal['STAGE_ID'], [self::RESPONSE_STAGE, ...WebFormChatRouting::COMMERCIAL_REVIEW_STAGES], true)) {
+            return $this->finish('preserved', 'provisional_commercial_case_changed');
+        }
+        $target = (string) ($deal['ASSIGNED_BY_ID'] ?? '');
+        if (! $this->positiveId($target) || in_array($target, ['57', '71283', '74827'], true)
+            || in_array($deal['STAGE_ID'], ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE'], true)) {
+            $hold = (new WebFormChatRetryPolicy)->salesHold($menu, $deal, [$menu->entry_received_at, $menu->choice_received_at]);
+            if ($hold) {
+                // Only the internal transfer may continue after a confirmed non-working interval.
+                // Keeps the accepted menu and V3 receipts terminal for customer messaging.
+                return $this->finish('seller_wait', 'waiting_for_sales_opening', [
+                    'available_at' => $hold['open'], 'expires_at' => CarbonImmutable::parse($menu->expires_at)
+                        ->max($hold['open']->addHours(WebFormChatRetryPolicy::WINDOW_HOURS)),
+                ]);
+            }
+
+            return $this->wait('commercial_seller_not_ready');
+        }
+        $assigned = ['deal_id' => $waiting['deal_id'], 'lead_id' => $lead, 'contact_id' => $waiting['contact_id'],
+            'seller_id' => $target, 'profile_identity_hash' => $waiting['profile_identity_hash'], 'from_provisional_queue' => true];
+        if ($waiting['contact_deal_activity']) {
+            $assigned['contact_deal_stage'] = $deal['STAGE_ID'];
+        }
+        $evidence['assigned_case'] = $assigned;
+        $this->write(['state' => 'route_pending', 'reason' => 'commercial_seller_available', 'seller_id' => $target,
+            'profile_evidence' => json_encode($evidence, JSON_THROW_ON_ERROR), 'attempts' => 0]);
+
+        return $this->transfer($this->current(), $proof, (int) $target);
     }
 
     private function transfer(object $menu, array $proof, int $target): array
@@ -520,6 +618,9 @@ class EdnaOrganicMenu
             || ! hash_equals($identity, $assigned['profile_identity_hash'])) {
             return null;
         }
+        if (in_array($target, [57, 71283, 74827], true)) {
+            return null;
+        }
         $contactId = (string) $assigned['contact_id'];
         $emptyLead = in_array($assigned['lead_id'], ['', '0', 0, null], true);
         if (! $emptyLead && ! $this->positiveId($assigned['lead_id'])) {
@@ -535,7 +636,10 @@ class EdnaOrganicMenu
         if ((string) ($deal['ID'] ?? '') !== (string) $menu->deal_id
             || (string) ($deal['ASSIGNED_BY_ID'] ?? '') !== (string) $target
             || (string) ($deal['CONTACT_ID'] ?? '') !== $contactId || $currentLead !== $leadId
-            || (int) ($deal['CATEGORY_ID'] ?? -1) !== 1 || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P') {
+            || (int) ($deal['CATEGORY_ID'] ?? -1) !== 1 || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P'
+            || ! is_string($deal['STAGE_ID'] ?? null) || $deal['STAGE_ID'] === ''
+            || (($assigned['from_provisional_queue'] ?? false) && $deal['STAGE_ID'] === self::RESPONSE_STAGE)
+            || in_array($deal['STAGE_ID'], ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE', ...WebFormChatRouting::COMMERCIAL_REVIEW_STAGES], true)) {
             return null;
         }
         foreach (['contact' => [$contactId, 'UF_CRM_65B7E48033FCD'], 'lead' => [$leadId, 'UF_CRM_1693840106704']] as $entity => [$id, $field]) {
@@ -545,6 +649,8 @@ class EdnaOrganicMenu
             $this->assertBudget(6);
             $record = $this->crm->call('crm.'.$entity.'.get', ['id' => $id]);
             if (! is_array($record) || (string) ($record['ID'] ?? '') !== $id
+                || ($entity === 'lead' && ($assigned['from_provisional_queue'] ?? false)
+                    && (string) ($record['ASSIGNED_BY_ID'] ?? '') !== (string) $target && ($record['STATUS_SEMANTIC_ID'] ?? '') !== 'S')
                 || ! is_string($record[$field] ?? null)
                 || ! hash_equals($identity, (new WebFormReceipt)->identityHash($record[$field]) ?? '')
                 || ($entity === 'lead' && ! in_array($record['CONTACT_ID'] ?? null, ['', '0', 0, null], true)
@@ -569,7 +675,7 @@ class EdnaOrganicMenu
     private function matchesChoice(object $menu, object $event, array $payload, bool $confirmed): bool
     {
         try {
-            $choice = EdnaOrganicTransport::parseChoice($payload['messageContent']['payload'] ?? null);
+            $choice = EdnaOrganicTransport::choiceFromReply($payload);
             $received = CarbonImmutable::parse($payload['receivedAt']);
 
             return $choice !== null && $choice['request_id'] === $menu->request_id
@@ -695,7 +801,7 @@ class EdnaOrganicMenu
     {
         return DB::transaction(function (): ?object {
             $row = $this->current(true);
-            if (! $row || ! in_array($row->state, ['pending', 'waiting', 'selected', 'unknown', 'route_pending', 'awaiting_choice'], true)
+            if (! $row || ! in_array($row->state, ['pending', 'waiting', 'selected', 'unknown', 'route_pending', 'seller_wait', 'awaiting_choice'], true)
                 || ($row->lease_until && CarbonImmutable::parse($row->lease_until)->isFuture())
                 || ($row->available_at && CarbonImmutable::parse($row->available_at)->isFuture())
                 || ($row->state === 'awaiting_choice' && ! $row->choice_event_id && CarbonImmutable::parse($row->expires_at)->isFuture())) {
@@ -742,7 +848,19 @@ class EdnaOrganicMenu
 
     private function wait(string $reason, array $fields = [], bool $unknown = false): array
     {
-        return $this->finish(($this->current()?->attempts ?? 12) >= 12 ? 'review' : ($unknown ? 'unknown' : 'waiting'), $reason, $fields);
+        $menu = $this->current();
+        if ($menu?->state === 'seller_wait' && ! $unknown) {
+            $expires = CarbonImmutable::parse($menu->expires_at);
+            if ($expires->lte(now())) {
+                return $this->finish('expired', 'conversation_window_elapsed');
+            }
+            $delay = (new WebFormChatRetryPolicy)->delaySeconds($menu->attempts, 900);
+
+            return $this->finish('seller_wait', $reason, ['available_at' => now()->addSeconds($delay)->min($expires)] + $fields);
+        }
+        $resume = $menu?->state === 'route_pending' ? 'route_pending' : 'waiting';
+
+        return $this->finish(($menu?->attempts ?? 12) >= 12 ? 'review' : ($unknown ? 'unknown' : $resume), $reason, $fields);
     }
 
     private function attentionDecision(array $attention): array

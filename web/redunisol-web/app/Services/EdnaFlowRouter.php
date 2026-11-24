@@ -60,9 +60,9 @@ class EdnaFlowRouter
         return DB::transaction(function () use ($menuId): ?int {
             $menu = DB::table('edna_organic_menus')->where('id', $menuId)->lockForUpdate()->first();
             if (! $menu || $menu->state !== 'selected' || $menu->choice !== 'loan'
-                || $menu->send_state !== 'confirmed' || ! Str::isUuid($menu->request_id)
-                || (int) $menu->entry_event_id < 1 || (int) $menu->choice_event_id < 1
-                || (int) $menu->entry_event_id === (int) $menu->choice_event_id
+                || ! Str::isUuid($menu->request_id) || (int) $menu->entry_event_id < 1 || (int) $menu->choice_event_id < 1
+                || (($menu->send_state !== 'confirmed' || (int) $menu->entry_event_id === (int) $menu->choice_event_id)
+                    && ! SalesLoanIntent::verified($menu))
                 || $menu->subject_id !== (string) config('edna.subject_id')) {
                 return null;
             }

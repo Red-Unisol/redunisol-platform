@@ -38,6 +38,7 @@ def create_lead(
     logger: Logger,
     *,
     provisional_owner: bool = False,
+    web_submission_id: str | None = None,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
     source_id = (
@@ -71,6 +72,8 @@ def create_lead(
 
     if provisional_owner:
         fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
+    if web_submission_id:
+        fields.update(ORIGINATOR_ID="redunisol-web", ORIGIN_ID=web_submission_id)
     fields.update(_build_optional_tracking_fields(config, submission))
     fields.update(attribution_lead_fields(
         client, submission.attribution,
@@ -231,7 +234,7 @@ def build_prequalification_input_from_lead(
     if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake", "whatsapp_single_intake", "organic_profile_reuse"}
             and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
             and not lead.get(config.fields.lead_payment_bank)):
-        if employment.key == "jubilado_provincial" and province.key == "cordoba":
+        if employment.key in {"jubilado_provincial", "pensionado"} and province.key == "cordoba":
             return PrequalificationInput(province=province, employment_status=employment, payment_bank=None)
     payload = {
         "province": _required_lead_value(lead, config.fields.lead_province),

@@ -272,7 +272,12 @@ def _identity(api, config, binding, phone, answer):
     return native, contact, leads
 
 
-def _management(api, config, contact, leads):
+def _pending_seller(config, deal):
+    return (str(deal.get("ASSIGNED_BY_ID")) in {"57", "71283", "74827"}
+            and deal.get("STAGE_ID") in {config.deal.pending_qualification_stage_id, config.deal.assignment_queue_stage_id})
+
+
+def _management(api, config, contact, leads, *, allow_pending=False):
     deals = {}
     for field, records in (("CONTACT_ID", [contact] if contact else []), ("LEAD_ID", leads)):
         ids = [str(record["ID"]) for record in records]
@@ -292,8 +297,12 @@ def _management(api, config, contact, leads):
     if len(deals) != 1:
         raise Review("ambiguous_existing_management")
     deal = next(iter(deals.values()))
+    if (allow_pending and _pending_seller(config, deal) and str(deal["CATEGORY_ID"]) == "1"
+            and contact and str(deal.get("CONTACT_ID")) == str(contact["ID"])
+            and (not deal.get("LEAD_ID") or any(str(row["ID"]) == str(deal["LEAD_ID"]) for row in leads))):
+        return deal
     if (str(deal["CATEGORY_ID"]) != "1" or not _id(deal.get("ASSIGNED_BY_ID"))
-            or str(deal.get("ASSIGNED_BY_ID")) in {"57", "71283"}
+            or str(deal.get("ASSIGNED_BY_ID")) in {"57", "71283", "74827"}
             or not deal.get("STAGE_ID") or deal["STAGE_ID"] in {
                 config.deal.pending_qualification_stage_id, config.deal.manual_review_stage_id,
                 config.deal.routing_review_stage_id, config.deal.assignment_queue_stage_id}):
@@ -383,12 +392,13 @@ def process(payload, *, env=None, client=None):
     api = IntakeCrmClient(client or BitrixClient(config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0))
     try:
         continuity = payload.get("routing_policy") == CONTINUITY_POLICY
+        watch = continuity and payload.get("follow_pending_seller") is True
         contact_deal = False
         if continuity:
             # A converted session activity is accepted only after the original
             # person's current CUIL/phone/contact and unique management resolve.
             native, contact, leads = _identity(api, config, binding, phone, answer)
-            deal = _management(api, config, contact, leads)
+            deal = _management(api, config, contact, leads, allow_pending=watch)
             contact_deal = _native(api, payload, binding, phone, deal)
         else:
             _native(api, payload, binding, phone)
@@ -402,7 +412,7 @@ def process(payload, *, env=None, client=None):
         if deal:
             if continuity:
                 fresh_native, fresh_contact, fresh_leads = _identity(api, config, binding, phone, answer)
-                fresh_deal = _management(api, config, fresh_contact, fresh_leads)
+                fresh_deal = _management(api, config, fresh_contact, fresh_leads, allow_pending=watch)
                 if fresh_contact != contact or native and _revision(native, config) != _revision(fresh_native, config):
                     raise Review("native_inquiry_changed")
                 if fresh_deal != deal:
@@ -410,6 +420,11 @@ def process(payload, *, env=None, client=None):
                 _source_profile(api, config, payload, answer)
                 if _native(api, payload, binding, phone, fresh_deal) != contact_deal:
                     raise Review("native_activity_changed")
+            if watch and _pending_seller(config, deal):
+                return {**result, "action": "awaiting_seller", "reason": "provisional_commercial_queue",
+                        "deal_id": str(deal["ID"]), "lead_id": str(deal.get("LEAD_ID") or ""),
+                        "contact_id": str(contact["ID"]), "contact_deal_activity": contact_deal,
+                        "initial_stage": deal["STAGE_ID"]}
             if contact_deal:
                 result["contact_deal_stage"] = deal["STAGE_ID"]
             return {**result, "action": "assigned_case", "reason": "existing_contact_deal" if contact_deal else "existing_assigned_case",
@@ -473,5 +488,12 @@ def process(payload, *, env=None, client=None):
         return {**result, "action": "rejected" if rejected else "queued", "reason": reason or "ready",
                 "lead_id": lead_id, "contact_id": str(written.get("CONTACT_ID") or ""), "write_attempted": True}
     except Review as error:
-        action = "reused_not_valid" if error.reason == "current_person_unproven" and not api.write_attempted else "manual_review"
+        # A new self-declaration can replace an unverified historical profile.
+        # A conflict with a bound native person, active CRM management or an
+        # uncertain write still needs reconciliation, never a second intake.
+        needs_declaration = error.reason in {
+            "current_person_unproven", "phone_identity_ambiguous", "phone_profile_identity_conflict",
+            "source_profile_identity_conflict", "source_profile_benefit_requires_confirmation",
+        }
+        action = "reused_not_valid" if needs_declaration and not api.write_attempted else "manual_review"
         return {**result, "action": action, "reason": error.reason, "write_attempted": api.write_attempted}

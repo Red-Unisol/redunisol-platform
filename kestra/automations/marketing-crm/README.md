@@ -51,8 +51,10 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 - Los servicios compartidos de ese paquete deben importar con solo `bitrix24_form_flow/**` disponible. Las marcas de prueba de los titulos viven en `lead_test_markers.py`; el contrato WhatsApp las reexporta sin agregar Edna como dependencia de los flows comerciales.
 - `tests/test_namespace_imports.py` copia los archivos declarados por cada tarea YAML y prueba sus imports en un proceso Python aislado. Se ejecuta con la suite de tests del dominio para detectar dependencias que el `PYTHONPATH` completo de desarrollo ocultaria.
 - Los secretos y variables de entorno siguen resolviendose en Kestra, no desde Git.
+- Para formularios web nuevos el webhook comprende un sobre versionado. La web guarda el hash de sus bytes y encola su copia cifrada junto con el permiso de despacho. Antes de escribir contacto o prospecto, el receptor solicita por HTTPS el único permiso para ese UUID y contenido al backend del ambiente. Las reentregas sin permiso consumido compiten por la misma fila. Después de otorgarlo solo se consulta el acuse del mismo prospecto por origen, referencia e identidad. Los recibos de protocolo anterior conservan su comportamiento; una versión vieja de Kestra no puede interpretar el sobre nuevo como un formulario válido. El despliegue debe aplicar migraciones y endpoint web, y luego validar el runner y su token interno preexistente en ambos ambientes. Un fallo después del permiso sin evidencia de prospecto queda incierto. Un conflicto de acuses no se resuelve por orden de llegada. Dos procesos persistentes independientes consumen `web-forms` para el primer envío y `web-forms-reconcile` para las confirmaciones y reentregas. Ambos tienen un timeout de 75 segundos. Un flujo continuo de ingresos deja disponible la capacidad reservada para verificar solicitudes existentes.
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
+- Cuando hay atraso, el prefill reserva uno de sus dos lugares para prospectos de la última hora. El otro toma la ficha pendiente con modificación más antigua; una ficha reintentada pasa detrás de las que llevan más tiempo sin atención. Si faltan candidatos recientes, ambos lugares sirven al conjunto. Sigue paginando ante fichas de prueba o identidades compartidas. La calificación posterior reserva también el primer lugar del lote para negociaciones creadas en la última hora y dedica el resto a las pendientes por antigüedad. Ambas colas existen en Bitrix: cada tick toma trabajo vigente, con padre singleton y sin reproducir minutos perdidos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
 - Las fallas temporales de BCRA se reintentan brevemente en la consulta y se persisten para recuperación durante 24 horas, con esperas de 1/5/15 minutos dentro de la ventana comercial. Una negociación pendiente de BCRA no se rechaza ni se distribuye, y tampoco bloquea la clasificación de otras negociaciones. La política detallada vive en `docs/technical/bcra-retry-policy.md`.
 - Antes de clasificar negociaciones internas pendientes se consulta Vimarx con el CUIL actual, independientemente de la antigüedad o etapa del lead. El resultado se copia al lead y a la negociación. Las fallas se reintentan sin decidir ni distribuir; véase `docs/technical/vimarx-deal-refresh.md` (implementado, pendiente de deploy).
@@ -84,17 +86,21 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 ## Capacidad del prefill
 
 El scheduler `bitrix24_lead_prefill` conserva `concurrency.limit: 1` y su cron
-cada minuto. Selecciona hasta dos leads distintos de la primera pagina de INGRESO,
-ordenados por intentos e ID, y espera ambos subflows antes de seleccionar otro lote.
+cada minuto. Selecciona hasta dos prospectos de INGRESO por tanda. Reserva un lugar
+para quienes ingresaron en la última hora, por cantidad de intentos e ID. Cubre los
+lugares restantes con las fichas menos recientemente modificadas, recorriendo las
+páginas necesarias hasta encontrar identidades distintas o agotar los candidatos.
+Espera a que terminen ambos subflows antes de seleccionar otro lote.
 Si un hijo falla, el padre espera igualmente al otro antes de fallar: las ramas
 usan `transmitFailed: false` y una comprobacion final valida ambos estados. Esto
 evita liberar el selector mientras el otro hijo sigue escribiendo.
 No se solapan en una tanda los leads que comparten contacto o DNI (incluido el DNI
 extraido del CUIL, para cubrir la resolucion de identidad Finguru).
 Los duplicados conservan su lugar para tandas posteriores; no se descartan.
-Antes de seleccionar, la tarea `hay_pendientes` (script Python con runner Process,
-sin contenedor) cuenta en Bitrix los leads en INGRESO desde `date_from`; si no hay,
-la seleccion no corre y la ejecucion termina con `count: 0`.
+La tarea inicial `hay_pendientes` consulta el total en Bitrix por etapa y `date_from`
+con el runner Process. Un total cero evita iniciar el contenedor de selección y
+la ejecución devuelve `count: 0`. Ante una respuesta sin total, el selector se
+ejecuta para comprobar las fichas.
 
 `bitrix24_lead_prefill_one` tiene un limite global de dos ejecuciones y no tiene
 trigger. No ejecutar el hijo manualmente ni reanudar ejecuciones historicas mientras

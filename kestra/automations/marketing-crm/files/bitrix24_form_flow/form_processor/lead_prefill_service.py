@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
@@ -25,6 +26,7 @@ from .vimarx_service import sync_lead_vimarx_enrichment
 
 ARGENTINA_TIMEZONE = timezone(timedelta(hours=-3))
 FINGURU_SOURCE_ID = "3729"
+FRESH_INTAKE_WINDOW = timedelta(hours=1)
 IDENTITY_UNCHANGED = "unchanged"
 IDENTITY_SANITIZED = "sanitized"
 IDENTITY_UNRESOLVED = "unresolved"
@@ -33,6 +35,7 @@ IDENTITY_UNRESOLVED = "unresolved"
 def select_new_leads_for_prefill(
     *,
     limit: int = 2,
+    now: datetime | None = None,
     date_from: str | None = None,
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
@@ -47,78 +50,88 @@ def select_new_leads_for_prefill(
     if date_from and date_from.strip():
         lead_filter[">=DATE_CREATE"] = date_from.strip()
 
-    response = client.call_full(
-        "crm.lead.list",
-        {
-            "filter": lead_filter,
-            "order": {
-                config.fields.lead_backfill_attempts: "ASC",
-                "ID": "ASC",
-            },
-            "select": [
-                "ID",
-                "CONTACT_ID",
-                "UF_CRM_WA_TEST",
-                config.fields.lead_cuil,
-                config.fields.lead_dni,
-                config.fields.lead_source,
-                config.fields.lead_backfill_attempts,
-            ],
-            "start": 0,
-        },
-    )
-    leads = response.get("result") or []
-    if not isinstance(leads, list):
-        raise RuntimeError("crm.lead.list devolvio un payload invalido.")
-
-    selected: list[dict[str, object]] = []
-    occupied: set[str] = set()
-    for lead in leads:
-        if lead.get("UF_CRM_WA_TEST") == "SI":
-            continue
-        lead_id = _optional_int(lead.get("ID"))
-        if lead_id is None:
-            continue
-        cuil = _digits(lead.get(config.fields.lead_cuil))
-        dni = _digits(lead.get(config.fields.lead_dni))
-        source_id = _optional_str(lead.get(config.fields.lead_source)) or ""
-        credix_identifier = credix_identifier_for_prefill(
-            source_id=source_id,
-            cuil=cuil,
-            dni=dni,
-        )
-        keys = {f"lead:{lead_id}"}
-        contact_id = _optional_int(lead.get("CONTACT_ID"))
-        if contact_id and contact_id > 0:
-            keys.add(f"contact:{contact_id}")
-        # CUIL and Finguru DNI must collide before identity resolution runs.
-        for identity in (cuil, dni):
-            if len(identity) == 11:
-                keys.add(f"dni:{int(identity[2:10])}")
-            elif identity:
-                keys.add(f"dni:{int(identity)}")
-        if occupied.intersection(keys):
-            continue
-        occupied.update(keys)
-        selected.append({
-            "ok": True,
-            "action": "selected",
-            "has_pending": True,
-            "lead_id": str(lead_id),
-            "cuil": cuil,
-            "dni": dni,
-            "source_id": source_id,
-            "credix_identifier": credix_identifier,
-            "needs_identity_sanitization": (
-                source_id == FINGURU_SOURCE_ID and len(cuil) == 8
-            ),
-            "attempts": _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0,
-            "message": f"Lead {lead_id} seleccionado para backfill.",
-        })
-        if len(selected) == limit:
-            break
-
+    now = now or datetime.now(ARGENTINA_TIMEZONE)
+    lanes = []
+    if limit == 2:
+        recent = {**lead_filter, ">DATE_CREATE": (now - FRESH_INTAKE_WINDOW).isoformat(timespec="seconds")}
+        lanes.append(("recent", recent, {config.fields.lead_backfill_attempts: "ASC", "ID": "ASC"}, 1))
+    # A persisted attempt updates DATE_MODIFY and sends a retry behind cases
+    # still untouched. This slot also serves new arrivals if there is no backlog.
+    lanes.append(("oldest_waiting", lead_filter, {"DATE_MODIFY": "ASC", "ID": "ASC"}, limit))
+    selected = []
+    occupied = set()
+    for lane, filters, order, stop_at in lanes:
+        for keys, candidate in _prefill_candidates(client, config, filters, order):
+            if keys.isdisjoint(occupied):
+                occupied.update(keys)
+                selected.append({**candidate, "queue_lane": lane})
+                if len(selected) >= stop_at:
+                    break
     return selected
+
+
+def _prefill_candidates(client, config: AppConfig, filters: dict, order: dict) -> Iterator[tuple[set[str], dict]]:
+    fields = ["ID", "CONTACT_ID", "UF_CRM_WA_TEST", config.fields.lead_cuil,
+              config.fields.lead_dni, config.fields.lead_source, config.fields.lead_backfill_attempts]
+    start = 0
+    while True:
+        response = client.call_full("crm.lead.list", {
+            "filter": filters, "order": order, "select": fields, "start": start,
+        })
+        rows = response.get("result")
+        if not isinstance(rows, list):
+            raise RuntimeError("crm.lead.list devolvio un payload invalido.")
+        for lead in rows:
+            candidate = _prefill_candidate(lead, config)
+            if candidate:
+                yield candidate
+        if response.get("next") is None:
+            return
+        following = int(response["next"])
+        if following <= start:
+            raise RuntimeError("crm.lead.list no avanzo la paginacion.")
+        start = following
+
+
+def _prefill_candidate(lead: dict, config: AppConfig) -> tuple[set[str], dict] | None:
+    if lead.get("UF_CRM_WA_TEST") == "SI":
+        return None
+    lead_id = _optional_int(lead.get("ID"))
+    if lead_id is None:
+        return None
+    cuil = _digits(lead.get(config.fields.lead_cuil))
+    dni = _digits(lead.get(config.fields.lead_dni))
+    source_id = _optional_str(lead.get(config.fields.lead_source)) or ""
+    credix_identifier = credix_identifier_for_prefill(
+        source_id=source_id,
+        cuil=cuil,
+        dni=dni,
+    )
+    keys = {f"lead:{lead_id}"}
+    contact_id = _optional_int(lead.get("CONTACT_ID"))
+    if contact_id and contact_id > 0:
+        keys.add(f"contact:{contact_id}")
+    # CUIL and Finguru DNI must collide before identity resolution runs.
+    for identity in (cuil, dni):
+        if len(identity) == 11:
+            keys.add(f"dni:{int(identity[2:10])}")
+        elif identity:
+            keys.add(f"dni:{int(identity)}")
+    return keys, {
+        "ok": True,
+        "action": "selected",
+        "has_pending": True,
+        "lead_id": str(lead_id),
+        "cuil": cuil,
+        "dni": dni,
+        "source_id": source_id,
+        "credix_identifier": credix_identifier,
+        "needs_identity_sanitization": (
+            source_id == FINGURU_SOURCE_ID and len(cuil) == 8
+        ),
+        "attempts": _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0,
+        "message": f"Lead {lead_id} seleccionado para backfill.",
+    }
 
 
 def select_next_new_lead_for_prefill(

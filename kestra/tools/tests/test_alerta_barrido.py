@@ -232,3 +232,79 @@ def test_la_busqueda_de_fallas_usa_los_filtros_que_la_api_entiende():
     assert filtros["filters[timeRange][EQUALS]"] == "PT20M"
     # STARTS_WITH es el operador correcto: PREFIX devuelve 0 en silencio.
     assert filtros["filters[namespace][STARTS_WITH]"] == barrido.PREFIJO
+
+# Scheduler locks survive engine restarts independently of execution history.
+def test_calendario_huerfano_deduplica_y_exige_reanudacion_real():
+    from unittest.mock import Mock
+
+    flow = "bitrix24_lead_prefill"
+    trigger = {"namespace": barrido.CRM, "flowId": flow, "triggerId": "cada_minuto",
+               "locked": True, "disabled": False, "executionId": "abc",
+               "nextEvaluationDate": (AHORA - timedelta(days=2)).isoformat(),
+               "lastTriggeredDate": (AHORA - timedelta(days=2)).isoformat()}
+    def respuesta(metodo, ruta, **kwargs):
+        assert metodo == "GET"
+        if ruta.endswith("/executions/abc"):
+            return kwargs["ausente"]
+        if "/executions/search?" in ruta:
+            filas = ([{"namespace": barrido.CRM, "flowId": flow, "trigger": {"id": "cada_minuto",
+                       "type": "io.kestra.plugin.core.trigger.Schedule"},
+                      "state": {"startDate": AHORA.isoformat(), "current": "SUCCESS"}}]
+                     if trigger.get("lastTriggeredDate") == AHORA.isoformat() else [])
+            return {"total": len(filas), "results": filas}
+        return {"total": 1, "results": [{"state": trigger}]}
+    api = Mock(side_effect=respuesta)
+    lector = barrido.construir_lector_calendario(api, "main")
+    def solo_prefill(f, t, ahora):
+        return lector(f, t, ahora) if f == flow else None
+    espia = Espia()
+    _, salida = correr(espia, leer_calendario=solo_prefill)
+    assert espia.avisos == [("Calendario CRM sin avance", barrido.CRM, flow)]
+    assert "huérfano" in next(iter(salida["estado"]["incidentes"].values()))["motivo"]
+    _, salida = correr(espia, salida["estado"], leer_calendario=solo_prefill)
+    assert len(espia.avisos) == 1
+    trigger["disabled"] = True  # intentional pause is not recovery
+    _, salida = correr(espia, salida["estado"], leer_calendario=solo_prefill)
+    assert salida["incidentes_abiertos"] == 1
+    trigger.update(disabled=False, lastTriggeredDate=AHORA.isoformat())
+    _, salida = correr(espia, salida["estado"], leer_calendario=solo_prefill)
+    assert salida["incidentes_abiertos"] == 0
+    assert espia.avisos[-1] == ("Calendario CRM reanudado", barrido.CRM, flow)
+
+
+def test_calendario_response_incompleta_o_http_incierto_no_acreditan_huerfano():
+    from unittest.mock import Mock
+    f, t = "bitrix24_lead_prefill", "cada_minuto"
+    estado = {"namespace": barrido.CRM, "flowId": f, "triggerId": t,
+              "locked": True, "executionId": "recent"}
+    api = Mock(side_effect=[{"total": 2, "results": [{"state": estado}]},
+                            {"total": 1, "results": [{"state": estado}]}, {"total": 0, "results": []}, None])
+    lector = barrido.construir_lector_calendario(api, "main")
+    with pytest.raises(ValueError, match="incompleto"):
+        lector(f, t, AHORA)
+    assert "huérfano" not in lector(f, t, AHORA)
+
+def test_evaluacion_fresca_con_ejecuciones_manuales_o_en_cola_no_es_recuperacion():
+    from unittest.mock import Mock
+    flow = "bitrix24_lead_prefill"
+    estado = {"namespace": barrido.CRM, "flowId": flow, "triggerId": "cada_minuto", "evaluatedAt": AHORA.isoformat()}
+    fila = {"namespace": barrido.CRM, "flowId": flow,
+            "state": {"current": "SUCCESS", "startDate": AHORA.isoformat()}}
+    filas = [fila, dict(fila, trigger={"id": "cada_minuto", "type": "manual"}),
+             dict(fila, trigger={"id": "cada_minuto", "type": "io.kestra.plugin.core.trigger.Schedule"},
+                  state={"current": "QUEUED", "startDate": AHORA.isoformat()})]
+    api = Mock(side_effect=[{"total": 1, "results": [{"state": estado}]}, {"total": len(filas), "results": filas}])
+    lector = barrido.construir_lector_calendario(api, "main")
+    assert "sin ejecución programada iniciada" in lector(flow, "cada_minuto", AHORA)
+
+
+def test_fallo_de_permiso_avisa_una_vez_y_conserva_el_incidente_hasta_lectura_verificable():
+    espia = Espia()
+    def denegado(*args):
+        raise PermissionError()
+    _, salida = correr(espia, leer_calendario=denegado)
+    _, salida = correr(espia, salida["estado"], leer_calendario=denegado)
+    assert [aviso[0] for aviso in espia.avisos] == ["Lectura de calendarios CRM incompleta"]
+    _, salida = correr(espia, salida["estado"], leer_calendario=lambda *args: None)
+    assert espia.avisos[-1][0] == "Lectura de calendarios CRM restablecida"
+    assert salida["incidentes_abiertos"] == 0

@@ -181,9 +181,18 @@ jobs:
 
           cd "$target_dir"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker edna-inbox-worker edna-web-worker scheduler web
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker edna-inbox-worker edna-web-worker web-form-worker web-form-reconcile-worker scheduler web
           # Additive migrations must finish before any new worker can consume a job.
           # Workers override the PHP entrypoint and otherwise race php-fpm startup.
+          # Start an existing or first-install database without recreating it during preflight.
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --no-recreate postgres
+          for attempt in $(seq 1 15); do
+            if docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T postgres sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 15 ]; then echo "PostgreSQL unavailable for migrations" >&2; exit 1; fi
+            sleep 3
+          done
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" run --rm --no-deps --interactive=false --entrypoint php php-fpm artisan migrate --force < /dev/null
           if [ "${JOURNEY_ENABLED:-false}" = "true" ]; then
             mountpoint -q /srv/redunisol-tracking
@@ -196,7 +205,7 @@ jobs:
 
           echo "Waiting for built assets and HTTP 200 from $app_host"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json < /dev/null
-          worker_services=(queue-worker edna-worker edna-inbox-worker edna-web-worker scheduler)
+          worker_services=(queue-worker edna-worker edna-inbox-worker edna-web-worker web-form-worker web-form-reconcile-worker scheduler)
           if [[ ",${COMPOSE_PROFILES:-}," == *",whatsapp-assistance,"* ]]; then
             worker_services+=(edna-assistance-worker)
           fi

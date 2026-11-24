@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -150,6 +151,21 @@ class JourneyLedger
     }
 
     /** Business operations fail open; the public batch endpoint returns 503 for retry. */
+    public function recordFormReceived(array $input): void
+    {
+        if (! config('journey.enabled')) {
+            return;
+        }
+        $links = $input['_journey_links'];
+        $answers = array_diff_key($input, array_flip(['_journey_links', 'recibo_url']));
+        if (isset($answers['landing_url'])) {
+            $answers['landing_url'] = self::url($answers['landing_url']);
+        }
+        $protected = Crypt::encryptString(json_encode(['submission_id' => $links['submission_id'], 'input' => $answers], JSON_THROW_ON_ERROR));
+        $this->record('form.received', ['input_encoding' => 'laravel-crypt-json-v1', 'input_encrypted' => $protected,
+            'receipt_present' => ! empty($input['recibo_url'])], $links);
+    }
+
     public function record(string $type, array $data = [], array $links = [], string $source = 'web.server', ?string $id = null): void
     {
         if (! config('journey.enabled')) {

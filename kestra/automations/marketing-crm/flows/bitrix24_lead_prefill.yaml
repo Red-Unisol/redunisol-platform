@@ -3,7 +3,7 @@ namespace: redunisol
 description: Selecciona hasta dos leads INGRESO con identidades/contactos distintos y espera su enriquecimiento en paralelo antes del siguiente lote.
 concurrency:
   limit: 1
-  behavior: QUEUE
+  behavior: CANCEL
 labels:
   env: prod
   team: redunisol
@@ -120,3 +120,4 @@ triggers:
 - id: cada_minuto
   type: io.kestra.plugin.core.trigger.Schedule
   cron: '* * * * *'
+  recoverMissedSchedules: NONE

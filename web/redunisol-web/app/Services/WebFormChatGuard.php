@@ -28,6 +28,26 @@ class WebFormChatGuard
      */
     public function inspect(array $proof, string $sellerId): array
     {
+        if (($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
+            || ($proof['evidence'] ?? '') !== 'external_message_id') {
+            return $this->result('waiting', 'invalid_native_proof', 0, 0, null);
+        }
+
+        return $this->inspectSession($proof, $sellerId, 'whatsappbyedna');
+    }
+
+    /** Server-discovered sessions use their native connector instead of an Edna message proof. */
+    public function inspectListed(int $chatId, int $sessionId, string $source, int $sellerId, ?\Closure $sameInbound = null): array
+    {
+        if (! in_array($source, SalesInboxPolicy::CHANNELS, true)) {
+            return $this->result('waiting', 'invalid_native_channel', 0, 0, null);
+        }
+
+        return $this->inspectSession(['chat_id' => $chatId, 'session_id' => $sessionId], (string) $sellerId, $source, $sameInbound);
+    }
+
+    private function inspectSession(array $proof, string $sellerId, string $source, ?\Closure $sameInbound = null): array
+    {
         $this->calls = 0;
         $this->deadline = microtime(true) + 30;
         $dialog = null;
@@ -38,15 +58,12 @@ class WebFormChatGuard
             $chatId = $this->id($proof['chat_id'] ?? null);
             $expectedSession = $this->id($proof['session_id'] ?? null);
             $seller = $this->id($sellerId);
-            if (! $chatId || ! $expectedSession || ! $seller
-                || ($proof['verified'] ?? null) !== true
-                || ($proof['source'] ?? '') !== 'bitrix_openline_session'
-                || ($proof['evidence'] ?? '') !== 'external_message_id') {
+            if (! $chatId || ! $expectedSession || ! $seller) {
                 return $this->result('waiting', 'invalid_native_proof', $owner, $sessionId, $dialog);
             }
 
             $dialog = $this->call('imopenlines.dialog.get', ['CHAT_ID' => $chatId]);
-            [$owner, $sessionId, $epoch, $enabled] = $this->dialog($dialog, $chatId);
+            [$owner, $sessionId, $epoch, $enabled] = $this->dialog($dialog, $chatId, $source);
             if (! $enabled || $sessionId === 0) {
                 return $this->result('closed', 'session_closed', $owner, $sessionId, $dialog);
             }
@@ -98,6 +115,9 @@ class WebFormChatGuard
                 return $this->result('preserved', $reason, $owner, $sessionId, $dialog);
             }
 
+            if ($sameInbound && ! $sameInbound()) {
+                return $this->result('waiting', 'native_message_changed', $owner, $sessionId, $dialog);
+            }
             // Accepting a chat or transferring it to the same queue operator does
             // not necessarily change dialog.owner. Recheck these records too.
             $session = $this->session($chatId, $sessionId, $epoch);
@@ -108,7 +128,7 @@ class WebFormChatGuard
                 return $this->result('preserved', $reason, $owner, $sessionId, $dialog);
             }
             $lastDialog = $this->call('imopenlines.dialog.get', ['CHAT_ID' => $chatId]);
-            [$lastOwner, $lastSession, , $lastEnabled] = $this->dialog($lastDialog, $chatId);
+            [$lastOwner, $lastSession, , $lastEnabled] = $this->dialog($lastDialog, $chatId, $source);
             if (! $lastEnabled || $lastSession === 0) {
                 return $this->result('closed', 'session_closed_during_inspection', $lastOwner, $lastSession, $lastDialog);
             }
@@ -126,7 +146,7 @@ class WebFormChatGuard
         }
     }
 
-    private function dialog(mixed $dialog, int $chatId): array
+    private function dialog(mixed $dialog, int $chatId, string $source): array
     {
         if (! is_array($dialog) || $this->id($dialog['id'] ?? null) !== $chatId
             || ($dialog['entity_type'] ?? '') !== 'LINES') {
@@ -134,7 +154,7 @@ class WebFormChatGuard
         }
         $identity = explode('|', (string) ($dialog['entity_id'] ?? ''));
         $parts = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
-        if (count($identity) < 4 || $identity[0] !== 'whatsappbyedna' || $identity[1] !== '1'
+        if (count($identity) < 4 || $identity[0] !== $source || $identity[1] !== '1'
             || count($parts) < 7 || ! array_key_exists('text_field_enabled', $dialog)) {
             throw new RuntimeException('Sales dialog identity is unavailable.');
         }

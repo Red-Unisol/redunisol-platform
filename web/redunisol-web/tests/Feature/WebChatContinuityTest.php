@@ -432,3 +432,47 @@ test('a web ACK after waiting continuations exist promotes and schedules both an
     expect(DB::table('web_form_continuations')->where('context_id', $id)->pluck('state')->all())
         ->toBe(['ready', 'ready']);
 });
+
+test('a newer explicitly referenced receipt releases only an untouched older request for the same person and session', function (string $scenario) {
+    $continuity = new WebChatContinuity;
+    [$oldId, $anchor, , $old] = continuityContext();
+    $identity = str_repeat('a', 64);
+    DB::table('web_form_receipts')->where('id', $old->id)->update(['identity_hash' => $identity]);
+    $oldProof = continuityProof($anchor);
+    $continuity->bind($anchor->id, $oldProof);
+    if ($scenario === 'human') {
+        DB::table('web_chat_contexts')->where('id', $oldId)->update(['state' => 'preserved', 'reason' => 'manual_transfer_preserved']);
+    }
+    $this->travel(1)->minutes();
+    $receipt = continuityReceipt(str_repeat('b', 32));
+    DB::table('web_form_receipts')->where('id', $receipt->id)->update([
+        'identity_hash' => $scenario === 'other_person' ? str_repeat('b', 64) : $identity, 'lead_id' => '428619',
+    ]);
+    [$second, $payload] = continuityEvent('(solicitud: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)');
+    $newId = $continuity->captureReference($second, $receipt);
+    $candidate = DB::table('web_form_continuations')->where('entry_event_id', $second->id)->first();
+    if (in_array($scenario, ['human', 'other_person'], true)) {
+        expect($candidate->state)->toBe('review')
+            ->and(DB::table('web_chat_contexts')->find($oldId)->state)->toBe($scenario === 'human' ? 'preserved' : 'review');
+
+        return;
+    }
+    expect($candidate->reason)->toBe('explicit_replacement_pending')
+        ->and(DB::table('web_chat_contexts')->find($oldId)->state)->toBe('bound');
+    $proof = continuityProof($second, $scenario === 'different_session' ? '318131' : '318129');
+    $proof['message_id'] = $scenario === 'older_message' ? '7084956' : '7084959';
+    $result = $continuity->bind($second->id, $proof);
+    if ($scenario !== 'latest') {
+        expect($result['status'])->toBe('review')->and(DB::table('web_chat_contexts')->find($oldId)->state)->toBe('review');
+
+        return;
+    }
+    expect($result['status'])->toBe('bound')
+        ->and(DB::table('web_chat_contexts')->find($oldId))->toMatchObject([
+            'state' => 'released', 'reason' => 'newer_explicit_reference_same_session'])
+        ->and(DB::table('web_chat_contexts')->find($newId)->submission_id)->toBe($receipt->id)
+        ->and($continuity->bind($anchor->id, $oldProof)['status'])->toBe('released');
+    [$again] = continuityEvent('(solicitud: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)');
+    expect($continuity->captureReference($again, $old))->toBe($oldId)
+        ->and(DB::table('web_form_continuations')->where('entry_event_id', $again->id)->value('reason'))->toBe('web_reference_superseded');
+})->with(['latest', 'different_session', 'older_message', 'other_person', 'human']);

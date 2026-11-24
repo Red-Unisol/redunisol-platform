@@ -111,3 +111,11 @@ que la carga de ejecuciones sobre Postgres se duplica.
 Si en algun momento se quiere alertar sobre flows de dev, el camino no es
 desplegar esta misma copia a dev, sino darle al flow filtros propios por
 ambiente.
+
+### Calendarios que pueden detenerse sin producir fallas
+
+Cada ocho minutos el barrido contrasta el estado de los disparadores de enriquecimiento, calificación de negociaciones y avance de chats con la ejecución programada que realmente empezó para cada uno. Valida el namespace, flow, identificador del calendario y hora de inicio. Si pasan veinte minutos sin comienzo verificable, distingue evaluaciones recientes, ejecuciones anteriores todavía en curso y bloqueos con referencia a una ejecución inexistente (HTTP 404). Una ejecución manual, cancelada o que sólo esté en cola deja pendiente la comprobación. Una pausa explícita mantiene el incidente anterior. Las consultas incompletas o sin permiso abren un aviso de cobertura independiente. El chat recibe la recuperación de un calendario cuando vuelve a aparecer un comienzo programado.
+
+El barrido usa las credenciales de reports con lectura sobre `triggers/search`, `executions/search` y el detalle de ejecuciones de producción. El permiso de escritura KV se utiliza únicamente para deduplicar avisos. La API de desbloqueo no condiciona el cambio al ID de la ejecución observada. Ante un bloqueo huérfano corresponde el [procedimiento de recuperación](../../../../docs/kestra-scheduler-recovery-20261103.md).
+
+Si el scheduler entero deja de disparar tareas, este observador tampoco puede ejecutarse. Al reanudarse avisa del intervalo que quedó sin cobertura. La alarma durante una caída total requeriría un observador fuera de Kestra. Un calendario con ejecuciones iniciadas puede seguir procesando lentamente. La antigüedad de los expedientes y el resultado de los trabajos miden esa situación por separado.

@@ -64,15 +64,33 @@ class BitrixChatResponseQueue
             if ($state->lease && CarbonImmutable::parse($state->lease_until)->isFuture()) {
                 return ['mode' => 'busy'];
             }
-            $job = DB::table('bitrix_chat_response_queue')->whereColumn('version', '>', 'processed_version')
-                ->where('available_at', '<=', now())->orderBy('available_at')->orderBy('key')->lockForUpdate()->first();
-            if (! $job && $state->next_fallback_at && CarbonImmutable::parse($state->next_fallback_at)->isFuture()) {
-                return ['mode' => 'idle'];
+            $now = now();
+            $period = config('chat_response.fallback_seconds');
+            $nextSweep = $state->next_fallback_at
+                ? CarbonImmutable::parse($state->next_fallback_at)
+                : CarbonImmutable::parse($state->created_at)->addSeconds($period);
+            $job = null;
+            $recent = false;
+            if ($nextSweep->isFuture()) {
+                $ready = DB::table('bitrix_chat_response_queue')->whereColumn('version', '>', 'processed_version')
+                    ->where('available_at', '<=', $now)->orderBy('available_at')->orderBy('key')->lockForUpdate();
+                if ($state->prefer_recent) {
+                    // updated_at also reflects a new generation on an old phone/deal key.
+                    $job = (clone $ready)->where('attempts', 0)->where('updated_at', '>=', $now->copy()->subHour())->first();
+                    $recent = $job !== null;
+                }
+                $job ??= $ready->first();
+                if (! $job && $state->next_fallback_at) {
+                    return ['mode' => 'idle'];
+                }
             }
             $lease = (string) Str::uuid();
             DB::table('bitrix_chat_response_state')->where('id', 1)->update([
                 'lease' => $lease, 'lease_until' => now()->addSeconds(config('chat_response.lease_seconds')),
-                'job_key' => $job?->key, 'job_version' => $job?->version, 'updated_at' => now(),
+                'job_key' => $job?->key, 'job_version' => $job?->version, 'updated_at' => $now,
+                'prefer_recent' => $job ? ! $recent : $state->prefer_recent,
+                // An abandoned sweep must also yield to waiting events after its lease expires.
+                'next_fallback_at' => $job ? $state->next_fallback_at : $now->copy()->addSeconds($period),
             ]);
             if ($job) {
                 DB::table('bitrix_chat_response_queue')->where('key', $job->key)->increment('attempts');

@@ -206,6 +206,32 @@ test('a callback before outgoing history confirmation is saved and schedules loa
     expect($h['service']->process($menu->id)['state'])->toBe('not_claimed');
 })->with(['LIST_PICKER', 'BUTTON']);
 
+test('the native session flow prevents a second welcome and an explicit contact inquiry has its own loan intent', function (bool $existing) {
+    config(['edna.sales_inbox_enabled' => true]);
+    $h = organicMenuHarness();
+    $entry = organicMenuEvent(['messageContent' => ['text' => 'Quiero solicitar un préstamo']]);
+    $menu = organicMenuCapture($h['service'], $entry);
+    $flow = Mockery::mock(\App\Services\SalesSessionFlow::class);
+    $flow->shouldReceive('find')->andReturn($existing ? (object)['id' => 88] : null);
+    $flow->shouldReceive('hasRecentActive')->andReturnFalse();
+    app()->instance(\App\Services\SalesSessionFlow::class, $flow);
+    $campaign = Mockery::mock(\App\Services\SalesCampaignReply::class);
+    $existing ? $campaign->shouldNotReceive('reserve') : $campaign->shouldReceive('reserve')->once()->andReturn(['loan_contact' => '800']);
+    app()->instance(\App\Services\SalesCampaignReply::class, $campaign);
+    $h['transport']->shouldNotReceive('schedule');
+    $h['service']->process($menu->id);
+    $h['service']->process($menu->id);
+    $row = DB::table('edna_organic_menus')->find($menu->id);
+    expect($row->state)->toBe($existing ? 'preserved' : 'loan_pending')->and($row->outgoing_message_id)->toBeNull();
+    if ($existing) {
+        expect($row->reason)->toBe('same_session_v3_preserved')->and($row->choice_event_id)->toBeNull();
+        Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
+    } else {
+        expect($row->send_state)->toBe('not_needed')->and(\App\Services\SalesLoanIntent::verified($row))->toBeTrue();
+        Queue::assertPushed(PrepareEdnaOrganicLoan::class, 1);
+    }
+})->with([[true], [false]]);
+
 test('duplicate and contrary callbacks cannot change the first choice or schedule another case', function () {
     $h = organicMenuHarness();
     $menu = organicMenuConfirmed($h);
@@ -446,6 +472,75 @@ test('the organic status command is read only', function () {
     expect((array) DB::table('edna_organic_menus')->find($menu->id))->toBe($before);
     Queue::assertPushed(ProcessEdnaOrganicMenu::class, 1);
     Http::assertNothingSent();
+});
+
+test('a provisional seller watch reads the exact deal without a second intake and preserves later attention', function (string $scenario) {
+    if ($scenario === 'weekend') {
+        $this->travelTo(now()->setDate(2026, 11, 20)->setTime(20, 0));
+    }
+    $h = organicMenuHarness();
+    $menu = organicMenuAssignedCase($h, '');
+    $evidence = json_decode($menu->profile_evidence, true);
+    $waiting = $evidence['assigned_case'];
+    unset($waiting['seller_id']);
+    $waiting['contact_deal_activity'] = false;
+    organicMenuDue($menu->id, ['state' => 'seller_wait', 'attempts' => 13, 'seller_id' => null,
+        'profile_evidence' => json_encode(['waiting_case' => $waiting])]);
+    $deal = organicMenuAssignedDeal('');
+    $queued = array_replace($deal, ['STAGE_ID' => 'C1:KESTRA_QUEUE', 'ASSIGNED_BY_ID' => '74827']);
+    if ($scenario === 'weekend') {
+        $queued['ASSIGNED_BY_ID'] = '57';
+        $queued['DATE_CREATE'] = now()->toIso8601String();
+        $queued['UF_CRM_KQ_REASON'] = 'waiting_for_sales_opening|2026-11-20T20:00:00Z|2026-11-24T12:00:00Z|anses_approved';
+    }
+    $deals = [$queued, $deal];
+    if ($scenario === 'changed-contact') {
+        $deals[1]['CONTACT_ID'] = '211';
+    } elseif ($scenario === 'response') {
+        $deals[1]['STAGE_ID'] = 'C1:UC_ZH5DGU';
+    } elseif ($scenario === 'response-before-post') {
+        $deals = [$queued, $deal, $deal, array_replace($deal, ['STAGE_ID' => 'C1:UC_ZH5DGU'])];
+    }
+    $h['crm']->shouldReceive('call')->with('crm.deal.get', ['id' => '110'])->andReturn(...$deals);
+    $h['crm']->shouldReceive('call')->with('crm.contact.get', ['id' => '210'])
+        ->andReturn(['ID' => '210', 'UF_CRM_65B7E48033FCD' => '20301234563']);
+    if ($scenario === 'taken' || $scenario === 'session') {
+        $h['attention']->shouldReceive('inspect')->andReturn(['status' => 'preserved',
+            'reason' => $scenario === 'taken' ? 'human_chat_owner' : 'session_changed']);
+    }
+    if (in_array($scenario, ['available', 'weekend'], true)) {
+        $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 29])->andReturnTrue();
+        $h['crm']->shouldReceive('call')->once()->with('imopenlines.dialog.get', ['CHAT_ID' => 601])
+            ->andReturn(['id' => 601, 'owner' => 29, 'entity_data_1' => 'Y|LEAD|101|N|N|501|1794400000', 'text_field_enabled' => true]);
+    }
+    expect($h['service']->process($menu->id)['state'])->toBe('seller_wait');
+    if ($scenario === 'weekend') {
+        $open = now()->setDate(2026, 11, 24)->setTime(12, 0);
+        $paused = DB::table('edna_organic_menus')->find($menu->id);
+        expect($paused->available_at)->toBe($open->toDateTimeString())
+            ->and($paused->expires_at)->toBe($open->copy()->addHours(8)->toDateTimeString());
+        $this->travelTo($open);
+    }
+    organicMenuDue($menu->id);
+    expect($h['service']->process($menu->id)['state'])->toBe(in_array($scenario, ['available', 'weekend'], true) ? 'unknown' : 'preserved');
+    if (in_array($scenario, ['available', 'weekend'], true)) {
+        organicMenuDue($menu->id);
+        expect($h['service']->process($menu->id)['state'])->toBe('routed')
+            ->and(DB::table('edna_organic_menus')->find($menu->id)->transfer_state)->toBe('confirmed');
+    } else {
+        $h['crm']->shouldNotHaveReceived('call', ['imopenlines.operator.transfer', Mockery::any()]);
+    }
+    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+    Http::assertNothingSent();
+})->with(['available', 'weekend', 'taken', 'session', 'changed-contact', 'response', 'response-before-post']);
+
+test('a deal returned to routing review after the seller acknowledgement is preserved before transfer', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuAssignedCase($h);
+    $deal = organicMenuAssignedDeal('310');
+    $deal['STAGE_ID'] = 'C1:KESTRA_ROUTE_REVIEW';
+    $h['crm']->shouldReceive('call')->once()->with('crm.deal.get', ['id' => '110'])->andReturn($deal);
+    expect($h['service']->process($menu->id)['reason'])->toBe('commercial_assignment_changed');
 });
 
 test('an assigned case contact changed before the first CRM read is preserved against the backend acknowledgement', function () {
@@ -706,4 +801,40 @@ test('human acceptance during the final benefits reads is checked before sending
 
     expect($h['service']->process($menu->id))->toMatchArray(['state' => 'preserved', 'reason' => 'operator_attention_preserved']);
     Http::assertNothingSent();
+});
+
+test('a label-only button can elect precisely its confirmed menu and routes the same native session', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuConfirmed($h);
+    $reply = organicMenuChoice($menu, 'other', ['messageContent' => ['type' => 'BUTTON', 'text' => 'Otra consulta', 'payload' => null]]);
+    expect($h['service']->receiveChoice($reply, organicMenuPayload($reply)))->toBeTrue();
+    expect(DB::table('edna_organic_menus')->find($menu->id)->choice)->toBe('other');
+    $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 5737])->andReturnTrue();
+    expect($h['service']->process($menu->id)['reason'])->toBe('transfer_confirmation_pending');
+});
+
+test('text or a malformed token cannot impersonate a choice with its label', function (string $type, ?string $token) {
+    $h = organicMenuHarness();
+    $menu = organicMenuConfirmed($h);
+    $reply = organicMenuChoice($menu, 'other', ['messageContent' => ['type' => $type, 'text' => 'Otra consulta', 'payload' => $token]]);
+    expect($h['service']->receiveChoice($reply, organicMenuPayload($reply)))->toBeTrue()
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->choice_event_id)->toBeNull();
+})->with([['TEXT', null], ['BUTTON', 'broken-token']]);
+
+test('a temporary chat lock preserves the acknowledged commercial route for a recurrent borrower', function () {
+    $h = organicMenuHarness();
+    $menu = organicMenuAssignedCase($h);
+    $lock = Cache::lock('web-form-chat:601', 120, 'agent');
+    expect($lock->get())->toBeTrue();
+    try {
+        expect($h['service']->process($menu->id))->toMatchArray(['state' => 'route_pending', 'reason' => 'chat_routing_in_progress']);
+        expect(DB::table('edna_flow_sends')->count())->toBe(0);
+    } finally {
+        $lock->release();
+    }
+    organicMenuDue($menu->id);
+    $deal = organicMenuAssignedDeal();
+    $deal['CONTACT_ID'] = '211';
+    $h['crm']->shouldReceive('call')->once()->with('crm.deal.get', ['id' => '110'])->andReturn($deal);
+    expect($h['service']->process($menu->id)['reason'])->toBe('commercial_assignment_changed');
 });

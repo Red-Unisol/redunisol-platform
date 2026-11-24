@@ -47,6 +47,11 @@ def _process_payload(payload: Any) -> dict[str, object]:
     content_type = os.environ.get("TRIGGER_CONTENT_TYPE")
 
     if isinstance(payload, dict):
+        if "web_crm_delivery_v1" in payload:
+            from .form_processor.web_crm_delivery import ingest_guarded
+            if set(payload) != {"web_crm_delivery_v1"}:
+                raise ValueError("Ambiguous web CRM envelope.")
+            return ingest_guarded(payload["web_crm_delivery_v1"], ingest_submission)
         return ingest_submission(_apply_full_name_override(payload))
 
     if payload is None:

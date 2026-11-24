@@ -18,6 +18,14 @@ Cada registro tiene `schema_version`, `event_id`, `type`, `source`, `environment
 `occurred_at`, `received_at`, `links` y `data`. Los timestamps del envelope se normalizan a UTC conservando fracciones de segundo; el valor fuente permanece en el registro crudo. No se debe ordenar por nombre de archivo
 para inferir el momento del evento: un reintento o una extracción histórica llega después.
 
+## Custodia y lectura del formulario web
+
+Cuando la página acepta un envío, una transacción guarda las respuestas y el contexto original cifrados en `web_form_http_attempts.snapshot`, registra su referencia y encola un recuperador. La repetición HTTP y ese recuperador comparten la evaluación. La foto sale de esa tabla cuando la misma transacción deja el envío a CRM en la cola cifrada. La clave de repetición pública vence a las 24 horas. Un envío pendiente conserva su foto hasta que la cola toma custodia, aun si el navegador desaparece.
+
+El evento `form.received` conserva el conjunto de campos capturados por el journal y excluye la URL firmada del recibo. En las particiones nuevas, `data.input_encoding = laravel-crypt-json-v1` indica que `data.input_encrypted` contiene el objeto JSON cifrado y autenticado con Laravel Crypt. Dentro están `submission_id` e `input`. El lector comprueba que el identificador coincide con `links.submission_id`. Las particiones históricas mantienen `data.input` en su formato original.
+
+El export entrega la representación almacenada en cada evento. Los lectores externos que dependan de `data.input` deben distinguir las dos variantes. El comando interno `edna:web-forms import` acepta ambas y valida el teléfono contra el HMAC registrado. La rotación de `APP_KEY` requiere conservar las claves anteriores en `APP_PREVIOUS_KEYS` para el período de archivo que se necesite descifrar o importar. El recuperador de formularios usa ese mismo anillo para los trabajos y fotos todavía pendientes. Los consumidores externos del export necesitan un entorno autorizado de descifrado aparte del token de lectura.
+
 ## Eventos y alcance
 
 | Evento | Evidencia |

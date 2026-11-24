@@ -18,7 +18,8 @@ def main() -> int:
               "lead_ids": [lead["lead_id"] for lead in leads]}
     Kestra.outputs(result)
     # Selection logs need IDs, not identity documents.
-    print(json.dumps({"action": "batch_selected", "lead_ids": result["lead_ids"]}))
+    print(json.dumps({"action": "batch_selected", "lead_ids": result["lead_ids"],
+                      "queue_lanes": [lead["queue_lane"] for lead in leads]}))
     return 0
 
 

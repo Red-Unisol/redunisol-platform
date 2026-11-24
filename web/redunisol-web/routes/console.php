@@ -8,6 +8,13 @@ use Illuminate\Support\Facades\Schedule;
 // The command locks a file on the volume; no SQL cache locks or per-event jobs.
 Schedule::command('journey:crm')->everyFiveMinutes()
     ->when(fn () => config('journey.enabled') && config('journey.crm_enabled'));
+Schedule::call(fn () => DB::table('web_form_http_attempts')->where('expires_at', '<', now())
+    ->whereNotNull('response')->whereNotNull('continuation')->update(['continuation' => null, 'response' => null]))
+    ->name('web-form-expire-replay')->dailyAt('04:05')->withoutOverlapping();
+
+Schedule::call(fn () => DB::table('edna_customer_delivery_observations')->where('first_observed_at', '<', now()->subDays(30))->delete())
+    ->name('edna-prune-customer-delivery-observations')->dailyAt('04:10')->withoutOverlapping();
+
 Schedule::command('attribution:prune --apply')->dailyAt('04:15')
     ->when(fn () => config('attribution.connection') === 'journey');
 
@@ -18,6 +25,9 @@ if (config('edna.assistance_test_mode')) {
 } else {
     $assistancePoll->everyMinute();
 }
+
+Schedule::command('sales:inbox poll')->everyMinute()->withoutOverlapping(8)->runInBackground()
+    ->when(fn () => config('edna.sales_inbox_enabled') && config('edna.intake_crm_enabled'));
 
 Schedule::command('edna:out-of-hours recover --apply')->everyFiveMinutes()->withoutOverlapping(5);
 Schedule::command('edna:out-of-hours prune --apply')->dailyAt('04:25')->withoutOverlapping();

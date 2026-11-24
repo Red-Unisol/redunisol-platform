@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 /** Immutable deployment boundary: old inbox entries and late old callbacks stay on their original path. */
 class EdnaFreshIntake
 {
+    public const ORGANIC_SELLER_WAIT = 'organic-seller-wait-v1';
+
     public const CONTACT_DEAL = 'contact-deal-activity-v1';
 
     public function applies(object $send): bool

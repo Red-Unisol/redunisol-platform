@@ -157,6 +157,12 @@ test('a fresh client message after the notice is preserved by timestamp or nativ
     expect(inspectRejectedChat($fake))->toMatchArray(['status' => 'preserved', 'reason' => 'client_reply_after_notice_preserved']);
 })->with([['2026-11-10T18:02:00Z', 702], ['2026-11-10T18:01:00Z', 702], ['2026-11-10T18:02:00Z', 699]]);
 
+test('an exact courtesy after the proved rejection can close but a follow-up or media preserves attention', function (string $text, array $params, string $status) {
+    $fake = new RejectedChatReadFake;
+    $fake->history['message'][] = ['id' => 702, 'chatid' => 601, 'senderid' => 999, 'date' => '2026-11-10T18:02:00Z', 'text' => $text, 'params' => $params];
+    expect((new EdnaRejectedChatGuard($fake))->inspect(rejectedChatProof() + ['allow_terminal_replies' => true], rejectedChatNotice())['status'])->toBe($status);
+})->with([['Gracias', [], 'ready'], ['Gracias, ¿hay otra alternativa?', [], 'preserved'], ['Gracias', ['fileId' => [123]], 'preserved']]);
+
 test('any other operator message is preserved even before the notice with lagging statistics', function (string $at) {
     $fake = new RejectedChatReadFake;
     $fake->stats['messagesOperatorCount'] = 0;

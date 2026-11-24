@@ -40,6 +40,33 @@ class EdnaRejectedChatClosure
         }
         // Discovery is local and bounded. Never enumerate or rewrite the CRM backlog.
         $candidates = app(EdnaRejectedChatCandidates::class)->discover(500);
+        // A lead may finish qualification after the one-day discovery window,
+        // particularly after a weekend backlog. Retain exact evidence for new monitored sessions only.
+        $watches = [];
+        if (config('edna.sales_inbox_enabled')) {
+            $sessionIds = array_map(fn ($c) => (int) $c['proof']['session_id'], $candidates);
+            $active = DB::table('sales_inbox_sessions')->whereIn('session_id', array_unique($sessionIds))
+                ->where('channel', 'whatsappbyedna')->pluck('chat_id', 'session_id');
+            $inserts = [];
+            foreach ($candidates as $c) {
+                $sid = (int) $c['proof']['session_id'];
+                if ((string) $active->get($sid) === (string) $c['proof']['chat_id']) {
+                    $c['proof'] = array_intersect_key($c['proof'], array_flip(['version', 'verified', 'source', 'evidence', 'chat_id',
+                        'session_id', 'activity_id', 'entry_event_id', 'entry_message_id', 'message_id', 'native_lead_id', 'lead_id']));
+                    $inserts[] = ['session_id' => $sid, 'lead_id' => $c['lead_id'], 'candidate' => json_encode($c, JSON_THROW_ON_ERROR),
+                        'next_check_at' => now()->addMinutes(15), 'expires_at' => CarbonImmutable::parse($c['source_created_at'])->addWeek()];
+                }
+            }
+            if ($inserts) {
+                DB::table('sales_rejection_watches')->insertOrIgnore($inserts);
+            }
+            DB::table('sales_rejection_watches')->where('expires_at', '<=', now())->delete();
+            $watches = DB::table('sales_rejection_watches')->where('next_check_at', '<=', now())
+                ->orderBy('next_check_at')->orderBy('session_id')->limit(50)->get()->all();
+            foreach ($watches as $watch) {
+                $candidates[] = json_decode($watch->candidate, true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
         $ids = array_values(array_unique(array_column($candidates, 'lead_id')));
         $rejected = [];
         foreach (array_chunk($ids, 50) as $chunk) {
@@ -73,6 +100,15 @@ class EdnaRejectedChatClosure
                 'proof' => json_encode($proof, JSON_THROW_ON_ERROR), 'state' => 'pending',
                 'available_at' => now(), 'expires_at' => now()->addHours(8), 'created_at' => now(), 'updated_at' => now(),
             ]);
+        }
+
+        foreach ($watches as $watch) {
+            $query = DB::table('sales_rejection_watches')->where('session_id', $watch->session_id)->where('lead_id', $watch->lead_id);
+            if (isset($rejected[(string) $watch->lead_id])) {
+                $query->delete();
+            } else {
+                $query->update(['next_check_at' => now()->addMinutes(15)]);
+            }
         }
 
         return DB::transaction(function () use ($limit): int {
@@ -140,6 +176,8 @@ class EdnaRejectedChatClosure
                 $this->decide('review', 'closure_receipt_incomplete');
             }
             $proof = json_decode($this->row->proof, true, 32, JSON_THROW_ON_ERROR);
+            $proof['allow_terminal_replies'] = config('edna.sales_inbox_enabled') && DB::table('sales_inbox_sessions')
+                ->where('chat_id', $this->row->chat_id)->where('session_id', $this->row->session_id)->where('channel', 'whatsappbyedna')->exists();
             $lead = $this->rejection();
             $this->activity($proof, $lead);
             $notice = $this->notice($proof, $lead);

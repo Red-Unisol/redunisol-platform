@@ -156,6 +156,7 @@ class EdnaIntakeBinding
             }
             DB::table('edna_intake_bindings')->where('id', $row->id)->update([
                 'state' => 'verified', 'reason' => null, 'lead_id' => $proof['lead_id'],
+                'native_session_id' => $proof['session_id'],
                 'proof' => json_encode($proof, JSON_THROW_ON_ERROR), 'verified_at' => now(), 'updated_at' => now(),
             ]);
 
@@ -214,6 +215,7 @@ class EdnaIntakeBinding
         // proves its own session; the CRM consumer decides if existing management wins.
         DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)->where('state', 'pending')->update([
             'state' => 'verified', 'reason' => null, 'lead_id' => $original ? $lead : null,
+            'native_session_id' => $proof['session_id'],
             'proof' => json_encode($proof, JSON_THROW_ON_ERROR),
             'verified_at' => now(), 'updated_at' => now(),
         ]);

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\LinkWebFormChat;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,8 @@ use Throwable;
 
 class WebFormChatRouting
 {
+    public const COMMERCIAL_REVIEW_STAGES = ['C1:KESTRA_REVIEW', 'C1:KESTRA_ROUTE_REVIEW'];
+
     public function schedule(int $entryEventId, ?string $submissionId = null): bool
     {
         $event = DB::table('edna_incoming_events')->find($entryEventId);
@@ -27,10 +30,25 @@ class WebFormChatRouting
             return false;
         }
 
-        return DB::transaction(function () use ($entryEventId, $submissionId, $hash): bool {
+        // The commercial wait is opt-in at first capture only. A backfill, retry
+        // or duplicate callback must not extend a previous conversation.
+        $waitUntil = null;
+        $received = $payload['receivedAt'] ?? null;
+        if ($submissionId && is_string($received) && preg_match('/(?:Z|[+-]\d{2}:\d{2})$/D', $received)) {
+            try {
+                $at = CarbonImmutable::parse($received)->utc();
+                if ($at->lte(now()->addMinutes(5)) && $at->gt(now()->subHours(WebFormChatRetryPolicy::WINDOW_HOURS))) {
+                    $waitUntil = $at->addDay();
+                }
+            } catch (Throwable) {
+                // An invalid provider timestamp cannot earn additional routing time.
+            }
+        }
+
+        return DB::transaction(function () use ($entryEventId, $submissionId, $hash, $waitUntil): bool {
             $inserted = DB::table('web_form_chat_routes')->insertOrIgnore([
                 'entry_event_id' => $entryEventId, 'submission_id' => $submissionId, 'phone_hash' => $hash,
-                'state' => 'pending', 'link_state' => 'pending', 'transfer_state' => 'pending',
+                'state' => 'pending', 'link_state' => 'pending', 'transfer_state' => 'pending', 'commercial_wait_until' => $waitUntil,
                 'available_at' => now(), 'enqueued_at' => now(), 'created_at' => now(), 'updated_at' => now(),
             ]);
             if (! $inserted) {
@@ -95,6 +113,18 @@ class WebFormChatRouting
     public function poll(int $limit = 25): int
     {
         $this->expireDue();
+        // A reservation is a wake-up hint only. The worker re-reads the CRM
+        // owner and the native session before making any transfer.
+        DB::table('web_form_chat_routes')->where('state', 'waiting')->where('reason', 'commercial_seller_not_ready')
+            ->where('commercial_wait_until', '>', now())->where('transfer_state', 'pending')
+            ->where('available_at', '>', now())->whereNull('lease_token')
+            ->whereExists(function (Builder $q): void {
+                $q->selectRaw('1')->from('bitrix_routing_allocations as allocation')
+                    ->where('allocation.scope', 'redunisol.prod.marketing-crm')
+                    ->whereRaw('allocation.deal_id = CAST(web_form_chat_routes.deal_id AS BIGINT)')
+                    ->whereColumn('allocation.created_at', '>=', 'web_form_chat_routes.updated_at')
+                    ->where('allocation.created_at', '<=', now()->subSeconds(15));
+            })->update(['available_at' => now(), 'updated_at' => now()]);
 
         return DB::transaction(function () use ($limit): int {
             $queue = app(EdnaWorkQueue::class);

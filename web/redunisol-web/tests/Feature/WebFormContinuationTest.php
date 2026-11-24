@@ -3,6 +3,7 @@
 use App\Jobs\ReceiveEdnaInKestra;
 use App\Jobs\SendEdnaFlow;
 use App\Services\AttributionJourney;
+use App\Services\JourneyLedger;
 use App\Services\WebFormContinuation;
 use App\Services\WebFormReceipt;
 use Illuminate\Support\Facades\Crypt;
@@ -187,10 +188,12 @@ test('a prewrite review can acknowledge the existing contact without creating or
     Http::assertNothingSent();
 });
 
-test('journal import previews without writes and preserves the original server evidence on repeated apply', function (bool $conflict) {
+test('journal import previews without writes and preserves the original server evidence on repeated apply', function (bool $conflict, string $format) {
     $root = sys_get_temp_dir().'/web-form-import-'.Str::uuid();
     mkdir($root);
     mkdir($root.'/testing');
+    touch($root.'/.redunisol-tracking-volume');
+    config()->set('journey.min_free_bytes', 0);
     config()->set('journey.root', $root);
     config()->set('journey.environment', 'testing');
     $input = continuationForm();
@@ -206,6 +209,23 @@ test('journal import previews without writes and preserves the original server e
     if ($conflict) {
         $events[] = ['type' => 'form.persistence_result', 'occurred_at' => now()->addSecond()->toISOString(),
             'links' => $links + ['lead_id' => '701'], 'data' => ['result' => ['ok' => true, 'lead_id' => '701']]];
+    }
+    if ($format === 'encrypted') {
+        config()->set('journey.enabled', true);
+        $initialKey = (string) config('app.key');
+        app(JourneyLedger::class)->recordFormReceived(array_replace($input,
+            ['_journey_links' => $links, 'recibo_url' => 'https://example.test/private-receipt']));
+        app(JourneyLedger::class)->flush();
+        $journal = glob($root.'/testing/events-*.jsonl')[0];
+        $encoded = json_decode(trim(file_get_contents($journal)), true);
+        unlink($journal);
+        expect($encoded['data'])->not->toHaveKey('input')
+            ->and($encoded['data']['input_encoding'])->toBe('laravel-crypt-json-v1')->and($encoded['data']['receipt_present'])->toBeTrue()
+            ->and(json_encode($encoded['data']))->not->toContain($input['celular'], $input['cuil'], 'private-receipt');
+        $events[0]['data'] = $encoded['data'];
+        config(['app.previous_keys' => [$initialKey], 'app.key' => 'base64:'.base64_encode(str_repeat('z', 32))]);
+        app()->forgetInstance('encrypter');
+        Crypt::clearResolvedInstance('encrypter');
     }
     $file = $root.'/testing/events-2026-11-06.jsonl';
     file_put_contents($file, implode("\n", array_map(fn ($v) => json_encode($v), $events))."\n");
@@ -223,7 +243,8 @@ test('journal import previews without writes and preserves the original server e
         Http::assertNothingSent();
     } finally {
         unlink($file);
+        unlink($root.'/.redunisol-tracking-volume');
         rmdir($root.'/testing');
         rmdir($root);
     }
-})->with([false, true]);
+})->with([false, true])->with(['legacy', 'encrypted']);

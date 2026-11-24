@@ -419,6 +419,7 @@ class FakeBitrixClient:
             filters = payload.get("filter") or {}
             date_from = filters.get(">=DATE_CREATE")
             date_to = filters.get("<=DATE_CREATE")
+            after = filters.get(">DATE_CREATE")
             contact_id = filters.get("CONTACT_ID")
             status_id = filters.get("STATUS_ID")
             selected_fields = payload.get("select") or []
@@ -426,6 +427,8 @@ class FakeBitrixClient:
             for lead in self.leads.values():
                 date_create = str(lead.get("DATE_CREATE") or "")
                 if date_from and (not date_create or date_create < date_from):
+                    continue
+                if after and (not date_create or date_create <= after):
                     continue
                 if date_to and (not date_create or date_create > date_to):
                     continue
@@ -3002,6 +3005,19 @@ class BusinessLogicTests(unittest.TestCase):
                 added = next(body["fields"] for method, body in client.calls if method == "crm.lead.add")
                 self.assertEqual(added.get("ASSIGNED_BY_ID"), expected)
 
+    def test_web_form_writes_server_submission_reference_on_the_native_lead(self):
+        submission_id = "86eb3689-2a45-4ed5-a266-59774efb9aaf"
+        client = FakeBitrixClient()
+        result = ingest_submission({
+            "full_name": "Prueba Web", "email": "perfil@example.com", "whatsapp": "3511234567",
+            "cuil": "20-87654321-9", "province": "Cordoba", "employment_status": "Jubilado Provincial",
+            "payment_bank": "Banco Santander Rio S.A.", "lead_source": "Facebook",
+            "submission_channel": "redunisol-web", "web_submission_id": submission_id,
+        }, env=self.env, bitrix_client=client, logger=SilentLogger())
+        self.assertTrue(result["ok"])
+        fields = next(p["fields"] for method, p in client.calls if method == "crm.lead.add")
+        self.assertEqual((fields["ORIGINATOR_ID"], fields["ORIGIN_ID"]), ("redunisol-web", submission_id))
+
     def test_ingest_submission_reuses_master_contact_when_cuil_is_duplicated(self) -> None:
         client = FakeBitrixClient()
         client.contacts[101] = {
@@ -3790,7 +3806,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(
             client.calls[0][1]["order"],
-            {"UF_CRM_KSTRA_BF_ATTEMPTS": "ASC", "ID": "ASC"},
+            {"DATE_MODIFY": "ASC", "ID": "ASC"},
         )
 
     def test_prefill_batch_skips_same_identity_and_shared_contact(self) -> None:
@@ -3814,7 +3830,29 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual([lead["lead_id"] for lead in selected], ["801", "805"])
         # Selection never mutates a lead to claim it.
-        self.assertEqual([method for method, _ in client.calls], ["crm.lead.list"])
+        self.assertEqual([method for method, _ in client.calls], ["crm.lead.list"] * 2)
+
+    def test_prefill_reserves_fresh_and_old_slots_across_collisions_and_pages(self):
+        client = MagicMock()
+        now = datetime.fromisoformat("2026-11-24T11:10:00-03:00")
+        def crm(method, payload):
+            self.assertEqual(method, "crm.lead.list")
+            filters = payload["filter"]
+            self.assertEqual(filters[">=DATE_CREATE"], "2026-07-21")
+            if ">DATE_CREATE" in filters:
+                self.assertEqual(filters[">DATE_CREATE"], "2026-11-24T10:10:00-03:00")
+                return {"result": [{"ID": "300", "CONTACT_ID": "13"}]}
+            if payload["start"] == 0:
+                return {"result": [{"ID": "2", "CONTACT_ID": "13"},
+                                   {"ID": "3", "UF_CRM_WA_TEST": "SI"}], "next": 2}
+            self.assertEqual(payload["start"], 2)
+            return {"result": [{"ID": "4", "UF_CRM_KSTRA_BF_ATTEMPTS": 2}]}
+        client.call_full.side_effect = crm
+        chosen = select_new_leads_for_prefill(env=self.env, bitrix_client=client,
+                                               now=now, date_from="2026-07-21")
+        self.assertEqual([(x["lead_id"], x["queue_lane"]) for x in chosen],
+                         [("300", "recent"), ("4", "oldest_waiting")])
+        self.assertEqual(chosen[1]["attempts"], 2)
 
     def test_prefill_batch_empty_single_and_missing_identity(self) -> None:
         client = FakeBitrixClient()

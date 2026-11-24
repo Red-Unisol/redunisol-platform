@@ -11,6 +11,7 @@ use App\Services\EdnaIntake;
 use App\Services\EdnaMessageBinding;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicTransport;
+use App\Services\SalesLoanIntent;
 use App\Services\EdnaPaidFlowGuard;
 use App\Services\WebFormContinuation;
 use Carbon\CarbonImmutable;
@@ -309,9 +310,10 @@ class SendEdnaFlow implements ShouldQueue
             $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
             $choice = DB::table('edna_incoming_events')->find($menu->choice_event_id);
             $choicePayload = $choice ? json_decode(Crypt::decryptString($choice->payload ?? ''), true, 32, JSON_THROW_ON_ERROR) : null;
-            $token = is_array($choicePayload) ? EdnaOrganicTransport::parseChoice($choicePayload['messageContent']['payload'] ?? null) : null;
+            $token = is_array($choicePayload) ? EdnaOrganicTransport::choiceFromReply($choicePayload) : null;
+            $direct = is_array($choicePayload) && SalesLoanIntent::verified($menu, $choicePayload);
             if (! config('edna.organic_menu_enabled') || (int) $menu->flow_send_id !== (int) $send->id
-                || $menu->state !== 'flow_scheduled' || $menu->choice !== 'loan' || $menu->send_state !== 'confirmed'
+                || $menu->state !== 'flow_scheduled' || $menu->choice !== 'loan' || ($menu->send_state !== 'confirmed' && ! $direct)
                 || (int) $menu->entry_event_id !== (int) $send->entry_event_id
                 || $menu->subject_id !== $send->subject_id || ! Str::isUuid($menu->request_id)
                 || $send->scope !== hash_hmac('sha256', 'organic-menu:'.$menu->request_id, (string) config('app.key'))
@@ -323,7 +325,9 @@ class SendEdnaFlow implements ShouldQueue
                 || (string) ($proof['session_id'] ?? '') !== (string) $menu->session_id
                 || (string) $proof['choice_proof']['chat_id'] !== (string) $proof['chat_id']
                 || (string) $proof['choice_proof']['session_id'] !== (string) $proof['session_id']
-                || $token !== ['request_id' => $menu->request_id, 'choice' => 'loan']
+                || (! $direct && ($token !== ['request_id' => $menu->request_id, 'choice' => 'loan']
+                    || (isset($choicePayload['replyOutMessageId']) && (string) $choicePayload['replyOutMessageId'] !== (string) $menu->outgoing_message_id)
+                    || (isset($choicePayload['replyOutMessageExternalRequestId']) && $choicePayload['replyOutMessageExternalRequestId'] !== $menu->request_id)))
                 || ($choicePayload['subjectId'] ?? null) !== $send->subject_id
                 || ($choicePayload['id'] ?? null) !== $choice->message_id
                 || ! hash_equals(Crypt::decryptString($send->recipient), (string) ($choicePayload['subscriber']['identifier'] ?? ''))) {

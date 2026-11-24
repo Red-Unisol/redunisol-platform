@@ -10,6 +10,7 @@ use App\Http\Controllers\FormSubmissionController;
 use App\Http\Controllers\JourneyEventsController;
 use App\Http\Controllers\JourneyExportController;
 use App\Http\Controllers\PdfSearchController;
+use App\Http\Controllers\WebFormReceiverController;
 use App\Http\Middleware\DecryptAttributionCookie;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,7 @@ Route::match(['HEAD', 'POST'], '/webhooks/edna/incoming', EdnaIncomingController
     ->name('api.edna.incoming');
 Route::match(['HEAD', 'POST'], '/webhooks/edna/probe/{probe}', EdnaProbeController::class)
     ->whereUuid('probe')->name('api.edna.probe');
+Route::post('/internal/web-form-receiver/claim', WebFormReceiverController::class);
 Route::get('/internal/bitrix-routing', BitrixRoutingConfigController::class)->name('api.bitrix-routing.show');
 Route::post('/internal/bitrix-routing/allocate', BitrixVolumeAllocationController::class)->name('api.bitrix-routing.allocate');
 Route::post('/internal/bitrix-chat-response/{action}', BitrixChatResponseController::class)

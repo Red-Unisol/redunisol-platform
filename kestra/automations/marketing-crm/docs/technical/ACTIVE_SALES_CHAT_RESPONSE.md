@@ -92,7 +92,7 @@ sesion/registro se reevalua hasta tres veces; los errores tecnicos hasta seis,
 y una nueva actividad reactiva el caso. Los trabajos completados se purgan a los
 siete dias con `edna:prune`.
 
-Sin eventos disponibles hay una reconciliacion de respaldo cada 15 minutos, con
+El reconciliador dispone de un turno cada 15 minutos aunque existan eventos, con
 el mismo presupuesto y un cursor persistido por ID. Continua desde donde termino;
 no vuelve a barrer toda la base cada dos minutos. Este respaldo tambien recupera
 avisos perdidos o casos historicos. El calendario usa `recoverMissedSchedules:
@@ -173,3 +173,7 @@ de desarrollo elimina el cron por `schedule_scope: prod_only`.
 Para detener la automatización, deshabilitar su flow desde una revisión Git y
 publicarla; conservar el campo y las decisiones registradas. No revertir etapas
 en masa, porque el asesor puede haber continuado la gestión.
+
+### Equidad entre versiones y reconciliación
+
+La concesión sigue siendo única y cercada por versión. La fila de estado alterna entre una versión todavía sin intentar recibida en la última hora y la versión disponible más antigua; un turno libre sirve a la otra clase. Un nuevo aviso sobre una clave vieja vuelve a ser una versión reciente. El barrido periódico conserva su cursor y recibe un turno cuando vence su intervalo aunque la cola siga llena. Al concederlo se reserva el próximo intervalo para que la caída de un worker no monopolice los trabajos. La migración aditiva inicializa la alternancia sobre el estado existente. Estas decisiones afectan únicamente al orden de las lecturas que verifican la etapa Respuesta.

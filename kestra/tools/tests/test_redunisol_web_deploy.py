@@ -36,6 +36,22 @@ class RedunisolWebDeployTests(unittest.TestCase):
                 self.assertTrue(expected.issubset(environment), expected.difference(environment))
         self.assertEqual(compose['services']['php-fpm']['environment']['EDNA_INTAKE_ENABLED'], '${EDNA_INTAKE_ENABLED:-false}')
 
+    def test_form_delivery_and_acknowledgements_have_separate_verified_workers(self):
+        compose = yaml.safe_load((ROOT / 'web/redunisol-web/deploy/docker-compose.vps.yml').read_text())
+        queues = {'web-form-worker': 'web-forms', 'web-form-reconcile-worker': 'web-forms-reconcile'}
+        for service, queue in queues.items():
+            worker = compose['services'][service]
+            self.assertEqual([a for a in worker['command'] if a.startswith('--queue=')], ['--queue=' + queue])
+            self.assertEqual(worker['restart'], 'unless-stopped')
+            for script in self.scripts.values():
+                worker_list = next(line for line in script.splitlines() if 'worker_services=(' in line)
+                pull = next(line for line in script.splitlines() if ' pull php-fpm' in line)
+                self.assertIn(' ' + service + ' ', worker_list)
+                self.assertIn(' ' + service + ' ', pull)
+                self.assertLess(script.index('up -d --no-recreate postgres'), script.index('pg_isready -q'))
+                self.assertLess(script.index('pg_isready -q'), script.index('artisan migrate --force'))
+                self.assertLess(script.index('artisan migrate --force'), script.index('up -d --remove-orphans'))
+
     def test_web_linker_worker_consumes_fresh_before_retry_work(self):
         compose = yaml.safe_load((ROOT / 'web/redunisol-web/deploy/docker-compose.vps.yml').read_text())
         command = compose['services']['edna-web-worker']['command']

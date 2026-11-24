@@ -242,9 +242,23 @@ class OrganicProfileReuseTests(unittest.TestCase):
                                    "UF_CRM_WA_TIMESTAMP": request["provenance"]["confirmed_at"]}
             with self.subTest(condition=condition):
                 result = process(request, env=ENV, client=api)
-                self.assertEqual(result["action"], "manual_review")
+                self.assertEqual(result["action"], "reused_not_valid")
                 self.assertFalse(result["write_attempted"])
                 self.assertFalse(api.writes)
+
+    def test_a_legacy_grouped_benefit_requests_a_fresh_declaration_without_writes(self):
+        api = OrganicCrm()
+        request = payload()
+        request["answer"].update(situacion_catamarca="jubilado", organismo_catamarca="anses")
+        request["provenance"].update(source_kind="crm_verified_profile", source_id="21")
+        api.leads["21"] = {"ID": "21", "STATUS_SEMANTIC_ID": "S", "CONTACT_ID": "1",
+                           api.config.fields.lead_cuil: CUIL, "UF_CRM_WA_FLOW": "whatsapp_intake",
+                           "UF_CRM_WA_FLOW_ID": next(iter(reuse.LEGACY_GROUPED_FLOW_IDS)),
+                           "UF_CRM_WA_TIMESTAMP": request["provenance"]["confirmed_at"]}
+        result = process(request, env=ENV, client=api)
+        self.assertEqual((result["action"], result["reason"], result["write_attempted"]),
+                         ("reused_not_valid", "source_profile_benefit_requires_confirmation", False))
+        self.assertFalse(api.writes)
 
     def test_a_source_lead_without_a_current_cuil_contact_cannot_create_a_contact_by_reuse(self):
         api = OrganicCrm()
@@ -257,6 +271,31 @@ class OrganicProfileReuseTests(unittest.TestCase):
         self.assertEqual((result["action"], result["reason"], result["write_attempted"]),
                          ("reused_not_valid", "current_person_unproven", False))
         self.assertFalse(api.writes)
+
+    def test_new_unattended_session_can_follow_only_one_confirmed_provisional_queue_deal(self):
+        for change, expected in [("same", "awaiting_seller"), ("old", "manual_review"),
+                                 ("response", "manual_review"), ("other-contact", "manual_review"),
+                                 ("duplicate", "manual_review"), ("unbound", "manual_review")]:
+            with self.subTest(change=change):
+                api = OrganicCrm()
+                request = payload()
+                request.update(routing_policy=reuse.CONTINUITY_POLICY, follow_pending_seller=change != "old")
+                api.deals = [{"ID": "900", "LEAD_ID": "10", "CONTACT_ID": "1", "CATEGORY_ID": "1",
+                              "STAGE_ID": api.config.deal.assignment_queue_stage_id, "STAGE_SEMANTIC_ID": "P",
+                              "ASSIGNED_BY_ID": "74827"}]
+                if change == "response": api.deals[0]["STAGE_ID"] = "C1:UC_ZH5DGU"
+                if change == "other-contact": api.deals[0]["CONTACT_ID"] = "2"
+                if change == "duplicate": api.deals.append({**api.deals[0], "ID": "901"})
+                if change == "unbound": api.history["message"]["400"]["params"]["connectorMid"] = ["999"]
+                # The original native lead supplies positive current identity for the deal link.
+                api.leads["10"][api.config.fields.lead_cuil] = CUIL
+                result = process(request, env=ENV, client=api)
+                self.assertEqual(result["action"], expected)
+                if expected == "awaiting_seller":
+                    self.assertEqual((result["deal_id"], result["contact_id"], result["lead_id"], result["seller_id"]),
+                                     ("900", "1", "10", ""))
+                self.assertFalse(result["write_attempted"])
+                self.assertFalse(api.writes)
 
     def test_one_existing_commercial_case_returns_its_current_seller_without_any_writes(self):
         api = OrganicCrm()
@@ -272,7 +311,7 @@ class OrganicProfileReuseTests(unittest.TestCase):
         self.assertFalse(api.writes)
 
     def test_ambiguous_closed_other_category_or_provisional_management_is_never_duplicated(self):
-        for condition in ["multiple", "category", "queue", "inactive", "identity", "provisional"]:
+        for condition in ["multiple", "category", "queue", "inactive", "identity", "provisional", "initial_receiver"]:
             api = OrganicCrm()
             api.deals = [{"ID": "900", "CONTACT_ID": "1", "CATEGORY_ID": "1", "STAGE_ID": "C1:NEW",
                           "STAGE_SEMANTIC_ID": "P", "ASSIGNED_BY_ID": "44"}]
@@ -283,6 +322,7 @@ class OrganicProfileReuseTests(unittest.TestCase):
             elif condition == "inactive": api.seller[0]["ACTIVE"] = False
             elif condition == "identity": api.deals[0]["LEAD_ID"] = "999"
             elif condition == "provisional": api.deals[0]["ASSIGNED_BY_ID"] = "57"
+            elif condition == "initial_receiver": api.deals[0]["ASSIGNED_BY_ID"] = "74827"
             with self.subTest(condition=condition):
                 self.assertEqual(process(payload(), env=ENV, client=api)["action"], "manual_review")
                 self.assertFalse(api.writes)

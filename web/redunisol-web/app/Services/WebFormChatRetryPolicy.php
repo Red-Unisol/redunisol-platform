@@ -101,9 +101,9 @@ class WebFormChatRetryPolicy
     }
 
     /** Equal jitter: 50–100% of a doubling interval, capped at 30 minutes. */
-    public function delaySeconds(int $attempts): int
+    public function delaySeconds(int $attempts, int $maximum = 1800): int
     {
-        $ceiling = min(1800, 60 * (2 ** min(5, max(0, $attempts - 1))));
+        $ceiling = min($maximum, 60 * (2 ** min(5, max(0, $attempts - 1))));
 
         return random_int((int) ($ceiling / 2), $ceiling);
     }

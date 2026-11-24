@@ -19,20 +19,35 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
 
     public int $timeout = 75;
 
+    public bool $reconcileAcknowledgement = false;
+
     public bool $failOnTimeout = true;
+
+    public bool $guardedDelivery = false;
 
     public function __construct(
         public readonly array $input,
         public readonly bool $qualified,
         public readonly array $prequalification = [],
         public readonly array $clientContext = [],
-    ) {}
+        bool $reconcileAcknowledgement = false,
+    ) {
+        $this->reconcileAcknowledgement = $reconcileAcknowledgement;
+        $this->guardedDelivery = $reconcileAcknowledgement;
+    }
 
     public function handle(
         SubmitFormToKestra $submitFormToKestra,
         MetaConversionsApiService $metaConversionsApi,
     ): void {
-        $response = $submitFormToKestra->execute($this->input, $this->prequalification);
+        $receipts = app(WebFormReceipt::class);
+        $guardedPayload = $this->guardedDelivery ? $submitFormToKestra->guardedPayload($this->input, $this->prequalification) : null;
+        if ($this->reconcileAcknowledgement && ! $receipts->claimDispatch(
+            $this->input, $guardedPayload, $this->qualified, $this->clientContext,
+        )) {
+            return;
+        }
+        $response = $submitFormToKestra->execute($this->input, $this->prequalification, $guardedPayload);
 
         $body = $response->json();
         try {
@@ -57,15 +72,20 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
             throw new RuntimeException('Kestra no pudo persistir el formulario en Bitrix24.');
         }
 
-        if ($this->qualified) {
+        if ($this->qualified && $this->guardedDelivery) {
+            $receipts->reportLead($this->input, $this->clientContext, $metaConversionsApi);
+        } elseif ($this->qualified) {
             $metaConversionsApi->sendLead($this->input, $this->clientContext);
         }
     }
 
     public function failed(?\Throwable $error): void
     {
-        app(WebFormReceipt::class)->failed($this->input);
-        app(JourneyLedger::class)->record('form.persistence_failed', [], $this->input['_journey_links'] ?? [], 'kestra.form');
+        $state = app(WebFormReceipt::class)->failed($this->input);
+        if ($state === 'synced') {
+            return;
+        }
+        app(JourneyLedger::class)->record('form.persistence_failed', ['receipt_state' => $state], $this->input['_journey_links'] ?? [], 'kestra.form');
         app(JourneyLedger::class)->flush();
     }
 }

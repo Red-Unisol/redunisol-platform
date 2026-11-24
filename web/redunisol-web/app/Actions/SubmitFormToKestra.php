@@ -9,7 +9,7 @@ use RuntimeException;
 
 class SubmitFormToKestra
 {
-    public function execute(array $input, array $prequalification = []): Response
+    public function execute(array $input, array $prequalification = [], ?string $guardedPayload = null): Response
     {
         $url = (string) config('services.kestra.form_webhook_url');
 
@@ -17,10 +17,20 @@ class SubmitFormToKestra
             throw new RuntimeException('Falta configurar services.kestra.form_webhook_url.');
         }
 
+        // Old receivers see no CUIL, phone or email at the root and fail before touching CRM.
+        $payload = $guardedPayload === null
+            ? $this->buildPayload($input, $prequalification)
+            : ['web_crm_delivery_v1' => $guardedPayload];
+
         return Http::acceptJson()
             ->asJson()
             ->timeout((int) config('services.kestra.form_webhook_timeout_seconds', 60))
-            ->post($url, $this->buildPayload($input, $prequalification));
+            ->post($url, $payload);
+    }
+
+    public function guardedPayload(array $input, array $prequalification): string
+    {
+        return json_encode($this->buildPayload($input, $prequalification), JSON_THROW_ON_ERROR);
     }
 
     private function buildPayload(array $input, array $prequalification): array
@@ -48,6 +58,7 @@ class SubmitFormToKestra
             'utm_term' => $this->normalizeString($input['utm_term'] ?? null),
             'utm_content' => $this->normalizeString($input['utm_content'] ?? null),
             'submission_channel' => 'redunisol-web',
+            'web_submission_id' => $input['_journey_links']['submission_id'] ?? null,
             'form_received_at' => $input['_form_received_at'] ?? null,
             'prequalification_available' => $prequalification['available'] ?? null,
             'prequalified' => $prequalification['prequalified'] ?? null,

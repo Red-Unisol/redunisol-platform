@@ -78,7 +78,7 @@ class EdnaRejectedChatGuard
                     return $this->result('preserved', $reason, $owner, $sessionId, $createdAt, $dialog, $counts);
                 }
                 $history = $this->read('imopenlines.session.history.get', ['SESSION_ID' => $sessionId]);
-                if ($reason = $this->history($history, $chatId, $sessionId, $notice)) {
+                if ($reason = $this->history($history, $chatId, $sessionId, $notice, ($proof['allow_terminal_replies'] ?? false) === true)) {
                     return $this->result('preserved', $reason, $owner, $sessionId, $createdAt, $dialog, $counts);
                 }
                 // The exact known notice may be counted as zero or one operator
@@ -223,7 +223,7 @@ class EdnaRejectedChatGuard
         return null;
     }
 
-    private function history(mixed $history, int $chatId, int $sessionId, array $notice): ?string
+    private function history(mixed $history, int $chatId, int $sessionId, array $notice, bool $allowTerminalReplies): ?string
     {
         if (! is_array($history) || $this->id($history['sessionId'] ?? null) !== $sessionId
             || $this->id($history['chatId'] ?? null) !== $chatId || ($history['hasNextPage'] ?? null) !== false
@@ -277,7 +277,8 @@ class EdnaRejectedChatGuard
             }
             if ($user['connector'] === false) {
                 $reason = 'operator_message_preserved';
-            } elseif ($at > $noticeDate || $id > $noticeId) {
+            } elseif (($at > $noticeDate || $id > $noticeId)
+                && (! $allowTerminalReplies || ! SalesInboxPolicy::plainTerminalMessage($message))) {
                 $reason = 'client_reply_after_notice_preserved';
             }
         }

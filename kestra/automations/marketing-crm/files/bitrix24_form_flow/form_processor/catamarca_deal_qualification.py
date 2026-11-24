@@ -183,16 +183,28 @@ def _select_pending_catamarca_deals(
     )
     selected: list[dict[str, object]] = []
     seen: set[int] = set()
+    filters = {"=categoryId": config.deal.category_id, "=stageId": config.deal.pending_qualification_stage_id}
+    lanes = []
+    if limit > 1:
+        since = (current_time - timedelta(hours=1)).isoformat(timespec="seconds")
+        lanes.append(({**filters, ">=createdTime": since}, 1))
+    lanes.append((filters, limit))
+    for lane_filter, stop_at in lanes:
+        for candidate in _eligible_pending_deals(client, config, active_logger, current_time, lane_filter, seen):
+            selected.append(candidate)
+            if len(selected) >= stop_at:
+                break
+    return selected
+
+
+def _eligible_pending_deals(client, config, active_logger, current_time, filters, seen):
     start = 0
     while True:
         response = client.call_full(
             "crm.item.list",
             {
                 "entityTypeId": DEAL_ENTITY_TYPE_ID,
-                "filter": {
-                    "=categoryId": config.deal.category_id,
-                    "=stageId": config.deal.pending_qualification_stage_id,
-                },
+                "filter": filters,
                 "order": {"id": "ASC"},
                 "select": [
                     "id", "leadId", "contactId", "stageId",
@@ -226,24 +238,24 @@ def _select_pending_catamarca_deals(
                     "la consulta BCRA tiene un reintento programado."
                 )
                 continue
-            selected.append(_result(
+            yield _result(
                 action="selected",
                 has_pending=True,
                 deal_id=deal_id,
                 lead_id=lead_id,
                 message=f"Negociacion {deal_id} seleccionada para clasificación comercial.",
-            ))
-            if len(selected) >= limit:
-                return selected
+            )
 
         next_page = response.get("next")
         if next_page is None and isinstance(result, dict):
             next_page = result.get("next")
         if next_page is None:
             break
-        start = int(next_page)
+        following = int(next_page)
+        if following <= start:
+            raise RuntimeError("crm.item.list no avanzo la paginacion.")
+        start = following
 
-    return selected
 
 
 def qualify_catamarca_deal(

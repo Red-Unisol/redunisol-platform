@@ -205,7 +205,7 @@ class AttributionJourney
         });
     }
 
-    public function phoneHash(string $phone): ?string
+    public function phoneHash(string $phone, ?string $hashKey = null): ?string
     {
         $digits = preg_replace('/\D/', '', $phone);
         if (str_starts_with($digits, '00')) {
@@ -220,7 +220,7 @@ class AttributionJourney
             return null;
         }
 
-        return hash_hmac('sha256', $digits, (string) config('app.key'));
+        return hash_hmac('sha256', $digits, $hashKey ?? (string) config('app.key'));
     }
 
     public function resolveForm(Request $request, array $input): array

@@ -460,13 +460,15 @@ class BoundIntakeTests(unittest.TestCase):
             self.assertEqual(sleep.call_count, int(fail_method == "imopenlines.dialog.get"))
 
     def test_caja_cordoba_keeps_its_bank_exception_with_the_neutral_subflow(self):
-        api = BoundCrm()
-        result = process(channel_payload(provincia="cordoba", situacion_cordoba="jubilado", organismo="caja_cordoba"),
-                         env=CHANNEL_ENV, client=api)
-        self.assertEqual(result["action"], "queued")
-        lead = api.leads["10"]
-        self.assertEqual(lead["UF_CRM_WA_SUBFLOW"], CHANNEL_SUBFLOW)
-        self.assertTrue(evaluate_prequalification(build_prequalification_input_from_lead(lead, api.config)).qualified)
+        for situation in ("jubilado", "pensionado"):
+            with self.subTest(situation=situation):
+                api = BoundCrm()
+                result = process(channel_payload(provincia="cordoba", situacion_cordoba=situation, organismo="caja_cordoba"),
+                                 env=CHANNEL_ENV, client=api)
+                self.assertEqual(result["action"], "queued")
+                lead = api.leads["10"]
+                self.assertEqual(lead["UF_CRM_WA_SUBFLOW"], CHANNEL_SUBFLOW)
+                self.assertTrue(evaluate_prequalification(build_prequalification_input_from_lead(lead, api.config)).qualified)
 
 
 if __name__ == "__main__":

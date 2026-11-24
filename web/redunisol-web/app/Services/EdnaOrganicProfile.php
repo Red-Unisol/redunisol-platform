@@ -62,7 +62,11 @@ class EdnaOrganicProfile
             $answer[$organismKey] = $organism;
         }
         $bankKey = $province === 'cordoba' && $retired ? 'banco_jubilado' : 'banco_'.$province;
-        if (! ($retired && $organism === 'caja_cordoba' && $situation !== 'pensionado')) {
+        // In V3 the Córdoba pensioner branch can include a declared bank;
+        // keep it when present. Caja itself suffices when it was not collected.
+        $cajaWithoutBank = $retired && $organism === 'caja_cordoba'
+            && ($situation !== 'pensionado' || in_array($input[$bankKey] ?? null, [null, ''], true));
+        if (! $cajaWithoutBank) {
             if (! in_array($input[$bankKey] ?? null, self::BANKS, true)) {
                 return null;
             }

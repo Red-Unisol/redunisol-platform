@@ -2,25 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\PrequalifyFormWithKestra;
 use App\Http\Requests\FormSubmissionRequest;
-use App\Jobs\PersistFormSubmission;
 use App\Services\AttributionJourney;
-use App\Services\EdnaAssistance;
 use App\Services\JourneyLedger;
-use App\Services\WebFormReceipt;
+use App\Services\WebFormHttpAttempt;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
 class FormSubmissionController extends Controller
 {
-    public function __construct(
-        private readonly PrequalifyFormWithKestra $prequalifyFormWithKestra,
-    ) {}
-
     public function __invoke(FormSubmissionRequest $request): JsonResponse
     {
+        $key = $request->header('Idempotency-Key') ?? (string) Str::uuid();
+        if (! Str::isUuid($key)) {
+            return response()->json(['ok' => false, 'reason' => 'invalid_submission_key'], 422);
+        }
         $input = (new AttributionJourney)->resolveForm($request, $request->validated());
         $input['_form_received_at'] = now()->toIso8601String();
         $input['_journey_links'] = app(JourneyLedger::class)->context($request) + [
@@ -32,109 +30,24 @@ class FormSubmissionController extends Controller
             $input['_journey_links']['page_id'] = $input['journey_page_id'];
         }
         unset($input['journey_page_id']);
-        $trackingInput = array_diff_key($input, array_flip(['_journey_links', 'recibo_url']));
-        if (isset($trackingInput['landing_url'])) {
-            $trackingInput['landing_url'] = JourneyLedger::url($trackingInput['landing_url']);
-        }
-        app(JourneyLedger::class)->record('form.received', [
-            'input' => $trackingInput,
-            'receipt_present' => ! empty($input['recibo_url']),
-        ], $input['_journey_links']);
+        $attempts = app(WebFormHttpAttempt::class);
         try {
-            $continuationReference = app(WebFormReceipt::class)->register($input);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return $this->loadFailure(503);
-        }
-        $prequalificationResponse = null;
-
-        try {
-            $prequalificationResponse = $this->prequalifyFormWithKestra->execute($input);
-        } catch (Throwable $exception) {
-            report($exception);
-        }
-
-        $prequalification = $prequalificationResponse?->json();
-        $prequalificationAvailable = $prequalificationResponse !== null
-            && $prequalificationResponse->successful()
-            && is_array($prequalification)
-            && ($prequalification['ok'] ?? false) === true;
-        $qualified = $prequalificationAvailable
-            && ($prequalification['prequalified'] ?? false) === true;
-        $routeToWhatsapp = $qualified
-            && ($prequalification['route_to_whatsapp'] ?? true) === true;
-        app(JourneyLedger::class)->record('form.prequalified', [
-            'available' => $prequalificationAvailable, 'qualified' => $qualified,
-            'route_to_whatsapp' => $routeToWhatsapp,
-            'reason' => $prequalificationAvailable ? ($prequalification['reason'] ?? '') : 'prequalification_unavailable',
-            'rule_version' => $prequalification['rule_version'] ?? null,
-        ], $input['_journey_links']);
-
-        try {
-            PersistFormSubmission::dispatch(
-                input: $input,
-                qualified: $qualified,
-                prequalification: [
-                    'available' => $prequalificationAvailable,
-                    'prequalified' => $qualified,
-                    'route_to_whatsapp' => $routeToWhatsapp,
-                    'reason' => $prequalificationAvailable ? (string) ($prequalification['reason'] ?? '') : 'prequalification_unavailable',
-                    'message' => $prequalificationAvailable ? (string) ($prequalification['message'] ?? '') : '',
-                    'rule_version' => $prequalificationAvailable ? (string) ($prequalification['rule_version'] ?? '') : '',
-                ],
-                clientContext: [
-                    'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'fbp' => $request->cookie('_fbp'),
-                    'fbc' => $request->cookie('_fbc'),
-                ],
-            );
-        } catch (Throwable $exception) {
-            report($exception);
-            if ($continuationReference !== null) {
-                app(WebFormReceipt::class)->failed($input);
-            }
-
-            app(JourneyLedger::class)->record('form.queue_failed', [], $input['_journey_links']);
-
-            return $this->loadFailure(503);
-        }
-
-        if (config('edna.assistance_enabled')) {
-            try {
-                (new EdnaAssistance)->recordForm((string) ($input['celular'] ?? ''));
-            } catch (Throwable $exception) {
-                // Receipt tracking must not change the existing form response.
-                report($exception);
-            }
-        }
-        if (! $prequalificationAvailable) {
-            return response()->json([
-                'ok' => true,
-                'qualified' => false,
-                'prequalified' => false,
-                'route_to_whatsapp' => false,
-                'action' => 'not_qualified',
-                'reason' => 'prequalification_unavailable',
-                'message' => 'Recibimos tu solicitud, pero no pudimos verificarla automáticamente. La revisaremos de forma manual.',
-                'persistence' => 'queued',
+            $attempt = $attempts->open($key, $request->validated(), $input, [
+                'ip' => $request->ip(), 'user_agent' => $request->userAgent(),
+                'fbp' => $request->cookie('_fbp'), 'fbc' => $request->cookie('_fbc'),
             ]);
-        }
+            if ($attempt['new']) {
+                app(JourneyLedger::class)->recordFormReceived($input);
+            }
 
-        return response()->json([
-            'ok' => true,
-            'tracking' => isset($input['attribution']) ? array_intersect_key($input, array_flip(AttributionJourney::UTMS)) : null,
-            'qualified' => $qualified,
-            'prequalified' => $qualified,
-            'route_to_whatsapp' => $routeToWhatsapp,
-            'action' => $routeToWhatsapp ? 'qualified' : 'rejected',
-            'reason' => (string) ($prequalification['reason'] ?? ''),
-            'message' => (string) ($prequalification['message'] ?? ''),
-            'rule_version' => (string) ($prequalification['rule_version'] ?? ''),
-            'persistence' => 'queued',
-            'web_form_reference' => $routeToWhatsapp ? $continuationReference : null,
-        ]);
+            return response()->json($attempt['response'] ?? $attempts->complete($key));
+        } catch (HttpException $error) {
+            return response()->json(['ok' => false, 'message' => $error->getMessage()], $error->getStatusCode(), $error->getHeaders());
+        } catch (Throwable $error) {
+            logger()->warning('Web form processing unavailable.', ['error' => $error::class]);
+
+            return $this->loadFailure(503);
+        }
     }
 
     private function loadFailure(int $status): JsonResponse

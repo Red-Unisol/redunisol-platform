@@ -18,10 +18,11 @@ tasks:
         - bitrix24_form_flow/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
-    containerImage: ghcr.io/kestra-io/pydata:latest
-    beforeCommands:
-      - pip install kestra > /dev/null
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
     env:
+      WEB_CRM_RECEIVER_SCOPE: "{{ flow.namespace }}"
+      WEB_CRM_RECEIVER_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
       TRIGGER_BODY_JSON: "{{ trigger.body | toJson }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from uuid import UUID
 from datetime import datetime
 import json
 from typing import Any
@@ -144,6 +145,10 @@ def ingest_submission(
         submission = normalize_business_input(payload)
         active_logger.info(f"CUIL normalizado: {submission.cuil_formatted}.")
 
+        # The web server generates this ID before queueing. Never derive it from a phone.
+        source_id = None
+        if payload.get("submission_channel") == "redunisol-web" and payload.get("web_submission_id"):
+            source_id = str(UUID(str(payload["web_submission_id"])))
         contact = upsert_contact(client, config, submission, active_logger)
         contact_id = contact.contact_id
         effective_submission = replace(submission, full_name=contact.effective_full_name)
@@ -152,7 +157,10 @@ def ingest_submission(
         )
         # During a rolling namespace update an older lead_service may still be loaded.
         # Its existing callers keep the original signature until the intake cutover.
-        if fresh_web_form:
+        if source_id:
+            lead_id = create_lead(client, config, effective_submission, contact_id, active_logger,
+                                  provisional_owner=fresh_web_form, web_submission_id=source_id)
+        elif fresh_web_form:
             lead_id = create_lead(client, config, effective_submission, contact_id, active_logger,
                                   provisional_owner=True)
         else:

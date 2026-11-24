@@ -221,7 +221,9 @@ class WebFormChatLinker
                 }
             }
 
-            $target = $this->target($receipt, $route);
+            $protectedOwner = $reentry && ($previousProtection['protected_assignment'] ?? false) === true
+                ? (string) ($previousProtection['protected_owner_id'] ?? '') : null;
+            $target = $this->target($receipt, $route, $protectedOwner);
             if ($reentry && ! empty($previousProtection['protected_assignment'])) {
                 if (! $this->id($previousProtection['protected_owner_id'] ?? null)) {
                     $this->decide('review', 'reentry_protection_not_verified');
@@ -289,7 +291,7 @@ class WebFormChatLinker
 
             // Binding calls and commercial processing can overlap a human action. Never use
             // the first destination/owner snapshot as permission for the eventual transfer.
-            $fresh = $this->target($receipt);
+            $fresh = $this->target($receipt, protectedOwner: $protectedOwner);
             if ($fresh['seller_id'] !== $target['seller_id'] || (string) $fresh['deal']['ID'] !== (string) $target['deal']['ID']) {
                 $this->decide('preserved', 'commercial_assignment_changed');
             }
@@ -397,7 +399,7 @@ class WebFormChatLinker
         return ($lead['STATUS_ID'] ?? '') === 'CONVERTED' && ($lead['STATUS_SEMANTIC_ID'] ?? '') === 'S';
     }
 
-    private function target(object $receipt, ?object $route = null): array
+    private function target(object $receipt, ?object $route = null, ?string $protectedOwner = null): array
     {
         $lead = $this->call('crm.lead.get', ['id' => $receipt->lead_id]);
         $this->validateLead($lead, $receipt);
@@ -408,7 +410,7 @@ class WebFormChatLinker
             $this->decide('review', 'commercial_case_not_unique');
         }
         foreach ($deals as $case) {
-            if (! is_array($case) || (string) ($case['LEAD_ID'] ?? '') !== (string) $receipt->lead_id
+            if (! is_array($case) || ! $this->id($case['ID'] ?? null) || (string) ($case['LEAD_ID'] ?? '') !== (string) $receipt->lead_id
                 || (int) ($case['CATEGORY_ID'] ?? 0) !== 1
                 || ! in_array($case['STAGE_SEMANTIC_ID'] ?? '', ['P', 'S', 'F'], true)) {
                 $this->decide('review', 'commercial_case_identity_mismatch');
@@ -426,7 +428,8 @@ class WebFormChatLinker
             $this->decide('review', 'commercial_case_not_unique');
         }
         $deal = $deals[0];
-        if ($route && (! empty($route->sales_opening_at) || $route->reason === WebFormChatRetryPolicy::QUEUED_SELLER)
+        if ($route && (! empty($route->sales_opening_at) || $route->reason === WebFormChatRetryPolicy::QUEUED_SELLER
+            || ($route->commercial_wait_until && $route->deal_id))
             && (string) $route->deal_id !== (string) $deal['ID']) {
             $this->decide('review', 'sales_queue_case_changed');
         }
@@ -437,8 +440,12 @@ class WebFormChatLinker
         }
         $seller = (string) ($deal['ASSIGNED_BY_ID'] ?? '');
         if (! $this->id($seller) || in_array($seller, ['57', '71283'], true)
+            || ($seller === '74827' && $protectedOwner !== $seller)
             || in_array($deal['STAGE_ID'] ?? '', ['C1:KESTRA_PENDING', 'C1:KESTRA_QUEUE'], true)) {
             if ($route) {
+                if ($route->commercial_wait_until && ! $route->deal_id) {
+                    $this->write(['deal_id' => (string) $deal['ID']]);
+                }
                 $policy = new WebFormChatRetryPolicy;
                 $times = [...$this->entryTimes, $receipt->received_at];
                 $this->salesHold = $policy->salesHold($route, $deal, $times);
@@ -455,6 +462,9 @@ class WebFormChatLinker
                 }
             }
             $this->decide('waiting', 'commercial_seller_not_ready');
+        }
+        if (in_array($deal['STAGE_ID'] ?? '', WebFormChatRouting::COMMERCIAL_REVIEW_STAGES, true)) {
+            $this->decide('review', 'commercial_management_requires_review');
         }
         if ((string) ($lead['ASSIGNED_BY_ID'] ?? '') !== $seller && ! ($this->contextual && $this->converted($lead))) {
             $this->decide('preserved', 'crm_responsibles_disagree');
@@ -921,9 +931,26 @@ class WebFormChatLinker
         if ($state === 'preserved' && ! isset($fields['transfer_state'])) {
             $fields['transfer_state'] = 'preserved';
         }
-        $updated = DB::transaction(function () use ($fields, $state, $reason, $next, $route) {
+        $businessWait = $state === 'waiting' && in_array($reason, ['commercial_case_not_ready', 'commercial_seller_not_ready'], true)
+            && ! empty($route->commercial_wait_until) && $route->transfer_state === 'pending'
+            && ! isset($this->proof['transfer_intent']) && $deadline?->isFuture();
+        $updated = DB::transaction(function () use ($fields, $state, $reason, $next, $route, $businessWait) {
+            if ($businessWait) {
+                $owned = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)
+                    ->where('lease_token', $this->token)->where('lease_until', '>', now())->lockForUpdate()->first();
+                if (! $owned) {
+                    return 0;
+                }
+                $limit = CarbonImmutable::parse($route->commercial_wait_until);
+                if ($this->contextId) {
+                    $limit = app(WebChatContinuity::class)->commercialDeadline($this->contextId, $route, $this->proof, $limit);
+                }
+                if ($limit && $limit->gt($this->expiresAt)) {
+                    $fields['retry_expires_at'] = $limit;
+                }
+            }
             $receipt = DB::table('web_form_chat_routes')->where('entry_event_id', $this->entryId)->where('lease_token', $this->token);
-            if (isset($fields['sales_opening_at'])) {
+            if ($businessWait || isset($fields['sales_opening_at'])) {
                 $receipt->where('lease_until', '>', now());
             }
             $updated = $receipt->update($fields + [

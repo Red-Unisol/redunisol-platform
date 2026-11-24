@@ -1,3 +1,4 @@
+import { webFormAttempt, forgetWebFormAttempt } from '@/lib/web-form-attempt';
 import {
     CheckCircleIcon,
     UploadSimple,
@@ -219,14 +220,6 @@ const INITIAL_FORM: LeadFormData = {
     situacionLaboral: '',
     banco: '',
 };
-
-function createLeadEventId() {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-        return `lead_${crypto.randomUUID()}`;
-    }
-
-    return `lead_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-}
 
 type CuilValidation = {
     status: 'empty' | 'incomplete' | 'valid' | 'invalid';
@@ -1133,7 +1126,6 @@ export default function FormSection({
             landing_slug: landingSlug,
             landing_title: landingTitle,
             landing_url: window.location.href,
-            meta_event_id: createLeadEventId(),
             terminos: formData.terminos,
         };
 
@@ -1181,7 +1173,6 @@ export default function FormSection({
             landing_slug: landingSlug,
             landing_title: landingTitle,
             page_location: window.location.href,
-            event_id: payload.meta_event_id,
             has_recibo: Boolean(reciboUrl),
         };
 
@@ -1197,11 +1188,15 @@ export default function FormSection({
         }
 
         try {
+            const requestKey = await webFormAttempt(landingSlug, formFingerprint);
+            payload.meta_event_id = 'lead_' + requestKey;
+            trackingPayload.event_id = payload.meta_event_id;
             const res = await fetch('/api/form-submissions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
+                    'Idempotency-Key': requestKey,
                 },
                 body: JSON.stringify(payload),
             });
@@ -1336,6 +1331,7 @@ export default function FormSection({
     };
 
     const handleReset = () => {
+        forgetWebFormAttempt(landingSlug);
         setStep(1);
         setFormData(INITIAL_FORM);
         setReciboUrl(null);

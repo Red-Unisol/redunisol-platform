@@ -396,6 +396,36 @@ test('missing incomplete assistance stale or ambiguous profiles schedule the gen
     Http::assertNothingSent();
 })->with(['complete_recent_profile_unavailable', 'profile_assistance_only', 'profile_stale', 'profile_phone_has_multiple_identities']);
 
+test('a direct authenticated contact loan produces one genuine v3 or reuses an existing profile without a phantom greeting', function (bool $reuse) {
+    config(['edna.sales_inbox_enabled' => true]);
+    $entry = organicLoanEvent(['messageContent' => ['type' => 'TEXT', 'text' => 'Quiero solicitar un préstamo']]);
+    $proof = ['version' => 1, 'verified' => true, 'source' => 'bitrix_openline_session', 'evidence' => 'external_message_id',
+        'chat_id' => '601', 'session_id' => '501', 'activity_id' => '777', 'message_id' => '888',
+        'entry_event_id' => $entry->id, 'entry_message_id' => $entry->message_id, 'native_lead_id' => null];
+    $proof['choice_proof'] = $proof;
+    $proof['direct_loan_contact'] = '800';
+    $menu = organicLoanMenu(['entry_event_id' => $entry->id, 'choice_event_id' => $entry->id, 'send_state' => 'not_needed',
+        'outgoing_message_id' => null, 'proof' => json_encode($proof)]);
+    $service = organicLoanService($profile);
+    if (!$reuse) {
+        $profile->result = ['status' => 'missing', 'reason' => 'complete_recent_profile_unavailable'];
+    }
+    $service->prepare($menu->id);
+    $service->prepare($menu->id);
+    $row = DB::table('edna_organic_menus')->find($menu->id);
+    expect($row->state)->toBe($reuse ? 'submission_pending' : 'flow_scheduled')->and($row->send_state)->toBe('not_needed')
+        ->and(DB::table('edna_flow_sends')->count())->toBe($reuse ? 0 : 1);
+    if (!$reuse) {
+        $send = DB::table('edna_flow_sends')->first();
+        $worker = new SendEdnaFlow($send->id);
+        $context = new ReflectionMethod($worker, 'organicContext');
+        expect($context->invoke($worker, $send))->toMatchArray(['menu_id' => $menu->id]);
+        $proof['choice_proof']['message_id'] = '999';
+        DB::table('edna_organic_menus')->where('id', $menu->id)->update(['proof' => json_encode($proof)]);
+        expect($context->invoke($worker, $send))->toBeFalse();
+    }
+})->with([[true], [false]]);
+
 test('an unavailable profile source retries local preparation without creating a replacement declaration', function () {
     $menu = organicLoanMenu();
     $service = organicLoanService($profile);
@@ -434,6 +464,27 @@ test('a missing or mismatched business acknowledgement remains unknown without f
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('loan_unknown')
         ->and(DB::table('edna_flow_sends')->count())->toBe(0);
 })->with([[['ok' => false]], [['contract' => 'website-intake-v1']], [['case_id' => 'unrelated-case']], [['write_attempted' => null]]]);
+
+test('an exactly acknowledged provisional case creates a local watch only for fresh entries and never resubmits', function (string $condition) {
+    organicLoanContinuityCutover();
+    $menu = organicLoanMenu();
+    DB::table('edna_intake_cutovers')->updateOrInsert(['name' => 'organic-seller-wait-v1'],
+        ['entry_id_after' => $condition === 'old' ? $menu->entry_event_id : 0, 'starts_at' => now()->subMinutes(10)]);
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu,
+        ['action' => 'awaiting_seller', 'reason' => 'provisional_commercial_queue', 'deal_id' => '110',
+            'seller_id' => '', 'initial_stage' => 'C1:KESTRA_QUEUE', 'contact_deal_activity' => false, 'write_attempted' => $condition === 'wrote']))]);
+    $service->submit($menu->id);
+    $service->submit($menu->id);
+    $updated = DB::table('edna_organic_menus')->find($menu->id);
+    expect($updated->state)->toBe($condition === 'fresh' ? 'seller_wait' : 'review')
+        ->and($updated->seller_id)->toBeNull()->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    if ($condition === 'fresh') {
+        expect($updated->deal_id)->toBe('110')->and(json_decode($updated->profile_evidence, true)['waiting_case']['contact_id'])->toBe('800');
+    }
+    Http::assertSentCount(1);
+})->with(['fresh', 'old', 'wrote']);
 
 test('an assigned commercial case becomes route pending with the acknowledged target and deal', function () {
     $menu = organicLoanMenu();
@@ -559,4 +610,17 @@ test('a delayed benefits decision after a no-write acknowledgement resumes fallb
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('flow_scheduled')
         ->and(DB::table('edna_flow_sends')->count())->toBe(1);
     Http::assertSentCount(1);
+});
+
+test('reusable data without a native CRM person asks the customer for a fresh declaration', function () {
+    $menu = organicLoanMenu();
+    $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
+    $proof['native_lead_id'] = null;
+    DB::table('edna_organic_menus')->where('id', $menu->id)->update(['proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+    $service = organicLoanService($profile, $attention);
+    unset($attention->native['dialog_tuple']['bindings']['contact']);
+    $service->prepare($menu->id);
+    expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('flow_scheduled')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    Http::assertNothingSent();
 });
