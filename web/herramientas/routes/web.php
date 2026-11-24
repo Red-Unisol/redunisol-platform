@@ -11,6 +11,7 @@ use App\Http\Controllers\PadronesServiceController;
 use App\Http\Middleware\PadronesServiceAccess;
 use App\Http\Middleware\AnalisisAccess;
 use App\Http\Middleware\CuadMasivoAccess;
+use App\Http\Middleware\EmpleadorAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
@@ -88,7 +89,18 @@ Route::post('/api/tools/consulta-quiebra-credix', [HerramientasController::class
     ->withoutMiddleware([PreventRequestForgery::class])
     ->name('tools.consulta-quiebra-credix');
 
+Route::post('/api/tools/consulta-empleador/login', [HerramientasController::class, 'empleadorLogin'])
+    ->name('tools.consulta-empleador.login');
+Route::post('/api/tools/consulta-empleador/logout', [HerramientasController::class, 'empleadorLogout'])
+    ->name('tools.consulta-empleador.logout');
+Route::middleware(EmpleadorAccess::class)->group(function () {
+    Route::get('/api/tools/consulta-empleador/registro', [HerramientasController::class, 'empleadorRegistro'])
+        ->name('tools.consulta-empleador.registro');
+    Route::get('/api/tools/consulta-empleador/registro.csv', [HerramientasController::class, 'empleadorRegistroCsv'])
+        ->name('tools.consulta-empleador.registro-csv');
+});
 Route::post('/api/tools/consulta-empleador', [HerramientasController::class, 'consultaEmpleador'])
+    ->middleware(EmpleadorAccess::class)
     ->withoutMiddleware([PreventRequestForgery::class])
     ->name('tools.consulta-empleador');
 

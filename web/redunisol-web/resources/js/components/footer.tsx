@@ -7,6 +7,7 @@ import {
     YoutubeLogo,
 } from '@phosphor-icons/react';
 
+import { platformContact, platformName } from '@/data/home-platform-copy';
 import { getRegulatorDisplayName } from '@/lib/regulators';
 
 import WhatsAppButton from './WhatsAppButton';
@@ -34,7 +35,8 @@ interface SharedProps {
 
 const legalLinks = [
     { label: 'Contacto', href: '/contacto' },
-    { label: 'Políticas de Privacidad', href: '/politicas-de-privacidad' },
+    { label: 'Términos y Condiciones', href: '/terminos' },
+    { label: 'Política de Privacidad', href: '/privacidad' },
     { label: 'Gestión de Datos', href: '/gestion-de-datos' },
 ];
 
@@ -143,8 +145,10 @@ function RegulatorCard({ reg }: { reg: Regulator }) {
 
 export default function Footer({
     showWhatsAppButton = true,
+    showPlatformDisclosure = false,
 }: {
     showWhatsAppButton?: boolean;
+    showPlatformDisclosure?: boolean;
 }) {
     const { siteData } = usePage<SharedProps>().props;
     const regulators =
@@ -189,10 +193,12 @@ export default function Footer({
 
     return (
         <footer className="w-full">
-            {/* ── BCRA Banner ── */}
+            {/* ── Institutional Banner ── */}
             <div className="border-t-4 border-emerald-600 bg-gradient-to-r from-slate-900 to-slate-800 px-6 py-4 text-center shadow-md">
                 <p className="text-xs leading-relaxed text-gray-200">
-                    {bcraStatement}
+                    {showPlatformDisclosure
+                        ? `Plataforma operada por ${platformName} · CUIT 30-71935741-1`
+                        : bcraStatement}
                 </p>
             </div>
 
@@ -296,6 +302,14 @@ export default function Footer({
                             <h3 className="mb-5 text-xs font-bold tracking-widest text-gray-900 uppercase">
                                 Soporte
                             </h3>
+                            {showPlatformDisclosure && (
+                                <a
+                                    href={`mailto:${platformContact}`}
+                                    className="mb-3 block w-fit text-sm break-all text-gray-600 hover:text-emerald-600"
+                                >
+                                    {platformContact}
+                                </a>
+                            )}
                             <ul className="space-y-3">
                                 {legalLinks.map((link) => (
                                     <li key={link.href}>
@@ -314,7 +328,9 @@ export default function Footer({
                     {/* Regulators Section */}
                     <div className="mt-16 border-t border-gray-200 pt-16">
                         <h3 className="mb-8 text-sm font-bold tracking-widest text-gray-900 uppercase">
-                            Reguladores Autorizados
+                            {showPlatformDisclosure
+                                ? 'Entidades participantes'
+                                : 'Reguladores Autorizados'}
                         </h3>
                         <div className="grid gap-6 sm:grid-cols-2">
                             {regulators.map((reg) => (

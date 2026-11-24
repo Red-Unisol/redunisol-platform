@@ -14,6 +14,18 @@ beforeEach(function () {
     config()->set('inertia.ssr.enabled', false);
 });
 
+it('uses the colored Unisol brand icon instead of the monochrome SVG', function (string $path) {
+    $html = $this->get($path)->assertOk()->getContent();
+    $dom = new DOMDocument;
+    @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+    $xpath = new DOMXPath($dom);
+
+    expect($xpath->query('//link[@rel="icon"]'))->toHaveCount(1)
+        ->and($xpath->evaluate('string(//link[@rel="icon"]/@type)'))->toBe('image/png')
+        ->and($xpath->evaluate('string(//link[@rel="icon"]/@href)'))->toBe('/favicon.png?v=unisol-color-20261122')
+        ->and($xpath->evaluate('string(//link[@rel="apple-touch-icon"]/@href)'))->toBe('/favicon.png?v=unisol-color-20261122');
+})->with(['/terminos', '/finalizar']);
+
 it('serves the configured metadata once in the initial HTML without requiring JavaScript', function (string $title, string $expected) {
     Page::create([
         'title' => 'Landing', 'slug' => '/landing', 'meta_title' => $title,
@@ -101,7 +113,6 @@ it('excludes agency redirects from the canonical sitemap without hiding other ho
 it('redirects legacy requests through the Laravel HTTP stack', function (string $url, string $destination) {
     $this->get($url)->assertStatus(301)->assertRedirect($destination);
 })->with([
-    ['https://www.redunisol.com.ar/privacidad/', 'https://redunisol.com.ar/politicas-de-privacidad'],
     ['https://redunisol.com.ar/celesol/Terminos%20y%20condiciones%20Celesol.pdf', 'https://redunisol.com.ar/gestion-de-datos'],
     ['https://prestamos.redunisol.com.ar/wp-content/themes/redunisol/css/old.css', 'https://redunisol.com.ar/'],
     ['https://prestamos.redunisol.com.ar/diferencia-entre-mutual-y-cooperativa/', 'https://redunisol.com.ar/blog/diferencia-entre-mutual-y-cooperativa'],

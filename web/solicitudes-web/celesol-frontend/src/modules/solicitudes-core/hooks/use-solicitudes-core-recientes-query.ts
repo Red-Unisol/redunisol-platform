@@ -6,8 +6,13 @@ import { listSolicitudesCore } from "@/modules/solicitudes-core/services/solicit
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import { buildRecientesDateRange } from "@/modules/solicitudes-core/utils/recientes-date-range";
 
+export type VistaRecientes = "mi-area" | "todas" | "verificar-firma";
+
+// La vista "verificar-firma" es la de todas las areas, limitada a ese estado.
+const ESTADO_VERIFICAR_FIRMA = "VerificarFirmaYDocumentacion";
+
 type UseSolicitudesCoreRecientesQueryOptions = {
-  vista: "mi-area" | "todas";
+  vista: VistaRecientes;
   userId?: string;
   workflowOwnerIds?: string[];
   search?: string;
@@ -27,12 +32,15 @@ export function useSolicitudesCoreRecientesQuery({
   const limit = pageSize;
   const offset = (page - 1) * pageSize;
   const { createdFrom, createdTo } = buildRecientesDateRange();
+  const vistaApi = vista === "verificar-firma" ? "todas" : vista;
+  const estado = vista === "verificar-firma" ? ESTADO_VERIFICAR_FIRMA : undefined;
 
   return useQuery({
     enabled: Boolean(userId),
     queryFn: () =>
       listSolicitudesCore({
-        vista,
+        vista: vistaApi,
+        estado,
         createdFrom,
         createdTo,
         excludeEstado: "CargaVendedor",
@@ -42,7 +50,8 @@ export function useSolicitudesCoreRecientesQuery({
         scope: "recientes",
       }),
     queryKey: solicitudesCoreQueryKeys.recientes({
-      vista,
+      vista: vistaApi,
+      estado,
       userId,
       workflowOwnerIds,
       createdFrom,

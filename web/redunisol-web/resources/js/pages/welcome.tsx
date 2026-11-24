@@ -20,6 +20,11 @@ import YouTubeSection from '@/components/sections/YouTubeSection';
 import SeoHead from '@/components/seo-head';
 import Services from '@/components/services';
 import Testimonios from '@/components/testimonios';
+import {
+    homePlatformSectionData,
+    platformDescription,
+    platformName,
+} from '@/data/home-platform-copy';
 import useActiveSection from '@/hooks/useActiveSection';
 import useTracking from '@/hooks/useTracking';
 import { faqSchema, organizationSchema, serviceSchema } from '@/utils/schemas';
@@ -91,7 +96,7 @@ export default function Page() {
     const {
         landingSlug,
         formAtBottom = false,
-        sections = [],
+        sections: pageSections = [],
         title,
         meta_title,
         meta_description,
@@ -100,6 +105,17 @@ export default function Page() {
         seo,
     } = usePage<HomePageProps>().props;
 
+    const isHomePage = landingSlug === '/';
+    const sections = useMemo(
+        () =>
+            isHomePage
+                ? pageSections.map((section) => ({
+                      ...section,
+                      data: homePlatformSectionData(section.type, section.data),
+                  }))
+                : pageSections,
+        [isHomePage, pageSections],
+    );
     const [activeTab, setActiveTab] = useState('unset');
 
     useTracking();
@@ -216,12 +232,18 @@ export default function Page() {
 
     // ── JSON-LD schemas ──
     const schemas = useMemo(() => {
-        const result: object[] = [organizationSchema()];
+        const result: object[] = [
+            organizationSchema(
+                isHomePage
+                    ? { name: platformName, description: platformDescription }
+                    : undefined,
+            ),
+        ];
 
         const servicesData = sections.find((s) => s.type === 'services')?.data;
         const faqsData = sections.find((s) => s.type === 'faqs')?.data;
 
-        if (servicesData) {
+        if (servicesData && !isHomePage) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             result.push(serviceSchema(servicesData as any));
         }
@@ -231,7 +253,7 @@ export default function Page() {
         }
 
         return result;
-    }, [sections]);
+    }, [isHomePage, sections]);
 
     // ── SEO ──
     const seoTitle = seo?.metaTitle || meta_title || title;
@@ -433,7 +455,7 @@ export default function Page() {
                     </div>
                 )}
 
-                <Footer />
+                <Footer showPlatformDisclosure={isHomePage} />
             </div>
         </>
     );
