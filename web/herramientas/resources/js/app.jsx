@@ -48,6 +48,83 @@ const placeholderTool = {
     isPlaceholder: true,
 };
 
+async function postJson(url, body) {
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+        },
+        body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(Object.values(payload.errors || {}).flat()[0] || payload.message || 'No se pudo completar la operacion.');
+    }
+    return payload;
+}
+
+// Entrar con el usuario de Vimarx: no es para frenar, es para saber quien consulta.
+function EmpleadorLogin({ tool, onLogin }) {
+    const [usuario, setUsuario] = React.useState('');
+    const [clave, setClave] = React.useState('');
+    const [busy, setBusy] = React.useState(false);
+    const [error, setError] = React.useState('');
+
+    return (
+        <form
+            className="workspace__form"
+            onSubmit={async (event) => {
+                event.preventDefault();
+                setBusy(true);
+                setError('');
+                try {
+                    const payload = await postJson(tool.loginEndpoint, { usuario, clave });
+                    setClave('');
+                    onLogin(payload.usuario);
+                } catch (loginError) {
+                    setError(loginError.message);
+                } finally {
+                    setBusy(false);
+                }
+            }}
+        >
+            <p className="field__hint">Para usar esta consulta, entra con tu usuario y clave de Vimarx.</p>
+            <div className="form-grid">
+                <div className="field">
+                    <label htmlFor="empleador-usuario">Usuario de Vimarx</label>
+                    <input
+                        id="empleador-usuario"
+                        autoComplete="username"
+                        required
+                        value={usuario}
+                        onChange={(event) => setUsuario(event.target.value)}
+                    />
+                </div>
+                <div className="field">
+                    <label htmlFor="empleador-clave">Clave de Vimarx</label>
+                    <input
+                        id="empleador-clave"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        value={clave}
+                        onChange={(event) => setClave(event.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="actions">
+                <button className="button button--primary" disabled={busy} type="submit">
+                    {busy ? 'Ingresando...' : 'Ingresar'}
+                </button>
+            </div>
+            {error && <p className="field__hint" role="alert">{error}</p>}
+        </form>
+    );
+}
+
 function App({ branding, tools }) {
     const [selectedToolId, setSelectedToolId] = React.useState(null);
     const [formValues, setFormValues] = React.useState({
@@ -59,8 +136,12 @@ function App({ branding, tools }) {
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
+    const [empleadorUsuario, setEmpleadorUsuario] = React.useState(
+        tools.find((tool) => tool.id === 'consulta-empleador')?.usuario ?? null,
+    );
 
     const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? null;
+    const needsEmpleadorLogin = selectedTool?.id === 'consulta-empleador' && !empleadorUsuario;
     const catalog = [...tools, placeholderTool];
     const credixNormalized = selectedTool?.id === 'consulta-quiebra-credix'
         ? parseJsonObject(result?.normalized_json)
@@ -140,6 +221,11 @@ function App({ branding, tools }) {
             });
 
             const payload = await response.json().catch(() => ({}));
+
+            if (response.status === 401 && selectedTool?.id === 'consulta-empleador') {
+                setEmpleadorUsuario(null);
+                return;
+            }
 
             if (!response.ok) {
                 throw new Error(extractErrorMessage(payload));
@@ -242,6 +328,28 @@ function App({ branding, tools }) {
                             </button>
                         </div>
 
+                        {needsEmpleadorLogin && (
+                            <EmpleadorLogin tool={selectedTool} onLogin={setEmpleadorUsuario} />
+                        )}
+
+                        {selectedTool?.id === 'consulta-empleador' && empleadorUsuario && (
+                            <p className="field__hint">
+                                Consultando como <strong>{empleadorUsuario}</strong>.{' '}
+                                <button
+                                    className="button button--ghost button--small"
+                                    type="button"
+                                    onClick={async () => {
+                                        await postJson(selectedTool.logoutEndpoint, {}).catch(() => null);
+                                        setEmpleadorUsuario(null);
+                                        clearToolState();
+                                    }}
+                                >
+                                    Salir
+                                </button>
+                            </p>
+                        )}
+
+                        {!needsEmpleadorLogin && (
                         <form className="workspace__form" onSubmit={handleSubmit}>
                             {selectedTool?.id === 'consulta-quiebra-credix' ? (
                                 <div className="form-grid">
@@ -328,6 +436,7 @@ function App({ branding, tools }) {
                                 </button>
                             </div>
                         </form>
+                        )}
 
                         {loading && selectedTool && (
                             <section className="loading-state" role="status" aria-live="polite">

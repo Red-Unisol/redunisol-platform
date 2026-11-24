@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\EmpleadorAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
 
@@ -44,6 +46,9 @@ class HerramientasController extends Controller
                 }
                 if (($tool['id'] ?? null) === 'consulta-empleador') {
                     $tool['endpoint'] = route('tools.consulta-empleador');
+                    $tool['loginEndpoint'] = route('tools.consulta-empleador.login');
+                    $tool['logoutEndpoint'] = route('tools.consulta-empleador.logout');
+                    $tool['usuario'] = EmpleadorAccess::usuario(request());
                 }
                 if (($tool['id'] ?? null) === 'consulta-cuad') {
                     $tool['endpoint'] = route('tools.consulta-cuad');
@@ -258,6 +263,58 @@ class HerramientasController extends Controller
         }
 
         return response()->json($response->json());
+    }
+
+    /** Valida usuario y clave contra Vimarx; la clave no se guarda, solo el usuario en la sesión. */
+    public function empleadorLogin(Request $request): JsonResponse
+    {
+        if (! $this->isEnabled()) {
+            return $this->disabledJsonResponse();
+        }
+
+        $data = $request->validate([
+            'usuario' => ['required', 'string', 'max:80'],
+            'clave' => ['required', 'string', 'max:200'],
+        ], ['usuario.required' => 'Ingresá tu usuario de Vimarx.', 'clave.required' => 'Ingresá tu clave de Vimarx.']);
+
+        // Límite generoso: no es para frenar, solo para que nadie pruebe claves (y no se bloquee el usuario en Vimarx).
+        $key = 'empleador-login:'.hash('sha256', (string) $request->ip());
+        if (RateLimiter::tooManyAttempts($key, 10)) {
+            return response()->json(['message' => 'Demasiados intentos. Esperá un minuto y volvé a intentar.'], 429)
+                ->header('Retry-After', RateLimiter::availableIn($key));
+        }
+
+        $usuario = trim($data['usuario']);
+
+        try {
+            $response = Http::acceptJson()->asJson()->timeout(20)
+                ->post((string) config('tools.vimarx_login_url'), ['user_name' => $usuario, 'user_password' => $data['clave']]);
+        } catch (Throwable) {
+            return response()->json(['message' => 'No pudimos validar el usuario con Vimarx. Probá de nuevo en un rato.'], 503);
+        }
+
+        $token = $response->successful() ? $response->json('token') : null;
+        if (in_array($response->status(), [401, 403], true) || ($response->successful() && (! is_string($token) || $response->json('error')))) {
+            RateLimiter::hit($key, 60);
+
+            return response()->json(['message' => 'Usuario o clave de Vimarx incorrectos.'], 422);
+        }
+        if (! is_string($token)) {
+            return response()->json(['message' => 'No pudimos validar el usuario con Vimarx. Probá de nuevo en un rato.'], 503);
+        }
+
+        RateLimiter::clear($key);
+        $request->session()->regenerate();
+        $request->session()->put(EmpleadorAccess::SESSION_KEY, $usuario);
+
+        return response()->json(['ok' => true, 'usuario' => $usuario])->header('Cache-Control', 'no-store');
+    }
+
+    public function empleadorLogout(Request $request): JsonResponse
+    {
+        $request->session()->forget(EmpleadorAccess::SESSION_KEY);
+
+        return response()->json(['ok' => true])->header('Cache-Control', 'no-store');
     }
 
     public function consultaEmpleador(Request $request): JsonResponse
