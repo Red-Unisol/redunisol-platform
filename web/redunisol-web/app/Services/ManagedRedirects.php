@@ -4,8 +4,21 @@ namespace App\Services;
 
 class ManagedRedirects
 {
+    public function isLegalDocumentPath(string $path): bool
+    {
+        $path = '/'.trim(rawurldecode($path), '/');
+
+        return isset(config('legal_documents', [])[$path])
+            || in_array($path, ['/politicas-de-privacidad', '/terminos-y-condiciones'], true);
+    }
+
     public function targetFor(string $host, string $path): ?string
     {
+        // These paths now serve the supplied documents, instead of historical CMS destinations.
+        if ($this->isLegalDocumentPath($path)) {
+            return null;
+        }
+
         // Decode once so accented names and spaces in retired PDFs match URLs.
         $path = '/'.trim(rawurldecode($path), '/');
         $host = strtolower($host);

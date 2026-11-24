@@ -44,6 +44,7 @@ services:
       LOG_CHANNEL: ${LOG_CHANNEL}
     volumes:
       - padrones:/var/www/html/storage/app/private/padrones
+      - empleador-registro:/var/www/html/storage/app/private/empleador-registro
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
       - /srv/redunisol-reports/contabilidad/bcra:/data/bcra:ro
       - /srv/redunisol-reports/analisis-credito/cuad-masivo:/data/cuad-masivo:ro
@@ -62,3 +63,4 @@ services:
 
 volumes:
   padrones:
+  empleador-registro:

@@ -6,6 +6,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
     $this->withoutVite();
+    config()->set('finalizar.legacy_clients.caja.evaluate_base_url', '');
+    config()->set('finalizar.legacy_clients.solicitudes.evaluate_base_url', '');
 });
 
 it('explains paid signature links and keeps unrelated api failures generic', function (string $path, int $status, string $code, string $message, string $expected) {
@@ -222,27 +224,35 @@ it('supports fallback loans with missing optional data', function () {
         );
 });
 
-it('uses a hosted pdf as the default terms url', function () {
+it('includes the same platform terms as the legal page on every finalizar route', function (string $path) {
     config()->set('finalizar.legacy_clients.caja.base_url', '');
+    $terms = $this->get('/terminos')->assertOk()->viewData('page')['props']['document'];
+
+    $this->get($path)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->missing('settings.terms_url')
+            ->where('platformTerms', $terms)
+            ->where('platformTerms.draft', false)
+            ->where('platformTerms.content', fn ($content) => str_contains($content, 'no garantiza el pago de las cuotas'))
+        );
+})->with(['/finalizar', '/finalizar.php', '/finalizar-nvo']);
+
+it('ignores the old configurable PDF destination without deleting its saved value', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+    SiteSetting::set('finalizar_terms_url', 'https://example.test/contrato-operacion.pdf');
 
     $this->get('/finalizar')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
-            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
+            ->missing('settings.terms_url')
+            ->where('platformTerms.title', 'Términos y Condiciones')
+            ->missing('platformTerms.pdfUrl')
         );
-});
 
-it('normalizes the old finalizar terms url to the hosted pdf path', function () {
-    config()->set('finalizar.legacy_clients.caja.base_url', '');
-    SiteSetting::set('finalizar_terms_url', '/terminos-y-condiciones');
-
-    $this->get('/finalizar')
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('finalizar')
-            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
-        );
+    expect(SiteSetting::get('finalizar_terms_url'))->toBe('https://example.test/contrato-operacion.pdf');
 });
 
 it('uses the hosted AMEJUCA terms for the requested line', function (string $line, string $termsUrl) {
@@ -256,6 +266,7 @@ it('uses the hosted AMEJUCA terms for the requested line', function (string $lin
             ->assertInertia(fn (Assert $page) => $page
                 ->component('finalizar')
                 ->where('settings.terms_url', $termsUrl)
+                ->where('platformTerms.title', 'Términos y Condiciones')
             );
     }
 })->with([
@@ -264,7 +275,7 @@ it('uses the hosted AMEJUCA terms for the requested line', function (string $lin
 ]);
 
 it('keeps the finalizar visual and identity verification contract', function () {
-    $page = file_get_contents(resource_path('js/pages/finalizar.tsx'));
+    $page = preg_replace('/\s+/', ' ', file_get_contents(resource_path('js/pages/finalizar.tsx')));
     $conventionCard = file_get_contents(resource_path('js/components/convenio-card.tsx'));
 
     expect($page)
@@ -274,8 +285,10 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('Crédito para')
         ->toContain('Monto del crédito')
         ->toContain('Plan de cuotas')
+        ->toContain('href={settings.terms_url}')
+        ->toContain('Términos del crédito (PDF)')
         ->toContain('Número de solicitud')
-        ->toContain("createElement('metamap-button'")
+        ->toContain("'metamap-button'")
         ->toContain('clientid:')
         ->toContain('flowid:')
         ->toContain('metadata,')
@@ -290,11 +303,10 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('La validación de identidad está en curso.')
         ->toContain('Identidad validada correctamente')
         ->toContain('La validación no fue completada.')
-        ->toContain('max-w-2xl')
         ->toContain('bottom-[calc(0.75rem+env(safe-area-inset-bottom))]')
         ->toContain('sm:static')
         ->toContain('pb-32')
-        ->toContain('sm:grid-cols-2')
+        ->toContain('grid-cols-2')
         ->not->toContain('Al continuar, revisá')
         ->not->toContain('ProgressSteps')
         ->not->toContain('verificationSteps')

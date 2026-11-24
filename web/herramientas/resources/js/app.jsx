@@ -48,6 +48,160 @@ const placeholderTool = {
     isPlaceholder: true,
 };
 
+async function postJson(url, body) {
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+        },
+        body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(Object.values(payload.errors || {}).flat()[0] || payload.message || 'No se pudo completar la operacion.');
+    }
+    return payload;
+}
+
+// Entrar con el usuario de Vimarx: no es para frenar, es para saber quien consulta.
+function EmpleadorLogin({ tool, onLogin }) {
+    const [usuario, setUsuario] = React.useState('');
+    const [clave, setClave] = React.useState('');
+    const [busy, setBusy] = React.useState(false);
+    const [error, setError] = React.useState('');
+
+    return (
+        <form
+            className="workspace__form"
+            onSubmit={async (event) => {
+                event.preventDefault();
+                setBusy(true);
+                setError('');
+                try {
+                    const payload = await postJson(tool.loginEndpoint, { usuario, clave });
+                    setClave('');
+                    onLogin(payload.usuario);
+                } catch (loginError) {
+                    setError(loginError.message);
+                } finally {
+                    setBusy(false);
+                }
+            }}
+        >
+            <p className="field__hint">Para usar esta consulta, entra con tu usuario y clave de Vimarx.</p>
+            <div className="form-grid">
+                <div className="field">
+                    <label htmlFor="empleador-usuario">Usuario de Vimarx</label>
+                    <input
+                        id="empleador-usuario"
+                        autoComplete="username"
+                        required
+                        value={usuario}
+                        onChange={(event) => setUsuario(event.target.value)}
+                    />
+                </div>
+                <div className="field">
+                    <label htmlFor="empleador-clave">Clave de Vimarx</label>
+                    <input
+                        id="empleador-clave"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        value={clave}
+                        onChange={(event) => setClave(event.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="actions">
+                <button className="button button--primary" disabled={busy} type="submit">
+                    {busy ? 'Ingresando...' : 'Ingresar'}
+                </button>
+            </div>
+            {error && <p className="field__hint" role="alert">{error}</p>}
+        </form>
+    );
+}
+
+const registroFecha = (value) => new Date(value).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+const registroMes = (mes) => {
+    const [year, month] = mes.split('-').map(Number);
+    const nombre = new Date(year, month - 1, 1).toLocaleString('es-AR', { month: 'long' });
+    return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${year}`;
+};
+
+// Quién consultó y cuándo: se recarga después de cada consulta.
+function EmpleadorRegistro({ tool, version }) {
+    const [mes, setMes] = React.useState('');
+    const [data, setData] = React.useState(null);
+    const [error, setError] = React.useState('');
+
+    React.useEffect(() => {
+        const url = new URL(tool.registroEndpoint, window.location.origin);
+        if (mes) {
+            url.searchParams.set('mes', mes);
+        }
+        let vigente = true;
+        fetch(url.toString(), { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } })
+            .then(async (response) => {
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.message || 'No pudimos leer el registro.');
+                }
+                return payload;
+            })
+            .then((payload) => { if (vigente) { setData(payload); setError(''); } })
+            .catch((loadError) => { if (vigente) { setError(loadError.message); } });
+        return () => { vigente = false; };
+    }, [tool.registroEndpoint, mes, version]);
+
+    const mesActual = data?.mes ?? mes;
+    const meses = data?.meses?.length ? data.meses : (mesActual ? [mesActual] : []);
+    const consultas = data?.consultas ?? [];
+    const csvUrl = mesActual ? `${tool.registroCsvEndpoint}?mes=${encodeURIComponent(mesActual)}` : tool.registroCsvEndpoint;
+
+    return (
+        <section className="result empleador-registro">
+            <h3 className="result__headline">Registro de consultas</h3>
+            <div className="actions">
+                {meses.length > 0 && (
+                    <select value={mesActual} onChange={(event) => setMes(event.target.value)} aria-label="Mes">
+                        {meses.map((item) => <option key={item} value={item}>{registroMes(item)}</option>)}
+                    </select>
+                )}
+                <span className="field__hint">{consultas.length} consultas</span>
+                <a className="button button--ghost button--small" href={csvUrl}>Descargar</a>
+            </div>
+            {error && <p className="result__empty" role="alert">{error}</p>}
+            {!error && consultas.length === 0 && <p className="result__empty">Todavía no hay consultas en este mes.</p>}
+            {consultas.length > 0 && (
+                <div className="result__tableWrap empleador-registro__tabla">
+                    <table className="result__table">
+                        <thead>
+                            <tr><th>Fecha y hora</th><th>Usuario</th><th>DNI/CUIL</th><th>Estado</th></tr>
+                        </thead>
+                        <tbody>
+                            {consultas.map((fila, index) => (
+                                <tr key={`${fila.fecha}-${index}`}>
+                                    <td>{registroFecha(fila.fecha)}</td>
+                                    <td>{fila.usuario}</td>
+                                    <td>{fila.identificador}</td>
+                                    <td>{fila.estado === 'ok' ? 'OK' : 'Error'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
 function App({ branding, tools }) {
     const [selectedToolId, setSelectedToolId] = React.useState(null);
     const [formValues, setFormValues] = React.useState({
@@ -59,8 +213,13 @@ function App({ branding, tools }) {
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
+    const [registroVersion, setRegistroVersion] = React.useState(0);
+    const [empleadorUsuario, setEmpleadorUsuario] = React.useState(
+        tools.find((tool) => tool.id === 'consulta-empleador')?.usuario ?? null,
+    );
 
     const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? null;
+    const needsEmpleadorLogin = selectedTool?.id === 'consulta-empleador' && !empleadorUsuario;
     const catalog = [...tools, placeholderTool];
     const credixNormalized = selectedTool?.id === 'consulta-quiebra-credix'
         ? parseJsonObject(result?.normalized_json)
@@ -141,6 +300,11 @@ function App({ branding, tools }) {
 
             const payload = await response.json().catch(() => ({}));
 
+            if (response.status === 401 && selectedTool?.id === 'consulta-empleador') {
+                setEmpleadorUsuario(null);
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(extractErrorMessage(payload));
             }
@@ -150,6 +314,7 @@ function App({ branding, tools }) {
             setError(submitError.message);
         } finally {
             setLoading(false);
+            setRegistroVersion((version) => version + 1);
         }
     };
 
@@ -242,6 +407,28 @@ function App({ branding, tools }) {
                             </button>
                         </div>
 
+                        {needsEmpleadorLogin && (
+                            <EmpleadorLogin tool={selectedTool} onLogin={setEmpleadorUsuario} />
+                        )}
+
+                        {selectedTool?.id === 'consulta-empleador' && empleadorUsuario && (
+                            <p className="field__hint">
+                                Consultando como <strong>{empleadorUsuario}</strong>.{' '}
+                                <button
+                                    className="button button--ghost button--small"
+                                    type="button"
+                                    onClick={async () => {
+                                        await postJson(selectedTool.logoutEndpoint, {}).catch(() => null);
+                                        setEmpleadorUsuario(null);
+                                        clearToolState();
+                                    }}
+                                >
+                                    Salir
+                                </button>
+                            </p>
+                        )}
+
+                        {!needsEmpleadorLogin && (
                         <form className="workspace__form" onSubmit={handleSubmit}>
                             {selectedTool?.id === 'consulta-quiebra-credix' ? (
                                 <div className="form-grid">
@@ -328,6 +515,7 @@ function App({ branding, tools }) {
                                 </button>
                             </div>
                         </form>
+                        )}
 
                         {loading && selectedTool && (
                             <section className="loading-state" role="status" aria-live="polite">
@@ -524,6 +712,9 @@ function App({ branding, tools }) {
                                     </div>
                                 )}
                             </section>
+                        )}
+                        {selectedTool?.id === 'consulta-empleador' && empleadorUsuario && (
+                            <EmpleadorRegistro tool={selectedTool} version={registroVersion} />
                         )}
                     </section>
                 </div>

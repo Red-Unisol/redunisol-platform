@@ -36,7 +36,7 @@ COPY --from=vendor /app /var/www/html
 COPY --from=frontend /app/public/build /var/www/html/public/build
 
 RUN cp .env.example .env \
-    && mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views storage/app/private/padrones bootstrap/cache \
+    && mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views storage/app/private/padrones storage/app/private/empleador-registro bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 80

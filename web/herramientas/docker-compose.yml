@@ -29,8 +29,10 @@ services:
       LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
     volumes:
       - padrones:/var/www/html/storage/app/private/padrones
+      - empleador-registro:/var/www/html/storage/app/private/empleador-registro
       - ${BCRA_REPORTS_HOST_PATH:-./storage/app/private/bcra}:/data/bcra:ro
     restart: unless-stopped
 
 volumes:
   padrones:
+  empleador-registro:

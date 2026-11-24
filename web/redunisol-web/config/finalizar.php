@@ -11,6 +11,7 @@ return [
     'legacy_clients' => [
         'caja' => [
             'base_url' => env('FINALIZAR_CAJA_API_BASE_URL'),
+            'evaluate_base_url' => env('FINALIZAR_VIMARX_API_BASE_URL', 'https://celesol.dyndns.org:5002'),
         ],
         'fiat' => [
             'base_url' => env('FINALIZAR_FIAT_API_BASE_URL'),
@@ -20,6 +21,7 @@ return [
         // solo cambia a quien se le pregunta. Lo usa la ruta /finalizar-nvo.
         'solicitudes' => [
             'base_url' => env('FINALIZAR_SOLICITUDES_API_BASE_URL'),
+            'evaluate_base_url' => env('FINALIZAR_VIMARX_API_BASE_URL', 'https://celesol.dyndns.org:5002'),
         ],
         'timeout_seconds' => (int) env('FINALIZAR_API_TIMEOUT_SECONDS', 30),
     ],
