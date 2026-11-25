@@ -529,14 +529,15 @@ def bind_open_line_activities_to_deal(
     return linked_count
 
 
-def _crm_open_line_chat_ids(
+def _crm_open_line_bindings(
     client: BitrixClient,
     *,
     lead_id: int,
     contact_id: int | None,
     deal_id: int,
-) -> tuple[int, ...]:
-    chat_ids: list[int] = []
+    strict: bool = False,
+) -> dict[int, set[str]]:
+    bindings: dict[int, set[str]] = {}
     for entity_type, entity_id in (
         ("lead", lead_id),
         ("contact", contact_id),
@@ -549,12 +550,74 @@ def _crm_open_line_chat_ids(
             {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "N"},
         )
         if not isinstance(chats, list):
+            if strict:
+                raise ValueError("Malformed native CRM chat list.")
             raise RuntimeError("imopenlines.crm.chat.get devolvio un payload invalido.")
         for chat in chats:
             if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
-                chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
+                chat_id = int(str(chat.get("CHAT_ID") or chat.get("chat_id")))
+                bindings.setdefault(chat_id, set()).add(entity_type)
+            elif strict:
+                raise ValueError("Missing native CRM chat identifier.")
 
-    return tuple(dict.fromkeys(chat_ids))
+    return bindings
+
+
+def _crm_open_line_chat_ids(client, *, lead_id, contact_id, deal_id, strict=False):
+    return tuple(_crm_open_line_bindings(client, lead_id=lead_id, contact_id=contact_id,
+                                         deal_id=deal_id, strict=strict))
+
+
+def _active_sales_dialogs(client, *, lead_id, contact_id, deal_id, distributable_open_line_ids,
+                          require_request_binding=False):
+    """Return exact active Edna sales dialogs. Unreadable metadata is never an empty list."""
+    bindings = _crm_open_line_bindings(client, lead_id=lead_id, contact_id=contact_id,
+                                       deal_id=deal_id, strict=True)
+    if len(bindings) > 25:
+        raise ValueError("Too many linked chats to establish a unique binding.")
+    dialogs = {}
+    for chat_id, entities in bindings.items():
+        dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        if not isinstance(dialog, dict) or str(dialog.get("id")) != str(chat_id):
+            raise ValueError("Native CRM dialog identity mismatch.")
+        line = _open_line_id(dialog)
+        if line is None:
+            raise ValueError("Native open line is unknown.")
+        if line != 1 or line not in distributable_open_line_ids:
+            continue
+        channel = str(dialog.get("entity_id", "")).split("|")
+        if dialog.get("entity_type") != "LINES" or len(channel) != 4 or not channel[0]:
+            raise ValueError("Native CRM channel identity is incomplete.")
+        if channel[0] != "whatsappbyedna":
+            continue
+        enabled = dialog.get("text_field_enabled", dialog.get("TEXT_FIELD_ENABLED"))
+        if enabled in (False, "N", "n", 0):
+            continue
+        if enabled not in (True, "Y", "y", 1) or active_open_line_session_id(dialog) is None:
+            raise ValueError("Active CRM session identity is unknown.")
+        expected = {"LEAD": lead_id, "CONTACT": contact_id, "DEAL": deal_id}
+        primary = str(dialog.get("entity_data_1", "")).split("|")[1:3]
+        links = str(dialog.get("entity_data_2") or "").split("|") if dialog.get("entity_data_2") else []
+        if len(primary) != 2 or len(links) % 2:
+            raise ValueError("Incomplete native CRM binding.")
+        request_bound = bool(entities & {"lead", "deal"})
+        for kind, value in [primary, *zip(links[::2], links[1::2])]:
+            if kind in expected and value not in ("", "0") and str(expected[kind]) != value:
+                raise ValueError("Conflicting native CRM binding.")
+            if kind in ("LEAD", "DEAL") and value not in ("", "0") and value == str(expected[kind]):
+                request_bound = True
+        if require_request_binding and not request_bound:
+            raise ValueError("A contact alone cannot identify the requested case.")
+        _counter(dialog.get("owner"))
+        dialogs[chat_id] = dialog
+    return dialogs
+
+
+def active_sales_chat_owners(client, *, lead_id, contact_id, deal_id, distributable_open_line_ids):
+    dialogs = _active_sales_dialogs(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
+                                    distributable_open_line_ids=distributable_open_line_ids)
+    return {chat: (active_open_line_session_id(dialog), _counter(dialog["owner"]))
+            for chat, dialog in dialogs.items()}
 
 
 def active_open_line_owners(
@@ -661,37 +724,75 @@ def _open_line_session_transferability(
 
 
 def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
-                                  distributable_open_line_ids, logger):
+                                  distributable_open_line_ids, logger, seller_owner=None):
     """Preflight before CRM ownership writes; return exact session snapshots.
 
     A queue owner is not evidence that no human took the chat. Unknown metadata
     blocks changes too. Closed/other-line chats do not govern commercial owners.
+
+    seller_owner: seller who already owns the chat and will receive this deal
+    without a chat transfer. Only that exact owner stops blocking; any other
+    human owner still preserves the case, so a later change is still detected.
     """
     sessions = {}
     try:
-        chats = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id)
+        chats = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
+                                        strict=True)
         if len(chats) > 25:
-            return sessions, "attention_inspection_unavailable"
+            return sessions, "attention_evidence_ambiguous"
         for chat_id in chats:
             dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
             if not isinstance(dialog, dict) or str(dialog.get("id")) != str(chat_id):
-                return sessions, "attention_inspection_unavailable"
+                return sessions, "attention_evidence_ambiguous"
             line = _open_line_id(dialog)
             if line is None:
-                return sessions, "attention_inspection_unavailable"
+                return sessions, "attention_evidence_ambiguous"
             sessions[chat_id] = active_open_line_session_id(dialog) or 0
             if line not in distributable_open_line_ids or not sessions[chat_id]:
                 continue
             owner = _counter(dialog.get("owner"))
+            if seller_owner is not None and owner == seller_owner:
+                # Already with the deal's destination: nothing to protect from a transfer.
+                continue
             if owner not in (0, 57, 74827):
                 return sessions, "manual_owner_preserved"
             ready, reason = _unattended_sales_session(client, chat_id, dialog)
             if not ready:
                 return sessions, reason
         return sessions, None
+    except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+        return sessions, "attention_evidence_ambiguous"
     except Exception:
         # No provider exception/private webhook URL becomes a business result.
         return sessions, "attention_inspection_unavailable"
+
+
+def inspect_attention_retry_sessions(client, *, lead_id, contact_id, deal_id, distributable_open_line_ids,
+                                     expected_sessions=None, failed_at=None, now=None, window_evidence=None):
+    """Resolve the one current, still-contactable, unattended session for this recovery."""
+    if window_evidence is not None:
+        window_evidence.pop("expires_at", None)
+    try:
+        dialogs = _active_sales_dialogs(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
+                                        distributable_open_line_ids=distributable_open_line_ids,
+                                        require_request_binding=expected_sessions is None)
+    except ValueError:
+        return {}, "attention_evidence_ambiguous"
+    except Exception:
+        return {}, "attention_inspection_unavailable"
+    sessions = {chat: active_open_line_session_id(dialog) for chat, dialog in dialogs.items()}
+    if not sessions:
+        return {}, "no_current_transferable_session"
+    if len(sessions) != 1:
+        return sessions, "ambiguous_active_sales_sessions"
+    if expected_sessions is not None and sessions != expected_sessions:
+        return sessions, "session_changed_before_transfer"
+    chat, dialog = next(iter(dialogs.items()))
+    if _counter(dialog["owner"]) not in (0, 57, 74827):
+        return sessions, "manual_owner_preserved"
+    ready, reason = _unattended_sales_session(client, chat, dialog, verify_window=True,
+                                              failed_at=failed_at, now=now, window_evidence=window_evidence)
+    return sessions, None if ready else reason
 
 
 def _counter(value):
@@ -700,7 +801,8 @@ def _counter(value):
     return int(value)
 
 
-def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
+def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, verify_window=False,
+                              failed_at=None, now=None, window_evidence=None):
     """Read the exact current session twice, then reread its identity/owner.
 
     No accepting/starting/transfer is used for inspection. The external transfer
@@ -710,7 +812,7 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
         deadline = monotonic() + 30
         def read(method, payload):
             if monotonic() >= deadline:
-                raise ValueError("Attention inspection budget exhausted.")
+                raise TimeoutError("Attention inspection budget exhausted.")
             return client.call(method, payload)
         channel = str(initial.get("entity_id", "")).split("|")
         if (str(initial.get("id")) != str(chat_id) or initial.get("entity_type") != "LINES"
@@ -723,6 +825,11 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
         if not session_id or not epoch or owner not in (0, 57, 74827):
             raise ValueError("Current sales session is unavailable.")
         created = datetime.fromtimestamp(epoch, timezone.utc)
+        if failed_at is not None:
+            if failed_at.tzinfo is None or failed_at.utcoffset() is None:
+                raise ValueError("Recovery cutoff needs an explicit timezone.")
+            if created > failed_at:
+                return False, "session_created_after_inspection_failure"
         for _ in range(2):
             data = read("imopenlines.v2.Session.list", {"configId": 1,
                 "dateCreateFrom": (created - timedelta(seconds=2)).isoformat(),
@@ -773,6 +880,7 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
             messages = history["message"].values() if isinstance(history["message"], dict) else history["message"]
             seen = set()
             entry_matches = []
+            last_customer_message = None
             for message in messages:
                 if not isinstance(message, dict) or str(message.get("chatid")) != str(chat_id):
                     raise ValueError("Native message identity is unknown.")
@@ -796,6 +904,15 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
                     raise ValueError("Native sender is unknown.")
                 if user["connector"] is False:
                     return False, "operator_message_preserved"
+                if verify_window:
+                    if str(sender) != channel[3] or message.get("system") not in (None, False):
+                        raise ValueError("Unexpected customer identity or system message.")
+                    inbound = _customer_inbound_time(message)
+                    if inbound is not None:
+                        if inbound < created - timedelta(seconds=2) or inbound > (now or datetime.now(timezone.utc)):
+                            raise ValueError("Inbound timestamp inconsistent with the session.")
+                        if last_customer_message is None or inbound > last_customer_message:
+                            last_customer_message = inbound
                 if entry_binding is not None:
                     params = message.get("params", {})
                     params = json.loads(params) if isinstance(params, str) else params
@@ -805,14 +922,45 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None):
                         entry_matches.append((str(mid), str(sender)))
             if entry_binding is not None and entry_matches != [(entry_binding["message_id"], channel[3])]:
                 return False, "native_message_unverified"
+            if verify_window and last_customer_message is None:
+                return False, "customer_inbound_unverified"
         last = read("imopenlines.dialog.get", {"CHAT_ID": chat_id})
         if not isinstance(last, dict) or active_open_line_session_id(last) != session_id:
             return False, "session_changed_before_transfer"
         if any(last.get(key) != initial.get(key) for key in ("id", "owner", "entity_type", "entity_id", "entity_data_1", "entity_data_2")):
             return False, "chat_changed_before_transfer"
+        if verify_window:
+            expires_at = last_customer_message + timedelta(hours=24)
+            if (now or datetime.now(timezone.utc)) >= expires_at:
+                return False, "whatsapp_window_expired"
+            if window_evidence is not None:
+                window_evidence["expires_at"] = expires_at
         return True, "transferable"
+    except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+        return False, "attention_evidence_ambiguous"
     except Exception:
         return False, "attention_inspection_unavailable"
+
+
+def _customer_inbound_time(message):
+    params = message.get("params", {})
+    params = json.loads(params) if isinstance(params, str) else params
+    if not isinstance(params, dict):
+        return None
+    for key in ("class", "CLASS"):
+        classes = params.get(key, [])
+        if not isinstance(classes, (str, list)):
+            raise ValueError("Unknown native message direction.")
+        if "bx-messenger-content-item-ol-output" in classes:
+            return None
+    ids = params.get("connectorMid", params.get("CONNECTOR_MID", []))
+    ids = ids if isinstance(ids, list) else [ids]
+    if not any(isinstance(value, (str, int)) and not isinstance(value, bool) and str(value).strip() for value in ids):
+        return None
+    at = datetime.fromisoformat(str(message.get("date", "")).replace("Z", "+00:00"))
+    if at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError("Inbound timestamp needs an explicit timezone.")
+    return at
 
 
 def active_open_line_session_id(dialog: dict[str, Any]) -> int | None:
@@ -892,6 +1040,69 @@ def notify_distribution_supervisor(
     logger.info(
         f"Notificacion {notification_id} enviada al usuario {recipient_id} "
         f"por la negociacion {deal_id}."
+    )
+    return True
+
+
+ROUTING_REVIEW_REASON_LABELS = {
+    "manual_owner_preserved": "El chat o el prospecto ya tiene un responsable humano",
+    "operator_message_preserved": "Un operador ya escribió en el chat",
+    "operator_attention_preserved": "La sesión del chat ya fue atendida",
+    "manual_transfer_preserved": "El chat fue transferido a mano",
+    "attention_inspection_unavailable": "No se pudo revisar el chat en Bitrix",
+    "attention_evidence_ambiguous": "Los datos de sesión o atención de Bitrix son incompletos o contradictorios",
+    "ambiguous_active_sales_sessions": "Hay más de una sesión activa de WhatsApp en Ventas",
+    "no_current_transferable_session": "El chat no tiene una sesión activa en Ventas",
+    "session_created_after_inspection_failure": "El cliente inició otra sesión después de la consulta original",
+    "customer_inbound_unverified": "No se pudo verificar un mensaje entrante del cliente",
+    "whatsapp_window_expired": "Pasaron 24 horas desde el último mensaje del cliente",
+    "integration_owner_unverified": "El prospecto está a nombre del usuario de integración",
+    "sales_receiver_assignment_preserved": "El prospecto está a nombre del receptor de Ventas",
+}
+
+
+def notify_routing_review(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    deal_id: int,
+    deal_title: str,
+    reason: str,
+    logger: Logger,
+) -> bool:
+    """Tell the distribution supervisor that a deal was parked without a seller."""
+    recipient_id = config.deal.distribution_notification_user_id
+    deal_url = f"{_portal_base_url(config.base_url)}/crm/deal/details/{deal_id}/"
+    safe_deal_title = _notification_text(deal_title) or f"Negociacion #{deal_id}"
+    reason_label = ROUTING_REVIEW_REASON_LABELS.get(
+        reason, "La negociación o el chat cambiaron durante la asignación"
+        if "changed" in reason else _notification_text(reason))
+    message = (
+        "[B]Negociación en revisión de enrutamiento[/B]\n"
+        f"Nombre: {safe_deal_title}\n"
+        f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
+        f"Motivo: {reason_label}\n"
+        "No se asignó vendedor ni se transfirió el chat: requiere asignación manual."
+    )
+    message_out = (
+        f"Negociación en revisión de enrutamiento. Nombre: {safe_deal_title}. "
+        f"Negociacion #{deal_id}. Motivo: {reason_label}. "
+        f"No se asignó vendedor ni se transfirió el chat. {deal_url}"
+    )
+    try:
+        notification_id = client.call(
+            "im.notify.system.add",
+            {"USER_ID": recipient_id, "MESSAGE": message, "MESSAGE_OUT": message_out},
+        )
+    except RuntimeError as exc:
+        logger.error(
+            f"No se pudo notificar la revision de enrutamiento de la negociacion {deal_id} "
+            f"al usuario {recipient_id}: {exc}"
+        )
+        return False
+    logger.info(
+        f"Notificacion {notification_id} enviada al usuario {recipient_id} "
+        f"por negociacion {deal_id} en revision de enrutamiento."
     )
     return True
 
