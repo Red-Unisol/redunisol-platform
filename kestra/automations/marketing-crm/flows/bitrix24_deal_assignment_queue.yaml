@@ -6,6 +6,13 @@ description: Reintenta una negociación por grupo en horario de Ventas y conserv
 concurrency:
   limit: 1
   behavior: QUEUE
+# Con concurrency 1, una ejecucion colgada frena los reintentos de asignacion
+# (15-16/11: ~10,5 h; 22-24/11: ~58,7 h). Normal p99 2 min.
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT10M
+    behavior: CANCEL
 
 labels:
   env: prod

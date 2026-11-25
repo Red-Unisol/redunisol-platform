@@ -96,6 +96,15 @@ Antes de seleccionar, la tarea `hay_pendientes` (script Python con runner Proces
 sin contenedor) cuenta en Bitrix los leads en INGRESO desde `date_from`; si no hay,
 la seleccion no corre y la ejecucion termina con `count: 0`.
 
+El selector y el hijo tienen un SLA de 10 minutos con `MAX_DURATION` y `CANCEL`.
+Si vence el SLA del selector, Kestra solicita cancelar sus subflows en cascada.
+Con concurrencia 1, una vuelta colgada frenaba todo el prefill. El 22/11/2026
+una tanda quedo 55,8 h en RUNNING tras un reinicio de Kestra.
+Una ejecucion cancelada no pierde el lead: sigue en INGRESO y se retoma en otra vuelta.
+`bitrix24_lead_event_process`, `bitrix24_catamarca_deal_qualification` y
+`bitrix24_deal_assignment_queue` tambien tienen concurrencia 1 y un SLA de 10 minutos
+(15-16/11 y 22-24/11 quedaron trabados horas). Un `lead_event_process` cancelado se
+reconcilia en el receptor como fallo y el lead se reintenta a los 60 segundos.
 `bitrix24_lead_prefill_one` tiene un limite global de dos ejecuciones y no tiene
 trigger. No ejecutar el hijo manualmente ni reanudar ejecuciones historicas mientras
 el scheduler este activo: la exclusion por identidad pertenece al selector, no a
