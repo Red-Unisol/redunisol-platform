@@ -261,6 +261,28 @@ La decision de distribucion nunca reemplaza la decision comercial en la traza. U
 negociacion puede, por ejemplo, quedar `manual_review / missing_bcra_snapshot` en lo
 comercial y `queued / assignment_queued` en distribucion.
 
+## Recuperación cuando Bitrix no puede leer la atención
+
+Si una lectura de atención falla durante el reparto y ambos responsables siguen siendo
+provisionales, Kestra guarda el reintento en la negociación. El primer intento vuelve
+al minuto. Los siguientes esperan 2, 4, 8 y 16 minutos, y luego hasta 30 minutos entre
+consultas. El límite de recuperación es de 24 horas desde el primer fallo. El selector
+deja pasar otros ingresos durante la espera. Las negociaciones estacionadas en revisión
+antes del cambio quedan fuera de este circuito.
+
+Para retomar se debe verificar una sola sesión activa de VENTAS que ya existía al fallar
+la lectura, la identidad de la solicitud y una entrada del cliente de menos de 24 horas.
+Se verifican la atención humana y los responsables del chat, prospecto y negociación antes
+de asignar. Una aceptación, respuesta o transferencia humana, una sesión reemplazada o
+una relación contradictoria conserva la atención para revisión. Siguen aplicándose las
+reglas comerciales, de disponibilidad y de próxima apertura.
+
+Si corresponde vendedor, la asignación guarda también una orden de entrega para el chat y
+la sesión exactos. El calificador procesa esa orden incluso cuando ya no quedan negocios
+pendientes de calificar. Un corte después de asignar permite retomar sólo la entrega.
+Una vez iniciado el envío, un acuse incierto deja la intención disponible para conciliación
+y evita un segundo pase. El resultado por chat se consulta en `attention_deliveries_json`.
+
 ## Seleccion Dentro De Un Pool
 
 Cuando un bucket contiene mas de un vendedor:
