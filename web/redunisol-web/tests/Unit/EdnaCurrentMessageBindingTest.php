@@ -26,6 +26,10 @@ class CurrentMessageReadFake extends EdnaBitrix
 
     public array $histories = [];
 
+    public array $chatHistories = [];
+
+    public array $pages = [];
+
     public array $dialogs = [];
 
     public array $deals = [];
@@ -45,7 +49,9 @@ class CurrentMessageReadFake extends EdnaBitrix
             'crm.activity.list' => isset($payload['filter']['ASSOCIATED_ENTITY_ID'])
                 ? $this->activities[(string) $payload['filter']['ASSOCIATED_ENTITY_ID']] ?? []
                 : throw new RuntimeException('Current discovery must not read historical owner activities.'),
-            'imopenlines.session.history.get' => $this->histories[(string) $payload['SESSION_ID']] ?? [],
+            'imopenlines.session.history.get' => isset($payload['CHAT_ID'])
+                ? ($this->chatHistories[$payload['CHAT_ID']] ?? [])
+                : (isset($payload['LAST_ID']) ? ($this->pages[$payload['LAST_ID']] ?? []) : ($this->histories[$payload['SESSION_ID']] ?? [])),
             default => throw new RuntimeException('Current message discovery is read only.'),
         };
         if ($this->afterRead) {
@@ -210,12 +216,63 @@ test('two proofs in one chat cannot disappear behind a single proof in another c
     expect((new EdnaMessageBinding($fake))->resolveCurrent($event, $payload))->toBeNull();
 });
 
-test('a current session with truncated history cannot authorize a greeting even after finding its message', function () {
+function currentMenuHistory(CurrentMessageReadFake $fake): array
+{
+    return $fake->histories['501'] + ['chat' => ['601' => ['id' => 601, 'entityType' => 'LINES',
+        'entityId' => $fake->dialogs['601']['entity_id'], 'entityData1' => $fake->dialogs['601']['entity_data_1'],
+        'entityData2' => $fake->dialogs['601']['entity_data_2']]]];
+}
+
+test('a verified chat hint confirms an exact native message on a long first page without CRM rediscovery', function () {
+    [$event, $payload, $fake] = currentMessageFixture();
+    $fake->chatHistories['601'] = array_replace(currentMenuHistory($fake), ['hasNextPage' => true]);
+    expect((new EdnaMessageBinding($fake))->resolveMenuHint($event, $payload, 601))->toMatchArray([
+        'chat_id' => '601', 'session_id' => '501', 'message_id' => '701', 'activity_id' => '801',
+    ])->and(array_column($fake->calls, 0))->toBe(['imopenlines.session.history.get', 'crm.activity.list']);
+});
+
+test('a missing message on the hint first page returns to discovery without paging a stale chat', function () {
+    [$event, $payload, $fake] = currentMessageFixture();
+    $fake->chatHistories['601'] = array_replace(currentMenuHistory($fake), ['hasNextPage' => true, 'message' => []]);
+    expect((new EdnaMessageBinding($fake))->resolveMenuHint($event, $payload, 601))->toBeNull()
+        ->and(array_count_values(array_column($fake->calls, 0))['imopenlines.session.history.get'])->toBe(1);
+});
+
+test('a reopened session or a different channel cannot inherit a previous chat proof', function (string $change) {
+    [$event, $payload, $fake] = currentMessageFixture();
+    $h = currentMenuHistory($fake);
+    if ($change === 'session') {
+        $h['chat']['601']['entityData1'] = 'Y|LEAD|101|N|N|502|0|0|0|0';
+    } else {
+        $h['chat']['601']['entityId'] = 'whatsappbyedna|2|5493510000000@2423|901';
+    }
+    $fake->chatHistories['601'] = $h;
+    expect((new EdnaMessageBinding($fake))->resolveMenuHint($event, $payload, 601))->toBeNull()
+        ->and(array_column($fake->calls, 0))->toBe(['imopenlines.session.history.get']);
+})->with(['session', 'channel']);
+
+test('current session follows native cursors on a miss and rejects switched sessions or stalled cursors', function (string $variant) {
+    [$event, $payload, $fake] = currentMessageFixture();
+    $second = $fake->histories['501'];
+    $first = array_replace($second, ['message' => [], 'hasNextPage' => true, 'nextId' => 800, 'nextDate' => 1700000000]);
+    $fake->histories['501'] = $first;
+    $fake->pages['800'] = match ($variant) {
+        'found' => $second, 'switched' => array_replace($second, ['sessionId' => 502]), default => $first,
+    };
+    $resolve = fn () => (new EdnaMessageBinding($fake))->resolveCurrent($event, $payload, 601);
+    if ($variant === 'found') {
+        expect($resolve()['message_id'])->toBe('701');
+    } else {
+        expect($resolve)->toThrow(RuntimeException::class);
+    }
+    expect(end($fake->calls)[1])->toBe(['SESSION_ID' => 501, 'LAST_ID' => 800, 'LAST_DATE' => 1700000000]);
+})->with(['found', 'switched', 'stalled']);
+
+test('matching messages on visible pages of two current chats remain ambiguous', function () {
     [$event, $payload, $fake] = currentMessageFixture();
     currentMessageSecondChat($fake);
     $fake->histories['502']['hasNextPage'] = true;
-    expect(fn () => (new EdnaMessageBinding($fake))->resolveCurrent($event, $payload))
-        ->toThrow(RuntimeException::class, 'history is incomplete');
+    expect((new EdnaMessageBinding($fake))->resolveCurrent($event, $payload))->toBeNull();
 });
 
 test('full chat discovery pages fail before connector filtering or deduplication', function () {

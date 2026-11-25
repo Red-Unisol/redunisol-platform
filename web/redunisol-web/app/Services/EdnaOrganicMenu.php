@@ -253,7 +253,7 @@ class EdnaOrganicMenu
             $proof = $consent['native_proof'] ?? ($menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null);
             if (! $proof) {
                 $this->assertBudget(35);
-                $proof = $this->binding->resolveCurrent($event, $payload);
+                $proof = $this->entryProof($menu, $event, $payload);
                 if (! $proof) {
                     return $this->wait('native_message_pending');
                 }
@@ -841,6 +841,24 @@ class EdnaOrganicMenu
         }
 
         return true;
+    }
+
+    private function entryProof(object $menu, object $event, array $payload): ?array
+    {
+        $chats = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)
+            ->where('phone_hash', $menu->phone_hash)->whereNotNull('chat_id')->whereNotNull('session_id')
+            ->where('proof->verified', true)->where('proof->source', 'bitrix_openline_session')
+            ->where('proof->evidence', 'external_message_id')
+            ->where('id', '!=', $menu->id)->distinct()->limit(2)->pluck('chat_id');
+        if ($chats->count() === 1) {
+            $proof = $this->binding->resolveMenuHint($event, $payload, (int) $chats->first());
+            if ($proof !== null) {
+                return $proof;
+            }
+            $this->assertBudget(35);
+        }
+
+        return $this->binding->resolveCurrent($event, $payload);
     }
 
     private function validProof(array $proof, object $event): bool

@@ -66,6 +66,7 @@ function organicMenuHarness(?Closure $resolve = null): array
 {
     $crm = Mockery::mock(EdnaBitrix::class);
     $binding = Mockery::mock(EdnaMessageBinding::class);
+    $binding->shouldReceive('resolveMenuHint')->byDefault()->andReturnNull();
     $binding->shouldReceive('resolveCurrent')->andReturnUsing($resolve ?? fn ($event) => organicMenuProof($event));
     $transport = Mockery::mock(EdnaOrganicTransport::class);
     $transport->shouldReceive('assertChannel')->byDefault()->andReturnNull();
@@ -163,6 +164,42 @@ test('organic capture is local atomic and does not reserve a loan admission befo
     Http::assertNothingSent();
     $h['transport']->shouldNotHaveReceived('schedule');
 })->with(['TEXT', 'BUTTON']);
+
+test('a new entry reuses only a unique verified channel chat hint and preserves the current operator', function (string $variant) {
+    $h = organicMenuHarness(fn ($event) => organicMenuProof($event, 503));
+    $prior = organicMenuCapture($h['service']);
+    $old = DB::table('edna_incoming_events')->find($prior->entry_event_id);
+    $proof = organicMenuProof($old, 501);
+    organicMenuDue($prior->id, ['chat_id' => 601, 'session_id' => 501, 'state' => 'preserved',
+        'proof' => json_encode($proof)]);
+    if ($variant === 'multiple') {
+        $second = organicMenuCapture($h['service']);
+        $other = DB::table('edna_incoming_events')->find($second->entry_event_id);
+        organicMenuDue($second->id, ['chat_id' => 602, 'session_id' => 502, 'state' => 'preserved',
+            'proof' => json_encode(array_replace(organicMenuProof($other, 502), ['chat_id' => '602']))]);
+    }
+    $entry = organicMenuEvent();
+    $menu = organicMenuCapture($h['service'], $entry);
+    if ($variant !== 'multiple') {
+        $h['binding']->shouldReceive('resolveMenuHint')->once()->withArgs(fn ($event, $payload, $hint) =>
+            (int) $event->id === (int) $entry->id && $hint === 601)
+            ->andReturn($variant === 'match' ? organicMenuProof($entry, 503) : null);
+    }
+    $h['attention']->shouldReceive('inspectWelcome')->once()->andReturn(['status' => 'preserved', 'reason' => 'operator_attention_preserved']);
+    expect($h['service']->process($menu->id)['state'])->toBe('preserved');
+    $saved = DB::table('edna_organic_menus')->find($menu->id);
+    expect((int) $saved->session_id)->toBe(503);
+    if ($variant === 'match') {
+        $h['binding']->shouldNotHaveReceived('resolveCurrent');
+    } else {
+        $h['binding']->shouldHaveReceived('resolveCurrent')->once();
+    }
+    if ($variant === 'multiple') {
+        $h['binding']->shouldNotHaveReceived('resolveMenuHint');
+    }
+    $h['transport']->shouldNotHaveReceived('schedule');
+    $h['crm']->shouldNotHaveReceived('call');
+})->with(['match', 'stale', 'multiple']);
 
 test('unknown organic tokens and replies are consumed without creating a second menu', function () {
     $h = organicMenuHarness();
