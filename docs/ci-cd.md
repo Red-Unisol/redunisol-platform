@@ -59,13 +59,25 @@ Hoy contempla:
 
 ### `deploy-prod.yml`
 
-Corre solo manualmente.
+Los cambios en las rutas de Kestra que entran a `main` disparan el despliegue
+de los dominios afectados. El operador `Nasst` también puede ejecutar el
+workflow desde `main` y elegir un dominio.
 
-Comportamiento:
+Para `marketing-crm`, cada 15 minutos GitHub Actions compara los archivos y
+flows deseados en Git, junto con las herramientas que los publican, con el
+último despliegue confirmado en el namespace de producción. Si coinciden,
+termina con una lectura. Si falta un despliegue o quedó incompleto, el job
+obtiene el mismo bloqueo que usa infraestructura, comprueba que su versión
+sigue vigente y vuelve a consultar el recibo antes de publicar. La hora real
+de ejecución depende de la cola de GitHub Actions.
 
-- hace checkout de `main`
-- instala dependencias
-- despliega el dominio elegido al environment `kestra-prod`
+El recibo queda pendiente durante la publicación. Sólo pasa a aplicado
+después de verificar los archivos y las definiciones de los flows en Kestra.
+Un error al leer la API hace fallar el job y la próxima comprobación vuelve a
+intentarlo. El despacho manual de `marketing-crm` permite volver a publicar
+la versión vigente aunque ya tenga recibo. Estos jobs publican definiciones
+y archivos del dominio. Las ejecuciones comerciales siguen sus disparadores
+habituales.
 
 ### `deploy-infra.yml`
 
