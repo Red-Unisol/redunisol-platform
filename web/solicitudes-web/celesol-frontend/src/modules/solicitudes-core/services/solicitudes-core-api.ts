@@ -90,13 +90,18 @@ export function getSolicitudCoreById(solicitudId: string) {
   return apiClient.get<SolicitudCoreResponse>(`/solicitudes/${solicitudId}`);
 }
 
-// Lineas del agente del vendedor de la solicitud: las que se le pueden
-// asignar, sin importar quien la este mirando.
+// Catálogo del vendedor para simular y opciones que permite asignar el editor.
 export function getSolicitudCoreLineasPrestamo(solicitudId: string) {
   return withAreaForbiddenMessage(
-    apiClient.get<LineaPrestamoPresolicitud[]>(
+    apiClient.get<Array<LineaPrestamoPresolicitud & { asignable: boolean }>>(
       `/solicitudes/${solicitudId}/lineas-prestamo`,
     ),
+  );
+}
+
+export function getLineasPrestamoParaAlta() {
+  return withAreaForbiddenMessage(
+    apiClient.get<LineaPrestamoPresolicitud[]>("/solicitudes/lineas-prestamo-para-alta"),
   );
 }
 

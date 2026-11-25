@@ -289,6 +289,10 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
         { replace: true },
       );
     } catch (error) {
+      if (error instanceof ApiError && error.code === "AmejucaLineUnavailableError") {
+        void refreshLineas();
+        setError("linea", { type: "validate", message: error.message });
+      }
       const message =
         error instanceof ApiError || error instanceof Error
           ? error.message

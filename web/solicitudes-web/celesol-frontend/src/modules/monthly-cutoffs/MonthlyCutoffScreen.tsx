@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -16,6 +16,7 @@ import {
 
 type Props = {
   period: string;
+  lineAvailabilityPanel?: ReactNode;
   onPeriodChange: (period: string) => void;
   data?: MonthlyCutoffData;
   isLoading?: boolean;
@@ -41,6 +42,7 @@ export function MonthlyCutoffScreen(props: Props) {
         </p>
       </header>
       <div className="mx-auto grid max-w-5xl gap-5 p-4 md:p-8">
+        {props.lineAvailabilityPanel}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <label
             className="grid gap-2 text-sm font-medium"

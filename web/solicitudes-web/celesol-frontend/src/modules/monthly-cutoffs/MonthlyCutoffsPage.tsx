@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
+import { AmejucaLineAvailabilityPanel } from "./AmejucaLineAvailabilityPanel";
 import { MonthlyCutoffScreen } from "./MonthlyCutoffScreen";
 import {
+  amejucaLineAvailabilityQueryKey,
+  getAmejucaLineAvailability,
+  saveAmejucaLineAvailability,
   currentPeriod,
   cutoffQueryKey,
   getMonthlyCutoff,
@@ -11,6 +16,13 @@ import {
 export function MonthlyCutoffsPage() {
   const [period, setPeriod] = useState(currentPeriod);
   const client = useQueryClient();
+  const auth = useAuthSessionQuery();
+  const isAdmin = auth.data?.isSystemAdmin === true;
+  const lineAvailability = useQuery({
+    queryKey: amejucaLineAvailabilityQueryKey,
+    queryFn: getAmejucaLineAvailability,
+    enabled: isAdmin,
+  });
   const query = useQuery({
     queryKey: cutoffQueryKey(period),
     queryFn: () => getMonthlyCutoff(period),
@@ -20,6 +32,27 @@ export function MonthlyCutoffsPage() {
     <MonthlyCutoffScreen
       key={period}
       period={period}
+      lineAvailabilityPanel={
+        isAdmin && (
+          <AmejucaLineAvailabilityPanel
+            data={lineAvailability.data}
+            isLoading={lineAvailability.isFetching}
+            onReload={() => {
+              void lineAvailability.refetch();
+            }}
+            onSave={async (variant, expectedVersion) => {
+              const current = await saveAmejucaLineAvailability(
+                variant,
+                expectedVersion,
+              );
+              await client.cancelQueries({
+                queryKey: amejucaLineAvailabilityQueryKey,
+              });
+              client.setQueryData(amejucaLineAvailabilityQueryKey, current);
+            }}
+          />
+        )
+      }
       onPeriodChange={setPeriod}
       data={query.data}
       isLoading={query.isPending}

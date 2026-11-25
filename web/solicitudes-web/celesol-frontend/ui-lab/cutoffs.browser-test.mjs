@@ -119,6 +119,29 @@ try {
     .getByRole("heading", { name: "Corte confirmado: 08/11/2026", exact: true })
     .waitFor();
   await capture("05-movil");
+
+  const variantHeading = "Disponibilidad de líneas AMEJUCA";
+  assert.equal(await page.getByRole("heading", { name: variantHeading }).count(), 0);
+  await page.setViewportSize({ width: 1365, height: 1024 });
+  await page.goto(base + "/cutoffs?role=admin");
+  const variantPanel = page.getByRole("region", { name: variantHeading });
+  await variantPanel.getByRole("status").getByText("Variante activa: Celesol").waitFor();
+  const celesol = variantPanel.getByRole("radio", { name: "Celesol", exact: true });
+  const redUnisol = variantPanel.getByRole("radio", { name: "Red Unisol", exact: true });
+  const saveVariant = variantPanel.getByRole("button", { name: "Guardar variante", exact: true });
+  assert.equal(await saveVariant.isDisabled(), true);
+  await redUnisol.check();
+  assert.equal(await celesol.isChecked(), false);
+  await saveVariant.click();
+  await variantPanel.getByRole("status").getByText("Variante activa: Red Unisol").waitFor();
+  await variantPanel.screenshot({ path: path.join(output, "06-variante-escritorio.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await celesol.check();
+  await saveVariant.click();
+  await variantPanel.getByRole("status").getByText("Variante activa: Celesol").waitFor();
+  assert.equal(await redUnisol.isChecked(), false);
+  assert.ok(await variantPanel.evaluate((panel) => panel.scrollWidth <= panel.clientWidth));
+  await variantPanel.screenshot({ path: path.join(output, "07-variante-movil.png") });
   assert.deepEqual(errors, []);
   await fs.writeFile(
     path.join(output, "report.json"),

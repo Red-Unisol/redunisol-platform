@@ -17,17 +17,22 @@ const lineaCancel = {
 };
 
 describe("ListLineasPrestamoDeSolicitudUseCase", () => {
-  it("devuelve las lineas del agente del vendedor de la solicitud", async () => {
+  it("mantiene el catálogo para simular y marca qué líneas se pueden asignar al editar", async () => {
+    const celesol = { ...lineaCancel, oid: "2519" };
+    const actual = { ...lineaCancel, oid: "2773" };
+    const inhabilitada = { ...lineaCancel, oid: "2775" };
     let consultadoCon: string | null = null;
     const useCase = new ListLineasPrestamoDeSolicitudUseCase({
+      getAmejucaVariant: async () => "CELESOL",
       lineasPrestamoCatalog: {
         listVigentesByLegacyUser: async (legacyUser) => {
           consultadoCon = legacyUser;
-          return [lineaCancel];
+          return [lineaCancel, celesol, actual, inhabilitada];
         },
       },
       repository: {
-        findById: async () => ({ id: "sol-1" }) as SolicitudCore,
+        findById: async () =>
+          ({ id: "sol-1", lineaPrestamoLegacyOid: actual.oid }) as SolicitudCore,
         findVendedorLegacyUser: async () => "vendedor-cruz",
       },
     });
@@ -35,11 +40,17 @@ describe("ListLineasPrestamoDeSolicitudUseCase", () => {
     const lineas = await useCase.execute({ solicitudId: "sol-1" });
 
     assert.equal(consultadoCon, "vendedor-cruz");
-    assert.deepEqual(lineas, [lineaCancel]);
+    assert.deepEqual(lineas, [
+      { ...lineaCancel, asignable: true },
+      { ...celesol, asignable: true },
+      { ...actual, asignable: true },
+      { ...inhabilitada, asignable: false },
+    ]);
   });
 
   it("devuelve vacio si la solicitud no tiene vendedor con usuario del legado", async () => {
     const useCase = new ListLineasPrestamoDeSolicitudUseCase({
+      getAmejucaVariant: async () => "CELESOL",
       lineasPrestamoCatalog: {
         listVigentesByLegacyUser: async () => {
           throw new Error("not used");
@@ -56,6 +67,7 @@ describe("ListLineasPrestamoDeSolicitudUseCase", () => {
 
   it("falla si la solicitud no existe", async () => {
     const useCase = new ListLineasPrestamoDeSolicitudUseCase({
+      getAmejucaVariant: async () => "CELESOL",
       lineasPrestamoCatalog: { listVigentesByLegacyUser: async () => [] },
       repository: {
         findById: async () => null,

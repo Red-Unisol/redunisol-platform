@@ -52,5 +52,26 @@ export const saveMonthlyCutoff = (period: string, input: SaveCutoffInput) =>
     `/api/monthly-cutoffs/amejuca/${period}`,
     input,
   );
+export type AmejucaVariant = "CELESOL" | "RED_UNISOL";
+export type AmejucaLineAvailability = {
+  variant: AmejucaVariant;
+  version: number;
+};
+
+export const amejucaLineAvailabilityQueryKey = ["amejuca-line-availability"] as const;
+const amejucaLineAvailabilityPath = "/admin/solicitudes/amejuca-line-availability";
+
+export const getAmejucaLineAvailability = () =>
+  apiClient.get<AmejucaLineAvailability>(amejucaLineAvailabilityPath);
+
+export const saveAmejucaLineAvailability = (
+  variant: AmejucaVariant,
+  expectedVersion: number,
+) =>
+  apiClient.put<AmejucaLineAvailability>(amejucaLineAvailabilityPath, {
+    variant,
+    expectedVersion,
+  });
+
 export const displayDate = (date: string) =>
   date.split("-").reverse().join("/");

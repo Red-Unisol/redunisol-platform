@@ -70,6 +70,23 @@ model User {
   @@map("users")
 }
 
+enum AmejucaVariant {
+  CELESOL
+  RED_UNISOL
+
+  @@map("amejuca_variant")
+}
+
+model AmejucaLineAvailability {
+  id        Int            @id
+  variant   AmejucaVariant
+  version   Int            @default(1)
+  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at")
+  updatedBy String?        @map("updated_by") @db.Uuid
+
+  @@map("amejuca_line_availability")
+}
+
 model MonthlyCutoff {
   period String @id
   cutoffDate DateTime @map("cutoff_date") @db.Date

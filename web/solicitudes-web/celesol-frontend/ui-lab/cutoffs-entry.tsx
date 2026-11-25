@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/app/layouts/app-layout";
+import { AmejucaLineAvailabilityPanel } from "@/modules/monthly-cutoffs/AmejucaLineAvailabilityPanel";
 import { MonthlyCutoffScreen } from "@/modules/monthly-cutoffs/MonthlyCutoffScreen";
 import type {
+  AmejucaLineAvailability,
   MonthlyCutoffData,
   SaveCutoffInput,
 } from "@/modules/monthly-cutoffs/api";
@@ -17,8 +19,12 @@ const record = {
   updatedBy: "Analista de ejemplo",
 };
 export function App() {
-  const scenario =
-    new URLSearchParams(window.location.search).get("scenario") ?? "pending";
+  const params = new URLSearchParams(window.location.search);
+  const scenario = params.get("scenario") ?? "pending";
+  const [lineAvailability, setLineAvailability] = useState<AmejucaLineAvailability>({
+    variant: "CELESOL",
+    version: 1,
+  });
   const [period, setPeriod] = useState(initialPeriod);
   const [records, setRecords] = useState<Record<string, MonthlyCutoffData>>(
     scenario === "confirmed"
@@ -79,6 +85,16 @@ export function App() {
                   key={period}
                   period={period}
                   onPeriodChange={setPeriod}
+                  lineAvailabilityPanel={params.get("role") === "admin" && (
+                    <AmejucaLineAvailabilityPanel
+                      data={lineAvailability}
+                      onReload={() => {}}
+                      onSave={async (variant, expectedVersion) => {
+                        if (scenario === "error") throw new Error("No se pudo guardar la variante.");
+                        setLineAvailability({ variant, version: expectedVersion + 1 });
+                      }}
+                    />
+                  )}
                   data={data}
                   onReload={async () => data}
                   onSave={save}

@@ -115,7 +115,12 @@ import { SolicitudFieldAccessRulesRepositoryImpl } from "./infrastructure/reposi
 import { SolicitudesCoreRepositoryImpl } from "./infrastructure/repositories/SolicitudesCoreRepositoryImpl";
 import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/SolicitudWorkflowRepositoryImpl";
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
+import { readAmejucaLineAvailability } from "./infrastructure/services/AmejucaLineAvailabilityStore";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
+import {
+  addLineasPrestamoParaAltaRoute,
+  createAmejucaLineAvailabilityAdminRouter,
+} from "./presentation/AmejucaLineAvailabilityRoutes";
 import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
 import { CobrarPrestamoGateway } from "./infrastructure/services/CobrarPrestamoGateway";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
@@ -325,6 +330,7 @@ export function createSolicitudesCoreRouter(
   });
   const listLineasPrestamoDeSolicitudUseCase =
     new ListLineasPrestamoDeSolicitudUseCase({
+      getAmejucaVariant: async () => (await readAmejucaLineAvailability(prisma)).variant,
       lineasPrestamoCatalog,
       repository: solicitudesCoreRepository,
     });
@@ -655,6 +661,7 @@ export function createSolicitudesCoreRouter(
     maxFileBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
   });
   const combined = Router();
+  addLineasPrestamoParaAltaRoute(combined, dependencies.getCurrentUserUseCase, lineasPrestamoCatalog, prisma);
   combined.use("/:id", crearVisibilidadVendedorGuard({ getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     repository: solicitudesCoreRepository, visibilidadVendedorResolver }));
   combined.use(createDocumentReviewRouter(dependencies.getCurrentUserUseCase));
@@ -734,6 +741,7 @@ export function createSolicitudesCoreAdminRouter(
     });
 
   const router = Router();
+  router.use(createAmejucaLineAvailabilityAdminRouter(dependencies.getCurrentUserUseCase, prisma));
   router.use(FieldAccessAdminRoutes.create(fieldAccessAdminController));
   router.use(
     WorkflowTransitionAdminRoutes.create(workflowTransitionAdminController),
