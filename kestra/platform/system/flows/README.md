@@ -16,6 +16,8 @@ y avisa al chat de alertas de Bitrix24, con el estado en la clave KV `alerta.bar
   cada minuto). Un aviso por ejecucion ("Ejecucion trabada" con estado y hora de inicio)
   y otro cuando deja de estarlo ("Ejecucion destrabada"). `TRABADA_EXCLUIDOS` acepta
   `namespace/flow` separados por coma para flows que duran mas de forma normal.
+  Hoy excluidos: `bcra_archivo_actualizar_poc`, `consulta_cuad_masivo` y
+  `tope_descuento_caja_mensual` (analisis-credito), que duran horas de forma normal.
   Motivo: el 22/11/2026 `bitrix24_lead_prefill` estuvo 55,8 h en RUNNING y
   `bitrix24_deal_assignment_queue` ~59 h en KILLING sin que la alerta de fallas lo viera.
   Una ejecucion que queda para siempre en KILLING (zombi) se avisa una sola vez.
