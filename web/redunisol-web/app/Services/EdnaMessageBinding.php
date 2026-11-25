@@ -346,6 +346,43 @@ class EdnaMessageBinding
         return $phone;
     }
 
+    /** A previous association is a lookup hint. Only this event's live native evidence can authorize work. */
+    public function resolveMenuHint(object $event, array $payload, int $chatId): ?array
+    {
+        $this->deadline = microtime(true) + 30;
+        $this->calls = 0;
+        $this->reads = [];
+        $phoneHash = $this->entryPhone($event, $payload);
+        try {
+            $history = $this->call('imopenlines.session.history.get', ['CHAT_ID' => $chatId]);
+        } catch (RuntimeException) {
+            // A removed or inaccessible chat is only a hint. Normal discovery can still succeed.
+            return null;
+        }
+        $chat = $history['chat'][$chatId] ?? null;
+        if (! is_array($chat) || (string) ($history['chatId'] ?? '') !== (string) $chatId
+            || ! $this->positiveId($history['sessionId'] ?? null)) {
+            return null;
+        }
+        $dialog = ['id' => $chat['id'] ?? null, 'entity_type' => $chat['entityType'] ?? null,
+            'entity_id' => $chat['entityId'] ?? null, 'entity_data_1' => $chat['entityData1'] ?? '',
+            'entity_data_2' => $chat['entityData2'] ?? null];
+        $code = (string) $dialog['entity_id'];
+        $session = (string) $history['sessionId'];
+        if (! $this->dialogMatches($dialog, (string) $chatId, $code, $phoneHash)
+            || (explode('|', $dialog['entity_data_1'])[5] ?? '') !== $session
+            || ! is_string($dialog['entity_data_2'])) {
+            return null;
+        }
+        $proofs = $this->sessionActivityProofs($event, $phoneHash, $session, $dialog, $history);
+
+        if (count($proofs) > 1) {
+            throw new RuntimeException('Ambiguous native message in the verified chat.');
+        }
+
+        return $proofs[0] ?? null;
+    }
+
     private function knownChat(object $event, string $phoneHash, int $chatId): ?array
     {
         $proofs = $this->currentChatProofs($event, $phoneHash, $chatId);
@@ -365,6 +402,11 @@ class EdnaMessageBinding
         if (! $this->positiveId($sessionId)) {
             return [];
         }
+        return $this->sessionActivityProofs($event, $phoneHash, (string) $sessionId, $dialog);
+    }
+
+    private function sessionActivityProofs(object $event, string $phoneHash, string $sessionId, array $dialog, ?array $history = null): array
+    {
         $activities = [];
         foreach ($this->activities(['ASSOCIATED_ENTITY_ID' => (int) $sessionId]) as $activity) {
             if ((string) $activity['ASSOCIATED_ENTITY_ID'] !== (string) $sessionId) {
@@ -374,7 +416,7 @@ class EdnaMessageBinding
         }
         $proofs = [];
         foreach ($activities as $activity) {
-            foreach ($this->proofs($event, $phoneHash, $activity, $dialog) as $proof) {
+            foreach ($this->proofs($event, $phoneHash, $activity, $dialog, $history) as $proof) {
                 $proofs[$proof['activity_id'].':'.$proof['session_id'].':'.$proof['message_id']] = $proof;
             }
         }
@@ -413,7 +455,7 @@ class EdnaMessageBinding
         }
     }
 
-    private function proofs(object $event, string $phoneHash, array $activity, ?array $knownDialog = null): array
+    private function proofs(object $event, string $phoneHash, array $activity, ?array $knownDialog = null, ?array $firstPage = null): array
     {
         $params = $activity['PROVIDER_PARAMS'] ?? null;
         if (is_string($params)) {
@@ -424,13 +466,12 @@ class EdnaMessageBinding
             return [];
         }
         $sessionId = (string) $activity['ASSOCIATED_ENTITY_ID'];
-        $history = $this->call('imopenlines.session.history.get', ['SESSION_ID' => (int) $sessionId]);
-        if (! is_array($history) || (string) ($history['sessionId'] ?? '') !== $sessionId
-            || ! $this->positiveId($history['chatId'] ?? null) || ($history['hasNextPage'] ?? null) !== false
-            || ! is_array($history['message'] ?? null)) {
+        $history = $firstPage ?? $this->call('imopenlines.session.history.get', ['SESSION_ID' => (int) $sessionId]);
+        $chatId = (string) ($history['chatId'] ?? '');
+        $this->validateHistoryPage($history, $sessionId, $chatId);
+        if ($knownDialog === null && $history['hasNextPage']) {
             throw new RuntimeException('Message session history is incomplete or inconsistent.');
         }
-        $chatId = (string) $history['chatId'];
         $dialog = $knownDialog ?? $this->call('imopenlines.dialog.get', ['CHAT_ID' => (int) $chatId]);
         if (! $this->dialogMatches($dialog, $chatId, $code, $phoneHash)) {
             return [];
@@ -446,6 +487,38 @@ class EdnaMessageBinding
             }
         }
         $parts = explode('|', $code);
+        $cursor = null;
+        while (true) {
+            $proofs = $this->pageProofs($history, $event, $chatId, $sessionId, (string) $activity['ID'], $parts[3], $nativeLeadId);
+            // A historical chat is only a shortcut. On a miss, let live CRM discovery
+            // consider other chats before paging through a possibly obsolete one.
+            if ($proofs || ! $history['hasNextPage'] || $firstPage !== null) {
+                return $proofs;
+            }
+            $next = $history['nextId'] ?? null;
+            $date = $history['nextDate'] ?? null;
+            if (! $this->positiveId($next) || ! $this->positiveId($date) || ($cursor !== null && (int) $next >= $cursor)) {
+                throw new RuntimeException('Message session history cursor is incomplete or inconsistent.');
+            }
+            $cursor = (int) $next;
+            $history = $this->call('imopenlines.session.history.get', ['SESSION_ID' => (int) $sessionId,
+                'LAST_ID' => $cursor, 'LAST_DATE' => (int) $date]);
+            $this->validateHistoryPage($history, $sessionId, $chatId);
+        }
+    }
+
+    private function validateHistoryPage(mixed $history, string $sessionId, string $chatId): void
+    {
+        if (! is_array($history) || (string) ($history['sessionId'] ?? '') !== $sessionId || ! $this->positiveId($chatId)
+            || (string) ($history['chatId'] ?? '') !== $chatId || ! is_bool($history['hasNextPage'] ?? null)
+            || ! is_array($history['message'] ?? null)) {
+            throw new RuntimeException('Message session history is incomplete or inconsistent.');
+        }
+    }
+
+    private function pageProofs(array $history, object $event, string $chatId, string $sessionId, string $activityId,
+        string $connectorUser, ?string $nativeLeadId): array
+    {
         $proofs = [];
         foreach ($history['message'] as $message) {
             if (! is_array($message)) {
@@ -464,7 +537,7 @@ class EdnaMessageBinding
             $sender = (string) ($message['senderid'] ?? '');
             $user = $history['users'][$sender] ?? null;
             if (! $this->positiveId($message['id'] ?? null) || (string) ($message['chatid'] ?? '') !== $chatId
-                || $sender !== $parts[3] || ! is_array($user) || ($user['connector'] ?? null) !== true) {
+                || $sender !== $connectorUser || ! is_array($user) || ($user['connector'] ?? null) !== true) {
                 throw new RuntimeException('Native connector message is inconsistent.');
             }
             $proofs[] = [
@@ -472,7 +545,7 @@ class EdnaMessageBinding
                 'evidence' => 'external_message_id', 'entry_event_id' => (int) $event->id,
                 'entry_message_id' => (string) $event->message_id, 'chat_id' => $chatId,
                 'session_id' => $sessionId, 'message_id' => (string) $message['id'],
-                'activity_id' => (string) $activity['ID'], 'native_lead_id' => $nativeLeadId,
+                'activity_id' => $activityId, 'native_lead_id' => $nativeLeadId,
             ];
         }
 
