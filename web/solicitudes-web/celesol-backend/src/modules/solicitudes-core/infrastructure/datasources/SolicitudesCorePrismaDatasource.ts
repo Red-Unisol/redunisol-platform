@@ -24,6 +24,7 @@ import { assertMontoDentroDelAprobadoPorRiesgo } from "../../domain/services/Mon
 import { PASO_POR_VIMARX_ACTION_CODE } from "../../domain/workflow/PasoPorVimarx";
 import { ForbiddenSolicitudAccessError, SolicitudCoreNotFoundError, SolicitudEditStateConflictError } from "../../domain/solicitudes-core-errors";
 import { SolicitudCoreMapper } from "../mappers/SolicitudCore.mapper";
+import { assertAmejucaLineAvailable } from "../services/AmejucaLineAvailabilityStore";
 
 const solicitudInclude = {
   assignedToUser: {
@@ -272,6 +273,7 @@ export class SolicitudesCorePrismaDatasource {
     };
 
     const solicitud = await this.prisma.$transaction(async (tx) => {
+      await assertAmejucaLineAvailable(tx, input.lineaPrestamoLegacyOid);
       const executor = tx as SolicitudCreateExecutor;
       const createdSolicitud = await executor.solicitud.create({
         data,
@@ -939,7 +941,8 @@ export class SolicitudesCorePrismaDatasource {
   async update(id: string, patch: UpdateSolicitudCorePatch, guard?: UpdateSolicitudCoreGuard, reviewTransaction?: Prisma.TransactionClient) {
     const save = async (tx: Prisma.TransactionClient) => {
       let beforeEdit: Prisma.SolicitudGetPayload<{ include: typeof solicitudInclude }> | null = null;
-      if (guard || patch.solicitud?.montoAFinanciar !== undefined || patch.solicitud?.legacyOid !== undefined) {
+      const requestedLineOid = patch.solicitud?.lineaPrestamoLegacyOid;
+      if (guard || requestedLineOid !== undefined || patch.solicitud?.montoAFinanciar !== undefined || patch.solicitud?.legacyOid !== undefined) {
         // Solo se bloquea durante el guardado, nunca durante la simulacion.
         // Releer despues del lock incluye cambios que hayan terminado mientras
         // esta transaccion esperaba a otro escritor de la misma solicitud.
@@ -963,6 +966,9 @@ export class SolicitudesCorePrismaDatasource {
           throw new AdministrativeCorrectionError(`El monto está congelado por el préstamo ${current.legacyOid}. Primero debe verificarse su anulación en Vimarx.`);
         if (patch.solicitud?.legacyOid !== undefined && current.legacyOid && current.legacyOid !== patch.solicitud.legacyOid)
           throw new AdministrativeCorrectionError("El vínculo sólo puede cambiar mediante el reemplazo controlado del préstamo anulado.");
+        if (requestedLineOid !== undefined && requestedLineOid !== current.lineaPrestamoLegacyOid) {
+          await assertAmejucaLineAvailable(tx, requestedLineOid);
+        }
         if (guard?.sellerReviewActor) beforeEdit = current;
         if (guard?.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {
           assertMontoDentroDelAprobadoPorRiesgo({

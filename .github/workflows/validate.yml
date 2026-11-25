@@ -59,6 +59,12 @@ jobs:
           src/modules/solicitudes-core/infrastructure/datasources/MontoAprobadoRiesgo.integration.test.ts
           src/modules/solicitudes-core/infrastructure/datasources/SolicitudWorkflowPrismaDatasource.test.ts
           src/modules/solicitudes-core/infrastructure/mappers/SolicitudCore.mapper.test.ts
+      - name: Test AMEJUCA line availability for new assignments
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/application/use-cases/ListLineasPrestamoDeSolicitud.use-case.test.ts
+          src/modules/solicitudes-core/infrastructure/datasources/AmejucaLineAvailability.integration.test.ts
+          src/modules/solicitudes-core/presentation/AmejucaLineAvailabilityRoutes.test.ts
       - name: Test administrative state correction and Core reconciliation
         run: >-
           npx tsx --test

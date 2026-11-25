@@ -5263,7 +5263,9 @@ export function SolicitudesActualDetallePage() {
                     isExecutiveAssignmentDisabled={!canManageAssignment}
                     montoTopeError={montoTopeError}
                     mostrarEjecutivo={!isVendedor(currentUser)}
-                    lineas={lineasSimulador}
+                    lineas={lineasSimulador.filter(
+                      (linea) => linea.asignable !== false,
+                    )}
                     onAssignmentChange={setSelectedAssignmentValue}
                     onBooleanChange={updateSolicitudBooleanField}
                     onChange={updateSolicitudField}

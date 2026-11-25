@@ -1,59 +1,47 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getLineasPrestamoByAgente } from "@/modules/solicitudes/services/solicitudes-api";
+import { getLineasPrestamoParaAlta } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 
 export function useLineasPrestamo(isDetailRoute: boolean) {
   const [isLoadingLineas, setIsLoadingLineas] = useState(false);
   const [lineas, setLineas] = useState<LineaPrestamoPresolicitud[]>([]);
+  const requests = useRef({ version: 0 });
 
   const refreshLineas = useCallback(async () => {
     if (isDetailRoute) return;
+
+    const version = ++requests.current.version;
     setIsLoadingLineas(true);
     try {
-      const rows = await getLineasPrestamoByAgente();
-      setLineas(rows.filter(linea => linea.vigente !== false));
+      const rows = await getLineasPrestamoParaAlta();
+      if (version === requests.current.version) setLineas(rows);
     } catch {
-      // Los controles de cálculo/guardado consultan el legacy y muestran el fallo.
-    } finally { setIsLoadingLineas(false); }
+      // Conserva el último catálogo disponible. El alta valida la variante al guardar.
+    } finally {
+      if (version === requests.current.version) setIsLoadingLineas(false);
+    }
   }, [isDetailRoute]);
-  useEffect(() => {
-    const refresh = () => { void refreshLineas(); };
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [refreshLineas]);
 
   useEffect(() => {
-    if (isDetailRoute) {
-      return;
-    }
+    if (isDetailRoute) return;
 
-    let isMounted = true;
-
-    async function loadLineasPrestamo() {
-      setIsLoadingLineas(true);
-
-      try {
-        const rows = await getLineasPrestamoByAgente();
-
-        if (!isMounted) {
-          return;
-        }
-
-        setLineas(rows.filter((linea) => linea.vigente !== false));
-      } finally {
-        if (isMounted) {
-          setIsLoadingLineas(false);
-        }
-      }
-    }
-
-    void loadLineasPrestamo();
-
-    return () => {
-      isMounted = false;
+    const refresh = () => {
+      void refreshLineas();
     };
-  }, [isDetailRoute]);
+    const mountedRequests = requests.current;
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      mountedRequests.version++;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [isDetailRoute, refreshLineas]);
 
-  return { isLoadingLineas, lineas, setLineas, refreshLineas };
+  return {
+    isLoadingLineas: !isDetailRoute && isLoadingLineas,
+    lineas,
+    setLineas,
+    refreshLineas,
+  };
 }
