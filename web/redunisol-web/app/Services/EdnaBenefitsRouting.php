@@ -150,7 +150,12 @@ class EdnaBenefitsRouting
                 && DB::table('edna_benefit_chat_routes')->where('entry_event_id', $event->id)->exists())) {
                 return ['state' => 'review', 'reason' => 'benefits_native_proof_changed'];
             }
-            if ($row->campaign_reply || $row->transfer_intent || in_array($row->state, ['preserved', 'routed', 'sending', 'unknown'], true)) {
+            // An earlier deal-based check may have stopped because its CRM bindings changed.
+            // Keep previous transfers and human attention, but that CRM change does not invalidate a new click.
+            $priorAttention = $row->state === 'preserved'
+                && ! in_array($row->reason, ['benefits_case_changed', 'benefits_native_dialog_changed'], true);
+            if ($row->campaign_reply || $row->transfer_intent || $priorAttention
+                || in_array($row->state, ['routed', 'sending', 'unknown'], true)) {
                 return ['state' => 'preserved', 'reason' => 'benefits_routing'];
             }
             if ($row->lease_until && CarbonImmutable::parse($row->lease_until)->isFuture()) {

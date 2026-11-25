@@ -482,9 +482,13 @@ test('a proven member campaign reply without a deal respects live attention and 
             ->and(DB::table('edna_benefit_chat_routes')->count())->toBe(0);
         return;
     }
-    if ($scenario === 'existing reservation') {
+    if (in_array($scenario, ['existing reservation', 'prior deal changed'], true)) {
         $f->cases->status = 'waiting';
         $f->service->check($f->event, $f->proof);
+        if ($scenario === 'prior deal changed') {
+            DB::table('edna_benefit_chat_routes')->where('entry_event_id', $f->event->id)
+                ->update(['state' => 'preserved', 'reason' => 'benefits_case_changed']);
+        }
         $f->cases->status = 'not_applicable';
     }
     $caseReads = $f->cases->calls;
@@ -509,4 +513,4 @@ test('a proven member campaign reply without a deal respects live attention and 
             ->and($row->transfer_state)->toBe($scenario === 'lost response' ? 'observed' : 'confirmed')
             ->and(json_decode($row->transfer_intent, true)['entry_event_id'])->toBe($event->id);
     }
-})->with(['new contact only', 'human at final check', 'existing reservation', 'lost response', 'old entry']);
+})->with(['new contact only', 'human at final check', 'existing reservation', 'prior deal changed', 'lost response', 'old entry']);
