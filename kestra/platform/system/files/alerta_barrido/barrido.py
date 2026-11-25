@@ -31,6 +31,11 @@ FLOW_PROPIO = "alerta_flows_barrido"
 
 CLAVE_KV = "alerta.barrido.incidentes"
 
+# Estados en los que una ejecucion puede quedar colgada sin fallar: la alerta de
+# fallas no las ve. 22/11/2026: bitrix24_lead_prefill 55,8 h en RUNNING y
+# bitrix24_deal_assignment_queue ~59 h en KILLING con otra QUEUED detras.
+ESTADOS_TRABADOS = ("RUNNING", "QUEUED", "KILLING")
+
 
 # ---------------------------------------------------------------------------
 # Utilidades puras (sin red): son las que cubren los tests
@@ -87,11 +92,44 @@ def leer_estado(guardado):
         except ValueError:
             guardado = {}
     if not isinstance(guardado, dict):
-        return {}, None
+        return {}, None, {}
     incidentes = guardado.get("incidentes")
     if not isinstance(incidentes, dict):
         incidentes = {}
-    return incidentes, guardado.get("ultima_corrida")
+    trabadas = guardado.get("trabadas")
+    if not isinstance(trabadas, dict):
+        trabadas = {}
+    return incidentes, guardado.get("ultima_corrida"), trabadas
+
+
+def agrupar_trabadas(ejecuciones, excluidos=(), flow_propio=FLOW_PROPIO):
+    """Una entrada por ejecucion colgada, salvo el propio barrido y los excluidos."""
+    agrupadas = {}
+    for ejecucion in ejecuciones:
+        ident = ejecucion.get("id")
+        namespace = ejecucion.get("namespace") or ""
+        flow = ejecucion.get("flowId") or ""
+        if not ident or not namespace or not flow or flow == flow_propio:
+            continue
+        if namespace + "/" + flow in excluidos:
+            continue
+        momento = inicio(ejecucion)
+        if momento is None:
+            continue
+        agrupadas[ident] = {
+            "namespace": namespace,
+            "flow": flow,
+            "estado": (ejecucion.get("state") or {}).get("current") or "",
+            "desde": momento.isoformat(),
+        }
+    return agrupadas
+
+
+def describir_trabada(ident, dato):
+    """Texto de referencia del aviso: id, estado y desde cuando (hora AR)."""
+    desde = a_utc(dato.get("desde"))
+    hora = (desde - timedelta(hours=3)).strftime("%d/%m %H:%M") + " AR" if desde else "?"
+    return ident + " (" + (dato.get("estado") or "?") + " desde " + hora + ")"
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +139,17 @@ def leer_estado(guardado):
 class Barrido:
     """Las dependencias entran por constructor para poder sustituirlas en tests."""
 
-    def __init__(self, consultar, avisar, ahora=None, ventana=20, max_dias=30):
+    def __init__(self, consultar, avisar, ahora=None, ventana=20, max_dias=30,
+                 umbral_trabada=45, excluidos_trabada=()):
         self.consultar = consultar
         self.avisar = avisar
         self.ahora = ahora or datetime.now(timezone.utc)
         self.ventana = ventana
         self.max_dias = max_dias
+        # Mayor que el SLA de 30 min de los flows de cada minuto: si una ejecucion
+        # sigue colgada a los 45, el SLA no actuo.
+        self.umbral_trabada = umbral_trabada
+        self.excluidos_trabada = set(excluidos_trabada)
         self.problemas = []
 
     def _avisar(self, titulo, namespace, flow, referencia):
@@ -184,8 +227,44 @@ class Barrido:
             "sin corridas durante " + str(hueco) + " minutos",
         )
 
+    def revisar_trabadas(self, trabadas):
+        """Avisa una vez por ejecucion colgada mas del umbral y cuando se destraba.
+
+        Se consulta el estado actual, no una ventana: una ejecucion colgada sigue
+        apareciendo en cada ciclo, asi que ninguna se escapa entre corridas.
+        """
+        limite = self.ahora - timedelta(minutes=self.umbral_trabada)
+        encontradas = []
+        for estado in ESTADOS_TRABADOS:
+            encontradas.extend(self.consultar({
+                "filters[state][EQUALS]": estado,
+                "filters[namespace][STARTS_WITH]": PREFIJO,
+                "filters[startDate][LESS_THAN]": limite.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }))
+        actuales = agrupar_trabadas(encontradas, self.excluidos_trabada)
+        for ident, dato in actuales.items():
+            previa = trabadas.get(ident)
+            if previa is not None and previa.get("avisado"):
+                previa["estado"] = dato["estado"]
+                continue
+            dato["avisado"] = self._avisar(
+                "Ejecucion trabada", dato["namespace"], dato["flow"],
+                describir_trabada(ident, dato),
+            )
+            trabadas[ident] = dato
+        for ident in list(trabadas):
+            if ident in actuales:
+                continue
+            dato = trabadas[ident]
+            # Solo se anuncia lo que se habia anunciado como trabado.
+            if not dato.get("avisado") or self._avisar(
+                "Ejecucion destrabada", dato["namespace"], dato["flow"], ident
+            ):
+                del trabadas[ident]
+        return trabadas
+
     def correr(self, guardado, namespace):
-        incidentes, corrida_previa = leer_estado(guardado)
+        incidentes, corrida_previa, trabadas = leer_estado(guardado)
         fallidas = self.consultar({
             "filters[state][EQUALS]": "FAILED",
             "filters[timeRange][EQUALS]": "PT" + str(self.ventana) + "M",
@@ -194,15 +273,18 @@ class Barrido:
         nuevas = agrupar_fallas(fallidas)
         incidentes = self.abrir_incidentes(incidentes, nuevas)
         incidentes = self.cerrar_incidentes(incidentes, nuevas)
+        trabadas = self.revisar_trabadas(trabadas)
         self.avisar_hueco(corrida_previa, namespace)
         return {
             "estado": {
                 "ultima_corrida": self.ahora.isoformat(),
                 "incidentes": incidentes,
+                "trabadas": trabadas,
             },
             "fallidas": len(fallidas),
             "flows_con_falla": len(nuevas),
             "incidentes_abiertos": len(incidentes),
+            "trabadas": len(trabadas),
         }
 
 
@@ -300,6 +382,12 @@ def main():
         ),
         ventana=int(os.environ.get("VENTANA_MINUTOS") or "20"),
         max_dias=int(os.environ.get("INCIDENTE_MAX_DIAS") or "30"),
+        umbral_trabada=int(os.environ.get("TRABADA_UMBRAL_MINUTOS") or "45"),
+        excluidos_trabada=[
+            item.strip()
+            for item in (os.environ.get("TRABADA_EXCLUIDOS") or "").split(",")
+            if item.strip()
+        ],
     )
 
     resultado = barrido.correr(api("GET", ruta_kv), namespace)
@@ -309,6 +397,7 @@ def main():
         "barrido ok | fallas en ventana: " + str(resultado["fallidas"])
         + " | flows con falla: " + str(resultado["flows_con_falla"])
         + " | incidentes abiertos: " + str(resultado["incidentes_abiertos"])
+        + " | ejecuciones trabadas: " + str(resultado["trabadas"])
     )
     if barrido.problemas:
         print("problemas: " + "; ".join(barrido.problemas))

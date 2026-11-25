@@ -54,6 +54,13 @@ tasks:
       # Un incidente sin novedades por mas de estos dias se descarta.
       # Reemplaza al TTL del esquema anterior: la API REST de KV no expone TTL.
       INCIDENTE_MAX_DIAS: "30"
+      # Ejecuciones colgadas: se avisan las que pasan este umbral en RUNNING,
+      # QUEUED o KILLING. Mayor que el SLA de 30 min de los flows de cada minuto.
+      TRABADA_UMBRAL_MINUTOS: "45"
+      # Flows que duran mas de 45 min de forma normal (medido 25/10-24/11/2026):
+      # BCRA hasta ~10 h casi a diario, CUAD masivo hasta ~12 h, tope mensual
+      # hasta ~4,5 h. Quedan sin vigilancia de trabado hasta tener umbral propio.
+      TRABADA_EXCLUIDOS: "redunisol.prod.analisis-credito/bcra_archivo_actualizar_poc,redunisol.prod.analisis-credito/consulta_cuad_masivo,redunisol.prod.analisis-credito/tope_descuento_caja_mensual"
     commands:
       - python alerta_barrido/barrido.py
 
