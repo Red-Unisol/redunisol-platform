@@ -1,0 +1,12 @@
+---
+- name: Prepare or activate the reviewed Kestra stack on the identified dedicated host
+  hosts: kestra_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: kestra
+      tags: [kestra]

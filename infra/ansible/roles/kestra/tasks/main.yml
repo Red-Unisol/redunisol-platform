@@ -1,0 +1,116 @@
+---
+- name: Require explicit Kestra authorization outside check mode
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or (kestra_apply_authorized | bool)
+      - ansible_check_mode or (kestra_revision is match('^[0-9a-f]{40}$'))
+    fail_msg: "Kestra changes require kestra_apply_authorized=true and kestra_revision=<reviewed Git SHA>."
+
+- name: Prove the local checkout is exactly the reviewed revision
+  when: not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+  become: false
+  block:
+    - name: Read the local checkout revision and pending changes
+      ansible.builtin.command:
+        argv: "{{ ['git', '-C', playbook_dir] + item }}"
+      loop:
+        - [rev-parse, HEAD]
+        - [status, --porcelain, --untracked-files=no]
+        - [status, --porcelain, --untracked-files=all, --, ':/infra/ansible', ':/kestra/platform/infra']
+      register: kestra_checkout
+      changed_when: false
+
+    - name: Require the reviewed revision without local changes
+      ansible.builtin.assert:
+        that:
+          - kestra_checkout.results[0].stdout == kestra_revision
+          - kestra_checkout.results[1].stdout == ""
+          - kestra_checkout.results[2].stdout == ""
+        fail_msg: >-
+          The local checkout must be exactly kestra_revision with no pending changes:
+          HEAD is {{ kestra_checkout.results[0].stdout }}.
+
+- name: Create the private Kestra configuration directory
+  ansible.builtin.file:
+    path: "{{ kestra_platform_dir }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0700"
+
+- name: Create the Kestra data root
+  ansible.builtin.file:
+    path: "{{ kestra_data_dir }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0750"
+
+- name: Create the Kestra data directories without touching their contents
+  ansible.builtin.file:
+    path: "{{ kestra_data_dir }}/{{ item.path }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ kestra_data_subdirs }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Create the parents of the VPS-compatible paths
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: directory
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0755"
+  loop: "{{ kestra_compat_links }}"
+  loop_control:
+    label: "{{ item.path | dirname }}"
+
+- name: Check which link targets already exist
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  loop: "{{ kestra_compat_links }}"
+  loop_control:
+    label: "{{ item.src }}"
+  register: kestra_link_targets
+
+- name: Link the VPS paths used by flows to the dedicated data directories
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    src: "{{ item.item.src }}"
+    state: link
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    force: false
+  loop: "{{ kestra_link_targets.results }}"
+  loop_control:
+    label: "{{ item.item.path }} -> {{ item.item.src }}"
+  # In check mode the target directories are only simulated, so a link to them cannot be previewed.
+  when: item.stat.exists or not ansible_check_mode
+
+- name: Install the reviewed Kestra Compose definition
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ kestra_platform_dir }}/docker-compose.yml"
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0644"
+
+# files/application.yaml is a byte-for-byte copy of kestra/platform/infra/application.yaml (tests enforce it).
+- name: Install the reviewed Kestra application configuration
+  ansible.builtin.copy:
+    src: application.yaml
+    dest: "{{ kestra_platform_dir }}/application.yaml"
+    owner: "{{ kestra_owner }}"
+    group: "{{ kestra_group }}"
+    mode: "0644"
+
+- name: Explain the preparation-only default
+  ansible.builtin.debug:
+    msg: >-
+      running=false prepares Kestra files only; it does not pull, start or stop containers.
+  when: not (kestra_running | bool)

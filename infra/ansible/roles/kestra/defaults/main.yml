@@ -1,0 +1,31 @@
+---
+# Interruptores: todo apagado por defecto.
+kestra_apply_authorized: false
+kestra_revision: ""
+kestra_running: false
+
+# Dónde vive Kestra en el dedicado (misma convención que BCRA).
+kestra_platform_dir: /srv/redunisol/platform/kestra
+kestra_data_dir: /srv/redunisol/state/kestra
+kestra_owner: root
+kestra_group: root
+
+# Puerto de administración (salud y métricas, sin login). En la VPS lo limita el firewall del panel
+# de DonWeb; el dedicado no lo tiene, así que por defecto queda solo para la propia máquina.
+# Cómo llega el monitoreo se resuelve al hacer el cambio.
+kestra_management_bind: 127.0.0.1
+
+# Carpetas de datos, dentro de kestra_data_dir.
+kestra_data_subdirs:
+  - { path: postgres, mode: "0700" }
+  - { path: storage, mode: "0750" }
+  - { path: tmp, mode: "0750" }
+  - { path: data, mode: "0755" }
+  - { path: data/credixsa-cache, mode: "0755" }
+  - { path: reports, mode: "0755" }
+
+# Compatibilidad con las rutas de la VPS que los flows montan directo en el host
+# (contenedores de tareas vía docker.sock). Se retiran cuando los flows usen las rutas nuevas.
+kestra_compat_links:
+  - { path: /opt/kestra/data, src: "{{ kestra_data_dir }}/data" }
+  - { path: /srv/redunisol-reports, src: "{{ kestra_data_dir }}/reports" }
