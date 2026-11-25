@@ -66,6 +66,7 @@ const SellerChanges = createContext<ReadonlyMap<string, SellerReviewChange[]>>(
 
 function labelForChange(field: string) {
   const [group, index, key] = field.split(".");
+  if (group === "adjuntos") return "Adjunto nuevo";
   if (group === "garantias" && key)
     return `Garantía ${Number(index) + 1} · ${getFieldAccessFieldLabel(`garantias.${key}`)}`;
   return `${getFieldAccessGroupLabel(group)} · ${getFieldAccessFieldLabel(field)}`;
@@ -388,7 +389,7 @@ export function DetalleLectura({
         </Tarjeta>
       </div>
       {otherChanges.length > 0 && (
-        <Tarjeta title="Otros datos modificados por Vendedores">
+        <Tarjeta title="Otros cambios de Vendedores">
           <dl className={COLUMNAS_TITULAR}>
             {otherChanges.map((change) => (
               <Campo

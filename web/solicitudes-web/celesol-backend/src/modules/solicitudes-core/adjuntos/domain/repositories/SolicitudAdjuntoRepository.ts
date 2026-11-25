@@ -36,8 +36,8 @@ export type UpdateSolicitudAdjuntoInput = {
 };
 
 export type SolicitudAdjuntoRepository = {
-  create(input: CreateSolicitudAdjuntoRecord): Promise<SolicitudAdjunto>;
-  createMany(inputs: CreateSolicitudAdjuntoRecord[]): Promise<SolicitudAdjunto[]>;
+  create(input: CreateSolicitudAdjuntoRecord, sellerReviewStartedAt?: Date): Promise<SolicitudAdjunto>;
+  createMany(inputs: CreateSolicitudAdjuntoRecord[], sellerReviewStartedAt?: Date): Promise<SolicitudAdjunto[]>;
   findById(id: string): Promise<SolicitudAdjunto | null>;
   // The repository may return deleted rows; use cases apply deletedAt filtering.
   listBySolicitudId(solicitudId: string): Promise<SolicitudAdjunto[]>;

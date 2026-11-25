@@ -1,5 +1,6 @@
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { hasWorkflowAreaId } from "../../../../auth/domain/workflow-areas";
 
 import type { UploadSolicitudAdjuntoInput } from "../dtos/UploadSolicitudAdjunto.dto";
 import type { SolicitudAdjunto } from "../../domain/entities/SolicitudAdjunto.entity";
@@ -80,6 +81,10 @@ export class UploadSolicitudAdjuntoUseCase {
     const adjuntoId = randomUUID();
     const extension = extname(input.file.fileName).toLowerCase();
     const storageKey = `solicitudes/${input.solicitudId}/adjuntos/${adjuntoId}${extension}`;
+    const sellerReviewStartedAt = solicitud.estadoActual.code === "Liquidada" &&
+      hasWorkflowAreaId(input.currentUser, solicitud.estadoActual.ownerId)
+      ? solicitud.sellerReviewStartedAt ?? undefined
+      : undefined;
 
     try {
       await this.dependencies.objectStorage.uploadObject({
@@ -109,7 +114,7 @@ export class UploadSolicitudAdjuntoUseCase {
         storageBucket: this.dependencies.storageBucket,
         tipoAdjunto: input.tipoAdjunto ?? null,
         uploadedBy: input.createdBy,
-      });
+      }, sellerReviewStartedAt);
     } catch (error) {
       try {
         await this.dependencies.objectStorage.deleteObject({

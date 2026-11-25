@@ -5,6 +5,7 @@ import type {
   SoftDeleteSolicitudAdjuntoInput,
   UpdateSolicitudAdjuntoInput,
 } from "../../domain/repositories/SolicitudAdjuntoRepository";
+import { SellerReviewChangedDuringUploadError } from "../../domain/solicitudes-adjuntos-errors";
 import { SolicitudAdjuntoMapper } from "../mappers/SolicitudAdjunto.mapper";
 
 const solicitudAdjuntoInclude = {
@@ -23,8 +24,8 @@ export class SolicitudAdjuntosPrismaDatasource {
     this.prisma = prisma;
   }
 
-  async create(input: CreateSolicitudAdjuntoRecord) {
-    const adjunto = await this.prisma.solicitudAdjunto.create({
+  private createRecord(executor: Pick<DbClient, "solicitudAdjunto">, input: CreateSolicitudAdjuntoRecord) {
+    return executor.solicitudAdjunto.create({
       data: {
         adicional: input.adicional,
         archivoMimeType: input.archivoMimeType,
@@ -45,39 +46,35 @@ export class SolicitudAdjuntosPrismaDatasource {
       },
       include: solicitudAdjuntoInclude,
     });
-
-    return SolicitudAdjuntoMapper.toDomain(adjunto);
   }
 
-  async createMany(inputs: CreateSolicitudAdjuntoRecord[]) {
-    const created = await this.prisma.$transaction(
-      inputs.map((input) =>
-        this.prisma.solicitudAdjunto.create({
-          data: {
-            adicional: input.adicional,
-            archivoMimeType: input.archivoMimeType,
-            archivoNombre: input.archivoNombre,
-            archivoPath: input.archivoPath,
-            archivoSizeBytes:
-              input.archivoSizeBytes === null
-                ? null
-                : BigInt(input.archivoSizeBytes),
-            comentario: input.comentario,
-            descripcion: input.descripcion,
-            estadoAdjunto: input.estadoAdjunto,
-            id: input.adjuntoId,
-            nroDocumento: input.nroDocumento,
-            restringido: input.restringido,
-            solicitudId: input.solicitudId,
-            storageBucket: input.storageBucket,
-            tipoAdjunto: input.tipoAdjunto,
-            uploadedBy: input.uploadedBy,
-          },
-          include: solicitudAdjuntoInclude,
-        }),
-      ),
-    );
+  async create(input: CreateSolicitudAdjuntoRecord, sellerReviewStartedAt?: Date) {
+    if (sellerReviewStartedAt) {
+      const [adjunto] = await this.createMany([input], sellerReviewStartedAt);
+      return adjunto;
+    }
+    return SolicitudAdjuntoMapper.toDomain(await this.createRecord(this.prisma, input));
+  }
 
+  async createMany(inputs: CreateSolicitudAdjuntoRecord[], sellerReviewStartedAt?: Date) {
+    const solicitudId = inputs[0]?.solicitudId;
+    const created = sellerReviewStartedAt && solicitudId
+      ? await this.prisma.$transaction(async tx => {
+          // Share the lock used to close the review. A concurrent close must
+          // either see these attachments or cause this upload to be retried.
+          const [current] = await tx.$queryRaw<{ startedAt: Date | null }[]>`
+            SELECT s.seller_review_started_at AS "startedAt"
+            FROM solicitudes s
+            JOIN workflow_states w ON w.id = s.estado_actual_id
+            WHERE s.id = ${solicitudId}::uuid AND w.code = 'Liquidada'
+            FOR UPDATE OF s
+          `;
+          if (current?.startedAt?.getTime() !== sellerReviewStartedAt.getTime()) {
+            throw new SellerReviewChangedDuringUploadError();
+          }
+          return Promise.all(inputs.map(input => this.createRecord(tx, input)));
+        })
+      : await this.prisma.$transaction(inputs.map(input => this.createRecord(this.prisma, input)));
     return created.map(SolicitudAdjuntoMapper.toDomain);
   }
 

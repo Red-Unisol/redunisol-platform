@@ -10,12 +10,12 @@ export class SolicitudAdjuntoRepositoryImpl
     this.datasource = datasource;
   }
 
-  create(input: Parameters<SolicitudAdjuntoRepository["create"]>[0]) {
-    return this.datasource.create(input);
+  create(...args: Parameters<SolicitudAdjuntoRepository["create"]>) {
+    return this.datasource.create(...args);
   }
 
-  createMany(inputs: Parameters<SolicitudAdjuntoRepository["createMany"]>[0]) {
-    return this.datasource.createMany(inputs);
+  createMany(...args: Parameters<SolicitudAdjuntoRepository["createMany"]>) {
+    return this.datasource.createMany(...args);
   }
 
   findById(id: string) {

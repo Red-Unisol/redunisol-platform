@@ -42,6 +42,13 @@ export class SolicitudAdjuntoNotEditableError extends SolicitudesError {
   }
 }
 
+export class SellerReviewChangedDuringUploadError extends SolicitudesError {
+  constructor() {
+    super("La revisión de datos cambió durante la carga. Actualizá la ficha antes de adjuntar el archivo.", 409);
+    this.name = "SellerReviewChangedDuringUploadError";
+  }
+}
+
 export class SolicitudAdjuntoStorageUnavailableError extends SolicitudesError {
   constructor() {
     super("Solicitud adjunto storage unavailable.", 503);

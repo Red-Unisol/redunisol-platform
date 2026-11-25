@@ -67,9 +67,10 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
     if (rejectLoan) throw new AdministrativeCorrectionError("Préstamo pendiente de conciliación.");
   });
   const workflow = new SolicitudWorkflowPrismaDatasource(db);
+  const adjuntoRepository = new SolicitudAdjuntoRepositoryImpl(new SolicitudAdjuntosPrismaDatasource(db));
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
     now: () => new Date(), solicitudesRepository: repository, sociosRepository: socios,
-    adjuntoRepository: new SolicitudAdjuntoRepositoryImpl(new SolicitudAdjuntosPrismaDatasource(db)),
+    adjuntoRepository,
     engine: new SolicitudWorkflowEngine({ repository: workflow }),
     completeSellerReview: (input, command) => review.execute(input, command),
   });
@@ -92,6 +93,16 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ actionCode: "finalizar_revision_datos", expectedUpdatedAt: row.updatedAt.toISOString(), ...body }),
     });
+  const attachment = (solicitudId: string, archivoNombre: string, uploadedBy = seller.id) => {
+    const adjuntoId = randomUUID();
+    return {
+      adjuntoId, solicitudId, archivoNombre, uploadedBy,
+      archivoPath: `solicitudes/${solicitudId}/adjuntos/${adjuntoId}.pdf`,
+      tipoAdjunto: "Recibo de Sueldo", estadoAdjunto: "Cargado", restringido: false,
+      archivoMimeType: "application/pdf", archivoSizeBytes: 100, storageBucket: "test",
+      descripcion: null, adicional: null, comentario: null, nroDocumento: null,
+    };
+  };
 
   try {
     await t.test("una corrección devuelve a Revisión de Riesgo, incluso frente a doble clic", async () => {
@@ -107,8 +118,45 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       assert.equal(await persistedEvents(row.id), 1);
       assert.equal(financialChecks, 0);
     });
+    await t.test("adjuntar documentos durante la revisión basta para devolver la ficha a Riesgo", async () => {
+      const row = await makeReview(Prisma.JsonNull);
+      const startedAt = row.sellerReviewStartedAt!;
+      const first = attachment(row.id, "recibo.pdf");
+      const second = attachment(row.id, "constancia.pdf");
+      await adjuntoRepository.create(first, startedAt);
+      await adjuntoRepository.createMany([second], startedAt);
+
+      const response = await post(row);
+      assert.equal(response.status, 200, await response.text());
+      const saved = await read(row.id);
+      assert.equal(saved.estadoActual.code, "RevisionRiesgo");
+      assert.equal(saved.analisisFinalizadoAt, null);
+      assert.equal(financialChecks, 0);
+      const changes = [first, second].map(({ adjuntoId, archivoNombre }) => ({
+        field: `adjuntos.${adjuntoId}`, before: null, after: archivoNombre,
+      }));
+      assert(Array.isArray(saved.sellerReviewChanges));
+      assert.deepEqual(new Set(saved.sellerReviewChanges), new Set(changes));
+      const event = await db.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: row.id } });
+      assert.deepEqual(event.metadata, { sellerReviewChanges: saved.sellerReviewChanges });
+      assert.equal(await persistedEvents(row.id), 1);
+
+      await assert.rejects(adjuntoRepository.createMany([attachment(row.id, "tardío.pdf")], startedAt), {
+        name: "SellerReviewChangedDuringUploadError",
+      });
+      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: row.id } }), 2);
+    });
     await t.test("confirmar sin diferencias entrega la ficha a Legajos y registra el cierre", async () => {
       const row = await makeReview();
+      const older = attachment(row.id, "anterior.pdf");
+      const deleted = attachment(row.id, "eliminado.pdf");
+      const analystUpload = attachment(row.id, "analista.pdf", analyst.id);
+      await adjuntoRepository.createMany([older, deleted, analystUpload]);
+      await db.solicitudAdjunto.update({
+        where: { id: older.adjuntoId },
+        data: { uploadedAt: new Date(row.sellerReviewStartedAt!.getTime() - 1000) },
+      });
+      await db.solicitudAdjunto.update({ where: { id: deleted.adjuntoId }, data: { deletedAt: new Date() } });
       assert.equal((await post(row, { changes: { titular: { celular: "1111" } } })).status, 200);
       const saved = await read(row.id);
       assert.equal(saved.estadoActual.code, "VerificarFirmaYDocumentacion");
