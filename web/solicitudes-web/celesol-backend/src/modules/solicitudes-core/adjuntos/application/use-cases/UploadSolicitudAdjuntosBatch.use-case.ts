@@ -1,4 +1,5 @@
 import type { AuthWorkflowOwner } from "../../../../auth/domain/entities/User.entity";
+import { hasWorkflowAreaId } from "../../../../auth/domain/workflow-areas";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -175,7 +176,11 @@ export class UploadSolicitudAdjuntosBatchUseCase {
     }
 
     try {
-      return await this.dependencies.repository.createMany(records);
+      const sellerReviewStartedAt = solicitud.estadoActual.code === "Liquidada" &&
+        hasWorkflowAreaId(input.currentUser, solicitud.estadoActual.ownerId)
+        ? solicitud.sellerReviewStartedAt ?? undefined
+        : undefined;
+      return await this.dependencies.repository.createMany(records, sellerReviewStartedAt);
     } catch (error) {
       await this.compensate(uploaded);
       throw error;
