@@ -99,15 +99,19 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(result["reason"], "operator_message_preserved")
         self.assert_no_assignment()
 
-    def test_a_foreign_crm_or_chat_owner_is_preserved(self):
-        for record in ("lead", "deal", "chat"):
+    def set_chat_owner(self, chat_id, owner):
+        dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        self.client.open_line_dialogs[chat_id] = {**dialog, "owner": owner}
+
+    def test_a_foreign_crm_owner_or_a_non_seller_chat_owner_is_preserved(self):
+        for record in ("lead", "deal", "chat_not_seller"):
             with self.subTest(record=record):
                 self.reset_client()
                 if record == "lead": self.client.leads[920]["ASSIGNED_BY_ID"] = 90231
                 elif record == "deal": self.client.deals[930]["assignedById"] = 90231
                 else:
-                    self.client.open_line_dialogs[777] = self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777})
-                    self.client.open_line_dialogs[777]["owner"] = 90231
+                    # 5737 answers "other inquiries" in the web menu: not a seller of the bucket.
+                    self.set_chat_owner(777, 5737)
                 result = self.run_qualification()
                 self.assertEqual(result["reason"], "manual_owner_preserved")
                 self.assertFalse(self.client.chat_transfers)
@@ -115,6 +119,56 @@ class QualifierAttentionTests(unittest.TestCase):
                     and "assignedById" in body.get("fields", {}) for method, body in self.client.calls))
                 self.client.leads[920]["ASSIGNED_BY_ID"] = 57
                 self.client.deals[930]["assignedById"] = 57
+
+    def test_a_seller_chat_owner_receives_the_deal_without_a_transfer(self):
+        self.set_chat_owner(777, 90231)
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["assignment_strategy"], "chat_owner_seller")
+        self.assertEqual(self.client.deals[930]["assignedById"], 90231)
+        self.assertEqual(int(self.client.leads[920]["ASSIGNED_BY_ID"]), 90231)
+        self.assertEqual(self.client.deals[930]["stageId"], "C1:NEW")
+        self.assertFalse(self.client.chat_transfers)
+        self.assertEqual(result["transferred_chat_count"], 0)
+        self.assertEqual(len(self.client.notifications), 1)
+        self.assertEqual(self.client.notifications[0]["USER_ID"], 57)
+        self.assertIn("Chat transferido: No", self.client.notifications[0]["MESSAGE"])
+
+    def test_a_seller_chat_owner_does_not_skip_commercial_rejection(self):
+        self.client.leads[920] = self.fixture._catamarca_enriched_lead(
+            920, bcra_entities=[{"entidad": f"ENTIDAD {index}", "situacion": 4} for index in range(5)])
+        self.set_chat_owner(777, 90231)
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(self.client.deals[930]["stageId"], "C1:5")
+        self.assertEqual(self.client.deals[930]["assignedById"], 57)
+        self.assertFalse(self.client.chat_transfers)
+
+    def test_a_seller_outside_the_bucket_keeps_the_routing_review(self):
+        self.set_chat_owner(777, 128877)
+        result = self.run_qualification()
+        self.assertEqual(result["reason"], "manual_owner_preserved")
+        self.assert_no_assignment()
+
+    def test_two_human_chat_owners_keep_the_routing_review(self):
+        self.client.open_line_chats[("contact", 101)] = [777, 778]
+        self.client.open_line_dialogs[778] = {"id": 778, "entity_type": "LINES", "owner": 71159,
+            "entity_id": "whatsappbyedna|1|synthetic|901", "entity_data_1": "Y|LEAD|920|N|N|1778|0", "text_field_enabled": True}
+        self.set_chat_owner(777, 90231)
+        result = self.run_qualification()
+        self.assertEqual(result["reason"], "manual_owner_preserved")
+        self.assert_no_assignment()
+
+    def test_a_chat_moved_to_another_human_during_qualification_is_preserved(self):
+        self.set_chat_owner(777, 90231)
+        original = qualify.resolve_routing_bucket
+        def moved(*args, **kwargs):
+            self.set_chat_owner(777, 71159)
+            return original(*args, **kwargs)
+        with patch.object(qualify, "resolve_routing_bucket", side_effect=moved):
+            result = self.run_qualification()
+        self.assertEqual(result["reason"], "manual_owner_preserved")
+        self.assert_no_assignment()
 
     def test_new_queue_uses_actual_crm_ownership_and_unattended_receiver_evidence(self):
         stamp = "2026-12-01T12:00:00-03:00"
@@ -268,6 +322,23 @@ class QualifierAttentionTests(unittest.TestCase):
         writes = [body for method, body in self.client.calls
                   if method == "crm.item.update" and "stageId" in body.get("fields", {})]
         self.assertEqual(len(writes), 1)
+        self.assert_no_assignment()
+        # The supervisor hears about the parked deal exactly once.
+        self.assertEqual(len(self.client.notifications), 1)
+        self.assertEqual(self.client.notifications[0]["USER_ID"], 57)
+        self.assertIn("revisión de enrutamiento", self.client.notifications[0]["MESSAGE"])
+        self.assertIn("La sesión del chat ya fue atendida", self.client.notifications[0]["MESSAGE"])
+
+    def test_a_failed_routing_review_notification_keeps_the_parked_deal(self):
+        self.set_chat_owner(777, 5737)
+        original = self.client.call
+        def failing(method, body):
+            if method == "im.notify.system.add":
+                raise RuntimeError("Bitrix24 devolvio HTTP 503")
+            return original(method, body)
+        self.client.call = failing
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "routing_review")
         self.assert_no_assignment()
 
     def test_a_human_change_during_final_review_read_preserves_stage_and_owners(self):

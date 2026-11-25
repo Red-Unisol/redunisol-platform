@@ -661,11 +661,15 @@ def _open_line_session_transferability(
 
 
 def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
-                                  distributable_open_line_ids, logger):
+                                  distributable_open_line_ids, logger, seller_owner=None):
     """Preflight before CRM ownership writes; return exact session snapshots.
 
     A queue owner is not evidence that no human took the chat. Unknown metadata
     blocks changes too. Closed/other-line chats do not govern commercial owners.
+
+    seller_owner: seller who already owns the chat and will receive this deal
+    without a chat transfer. Only that exact owner stops blocking; any other
+    human owner still preserves the case, so a later change is still detected.
     """
     sessions = {}
     try:
@@ -683,6 +687,9 @@ def inspect_open_line_assignments(client, *, lead_id, contact_id, deal_id,
             if line not in distributable_open_line_ids or not sessions[chat_id]:
                 continue
             owner = _counter(dialog.get("owner"))
+            if seller_owner is not None and owner == seller_owner:
+                # Already with the deal's destination: nothing to protect from a transfer.
+                continue
             if owner not in (0, 57, 74827):
                 return sessions, "manual_owner_preserved"
             ready, reason = _unattended_sales_session(client, chat_id, dialog)
@@ -892,6 +899,63 @@ def notify_distribution_supervisor(
     logger.info(
         f"Notificacion {notification_id} enviada al usuario {recipient_id} "
         f"por la negociacion {deal_id}."
+    )
+    return True
+
+
+ROUTING_REVIEW_REASON_LABELS = {
+    "manual_owner_preserved": "El chat o el prospecto ya tiene un responsable humano",
+    "operator_message_preserved": "Un operador ya escribió en el chat",
+    "operator_attention_preserved": "La sesión del chat ya fue atendida",
+    "manual_transfer_preserved": "El chat fue transferido a mano",
+    "attention_inspection_unavailable": "No se pudo revisar el chat en Bitrix",
+    "integration_owner_unverified": "El prospecto está a nombre del usuario de integración",
+    "sales_receiver_assignment_preserved": "El prospecto está a nombre del receptor de Ventas",
+}
+
+
+def notify_routing_review(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    deal_id: int,
+    deal_title: str,
+    reason: str,
+    logger: Logger,
+) -> bool:
+    """Tell the distribution supervisor that a deal was parked without a seller."""
+    recipient_id = config.deal.distribution_notification_user_id
+    deal_url = f"{_portal_base_url(config.base_url)}/crm/deal/details/{deal_id}/"
+    safe_deal_title = _notification_text(deal_title) or f"Negociacion #{deal_id}"
+    reason_label = ROUTING_REVIEW_REASON_LABELS.get(
+        reason, "La negociación o el chat cambiaron durante la asignación"
+        if "changed" in reason else _notification_text(reason))
+    message = (
+        "[B]Negociación en revisión de enrutamiento[/B]\n"
+        f"Nombre: {safe_deal_title}\n"
+        f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
+        f"Motivo: {reason_label}\n"
+        "No se asignó vendedor ni se transfirió el chat: requiere asignación manual."
+    )
+    message_out = (
+        f"Negociación en revisión de enrutamiento. Nombre: {safe_deal_title}. "
+        f"Negociacion #{deal_id}. Motivo: {reason_label}. "
+        f"No se asignó vendedor ni se transfirió el chat. {deal_url}"
+    )
+    try:
+        notification_id = client.call(
+            "im.notify.system.add",
+            {"USER_ID": recipient_id, "MESSAGE": message, "MESSAGE_OUT": message_out},
+        )
+    except RuntimeError as exc:
+        logger.error(
+            f"No se pudo notificar la revision de enrutamiento de la negociacion {deal_id} "
+            f"al usuario {recipient_id}: {exc}"
+        )
+        return False
+    logger.info(
+        f"Notificacion {notification_id} enviada al usuario {recipient_id} "
+        f"por negociacion {deal_id} en revision de enrutamiento."
     )
     return True
 

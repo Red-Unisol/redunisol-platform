@@ -31,12 +31,14 @@ from .commercial_trace import (
 from .deal_service import (
     DEAL_DIRECT_FIELD_MAPPINGS,
     DEAL_ENTITY_TYPE_ID,
+    AssignmentResolution,
     NoOnlineSellersError,
     active_open_line_owners,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
     inspect_open_line_assignments,
     notify_distribution_supervisor,
+    notify_routing_review,
     notify_unmatched_routing,
     resolve_round_robin_assignee,
     user_display_name,
@@ -309,6 +311,9 @@ def qualify_catamarca_deal(
     new_intake = _new_owner_policy(deal, lead)
     contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
     guarded_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
+    if guard_reason == "manual_owner_preserved":
+        guarded_sessions, guard_reason = _adopt_seller_chat_owner(
+            client, config, deal, active_logger, guarded_sessions, guard_reason)
     if guard_reason:
         return _routing_preserved(client, config, deal, processed_at, guard_reason, active_logger)
     province = lead_enum_label(client, lead, config.fields.lead_province) or ""
@@ -468,6 +473,9 @@ def qualify_catamarca_deal(
     outside_distribution_window = not new_intake and not single_seller_bucket and _business_hours_gate_enabled(source) and (
         not within_business_hours or not created_within_distribution_window
     )
+    if outside_distribution_window and deal.get("_seller_chat_owner") is not None:
+        # This legacy branch writes the provisional owner without re-reading the chat.
+        return _routing_preserved(client, config, deal, processed_at, "manual_owner_preserved", active_logger)
     if outside_distribution_window:
         distribution = DistributionDecision(
             "manual_owner",
@@ -589,28 +597,40 @@ def qualify_catamarca_deal(
             **bcra_trace,
         )
     window = None
-    if new_intake and not single_seller_bucket:
-        # Qualification may have spent several minutes waiting for commercial data.
-        processed_at = _local_datetime(source, now)
-        window = schedule.sales_closed_window(processed_at, config.sales_calendar)
-        within_business_hours = window is None
     assignment = None
     configured_pool = bucket.seller_ids
-    if window is None:
-        try:
-            assignment = resolve_round_robin_assignee(
-                client, config, contact_id=contact_id, deal_id=deal_id_int, lead_id=lead_id,
-                bucket_key=bucket.key, bucket_field=config.deal.routing_bucket_field,
-                pool=bucket.seller_ids, legacy_province_label=bucket.legacy_province_label, logger=active_logger,
-            )
-        except NoOnlineSellersError as exc:
-            configured_pool = exc.configured_pool
+    seller_chat_owner = deal.get("_seller_chat_owner")
+    if seller_chat_owner is not None:
+        # The chat is already with a seller of this bucket (usually routed there on
+        # purpose by the web intake): the deal follows the chat, without a transfer,
+        # round robin or queue. Any other owner keeps the existing routing review.
+        if seller_chat_owner not in bucket.seller_ids:
+            return _routing_preserved(client, config, deal, processed_at, "manual_owner_preserved", active_logger)
+        assignment = AssignmentResolution(
+            assigned_by_id=seller_chat_owner, strategy="chat_owner_seller",
+            configured_pool=bucket.seller_ids, online_pool=(),
+        )
+    else:
         if new_intake and not single_seller_bucket:
+            # Qualification may have spent several minutes waiting for commercial data.
             processed_at = _local_datetime(source, now)
             window = schedule.sales_closed_window(processed_at, config.sales_calendar)
             within_business_hours = window is None
-            if window:
-                assignment = None
+        if window is None:
+            try:
+                assignment = resolve_round_robin_assignee(
+                    client, config, contact_id=contact_id, deal_id=deal_id_int, lead_id=lead_id,
+                    bucket_key=bucket.key, bucket_field=config.deal.routing_bucket_field,
+                    pool=bucket.seller_ids, legacy_province_label=bucket.legacy_province_label, logger=active_logger,
+                )
+            except NoOnlineSellersError as exc:
+                configured_pool = exc.configured_pool
+            if new_intake and not single_seller_bucket:
+                processed_at = _local_datetime(source, now)
+                window = schedule.sales_closed_window(processed_at, config.sales_calendar)
+                within_business_hours = window is None
+                if window:
+                    assignment = None
     if assignment is None:
         fresh_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
         if guard_reason or fresh_sessions != guarded_sessions:
@@ -1031,9 +1051,35 @@ def _routing_preflight(client, config, deal, logger):
             return {}, "crm_identity_changed_before_assignment"
         return inspect_open_line_assignments(client, lead_id=lead_id,
             contact_id=_optional_int(fresh.get("contactId")), deal_id=_required_int(fresh.get("id"), "id"),
-            distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+            distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger,
+            seller_owner=deal.get("_seller_chat_owner"))
     except Exception:
         return {}, "attention_inspection_unavailable"
+
+
+def _adopt_seller_chat_owner(client, config, deal, logger, sessions, reason):
+    """Let a single human chat owner receive the deal instead of parking it.
+
+    Only the chat can be the cause: a human CRM owner still yields the same
+    preserved reason on the second preflight. Two owners or a failed read keep
+    the original preservation.
+    """
+    try:
+        owners = set(active_open_line_owners(
+            client, lead_id=_required_int(deal.get("leadId"), "leadId"),
+            contact_id=_optional_int(deal.get("contactId")), deal_id=_required_int(deal.get("id"), "id"),
+            distributable_open_line_ids=config.deal.distributable_open_line_ids,
+        )) - {0, config.deal.provisional_user_id, 74827}
+    except Exception:
+        return sessions, reason
+    if len(owners) != 1:
+        return sessions, reason
+    deal["_seller_chat_owner"] = next(iter(owners))
+    adopted_sessions, adopted_reason = _routing_preflight(client, config, deal, logger)
+    if adopted_reason:
+        deal.pop("_seller_chat_owner", None)
+        return sessions, reason
+    return adopted_sessions, None
 
 
 def _update_routing_owners(client, config, deal, fields, sessions, logger, processed_at):
@@ -1060,7 +1106,8 @@ def _update_routing_owners(client, config, deal, fields, sessions, logger, proce
             snapshot["ASSIGNED_BY_ID"] = target
             current_sessions, reason = inspect_open_line_assignments(
                 client, lead_id=lead_id, contact_id=_optional_int(deal.get("contactId")), deal_id=deal_id,
-                distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+                distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger,
+                seller_owner=deal.get("_seller_chat_owner"))
             if reason or sessions != current_sessions or not crm_still_matches():
                 return _routing_preserved(client, config, deal, processed_at,
                                           reason or "crm_or_session_changed_before_assignment", logger)
@@ -1092,6 +1139,10 @@ def _routing_preserved(client, config, deal, processed_at, reason, logger):
                 "fields": {"stageId": config.deal.routing_review_stage_id, config.deal.queue_reason_field: reason}})
             current = {**current, "stageId": config.deal.routing_review_stage_id}
             action = "routing_review"
+            # Sent once: a parked deal is no longer pending or queued, so it is not
+            # selected again. A failed notification never undoes the stage write.
+            notify_routing_review(client, config, deal_id=_required_int(current.get("id"), "id"),
+                deal_title=str(current.get("title") or "").strip(), reason=reason, logger=logger)
     except Exception:
         # A failed/uncertain stage write never authorizes a responsible change.
         pass

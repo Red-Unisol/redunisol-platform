@@ -185,6 +185,25 @@ la entrada, la sesión nativa y el prospecto coinciden y la sesión sigue sin
 atención humana. Una reasignación, una respuesta o una transferencia humana
 conserva la atención existente. La evidencia ambigua queda para revisión.
 
+### Chat ya en manos de un vendedor del grupo (desde 2026-11-25)
+
+La entrada web y de WhatsApp pasa el chat al vendedor del caso o la negociación
+abierta del cliente. Si al calificar la negociación el único dueño humano del chat
+comercial activo es un vendedor del grupo que le corresponde, la negociación (y el
+prospecto) se asignan a ese vendedor:
+
+- primero se aplica la calificación comercial; un rechazo no se distribuye;
+- no hay round-robin, compensación de volumen ni cola, y el chat no se transfiere;
+- se envía la notificación habitual de distribución, con "Chat transferido: No";
+- antes de cada escritura se vuelve a comprobar que el chat siga con ese vendedor.
+
+Siguen yendo a `C1:KESTRA_ROUTE_REVIEW` sin cambios: un responsable humano en el
+prospecto o la negociación, un dueño del chat que no es vendedor del grupo (por
+ejemplo `5737`, otras consultas), dos dueños humanos distintos y la sesión atendida,
+respondida o transferida a mano mientras el chat sigue con el receptor. Cada una de
+esas entradas a `C1:KESTRA_ROUTE_REVIEW` envía una notificación a Maru (`57`) con el
+motivo, para que la asignación manual no quede sin aviso.
+
 ### Ingresos anteriores al corte
 
 Fuera de la ventana continua que comienza el lunes a las 00:00 inclusive y termina
