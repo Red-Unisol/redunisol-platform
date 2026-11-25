@@ -12,8 +12,8 @@ y avisa al chat de alertas de Bitrix24, con el estado en la clave KV `alerta.bar
 - **Fallas**: ejecuciones `FAILED` de los ultimos 20 minutos, un incidente por flow
   ("Flow fallido" / "Flow recuperado").
 - **Ejecuciones trabadas**: `RUNNING`, `QUEUED` o `KILLING` con mas de
-  `TRABADA_UMBRAL_MINUTOS` (45 por defecto, mayor que el SLA de 30 min de los flows de
-  cada minuto). Un aviso por ejecucion ("Ejecucion trabada" con estado y hora de inicio)
+  `TRABADA_UMBRAL_MINUTOS` (20 por defecto). El aviso sale en el primer barrido
+  posterior al umbral. Un aviso por ejecucion ("Ejecucion trabada" con estado y hora de inicio)
   y otro cuando deja de estarlo ("Ejecucion destrabada"). `TRABADA_EXCLUIDOS` acepta
   `namespace/flow` separados por coma para flows que duran mas de forma normal.
   Hoy excluidos: `bcra_archivo_actualizar_poc`, `consulta_cuad_masivo` y

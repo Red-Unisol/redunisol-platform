@@ -140,14 +140,13 @@ class Barrido:
     """Las dependencias entran por constructor para poder sustituirlas en tests."""
 
     def __init__(self, consultar, avisar, ahora=None, ventana=20, max_dias=30,
-                 umbral_trabada=45, excluidos_trabada=()):
+                 umbral_trabada=20, excluidos_trabada=()):
         self.consultar = consultar
         self.avisar = avisar
         self.ahora = ahora or datetime.now(timezone.utc)
         self.ventana = ventana
         self.max_dias = max_dias
-        # Mayor que el SLA de 30 min de los flows de cada minuto: si una ejecucion
-        # sigue colgada a los 45, el SLA no actuo.
+        # El umbral de 20 min da margen para que actue el SLA de 10 min de los flows de leads.
         self.umbral_trabada = umbral_trabada
         self.excluidos_trabada = set(excluidos_trabada)
         self.problemas = []
@@ -382,7 +381,7 @@ def main():
         ),
         ventana=int(os.environ.get("VENTANA_MINUTOS") or "20"),
         max_dias=int(os.environ.get("INCIDENTE_MAX_DIAS") or "30"),
-        umbral_trabada=int(os.environ.get("TRABADA_UMBRAL_MINUTOS") or "45"),
+        umbral_trabada=int(os.environ.get("TRABADA_UMBRAL_MINUTOS") or "20"),
         excluidos_trabada=[
             item.strip()
             for item in (os.environ.get("TRABADA_EXCLUIDOS") or "").split(",")

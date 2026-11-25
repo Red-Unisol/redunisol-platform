@@ -268,7 +268,7 @@ def test_busca_running_queued_y_killing_mas_viejas_que_el_umbral():
     assert set(salida["estado"]["trabadas"]) == {"a", "b", "c"}
     consultas = [c for c in espia.consultas if "filters[startDate][LESS_THAN]" in c]
     assert {c["filters[state][EQUALS]"] for c in consultas} == {"RUNNING", "QUEUED", "KILLING"}
-    limite = (AHORA - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    limite = (AHORA - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert all(c["filters[startDate][LESS_THAN]"] == limite for c in consultas)
     assert all(c["filters[namespace][STARTS_WITH]"] == barrido.PREFIJO for c in consultas)
 

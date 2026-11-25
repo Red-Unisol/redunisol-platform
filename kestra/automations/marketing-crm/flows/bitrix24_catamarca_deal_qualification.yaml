@@ -7,11 +7,11 @@ concurrency:
   limit: 1
   behavior: QUEUE
 # Con concurrency 1, una ejecucion colgada frena la calificacion y distribucion de
-# negociaciones (15-16/11: ~10,5 h). Normal p99 1,4 min; mas de 30 min solo en dias lentos.
+# negociaciones (15-16/11: ~10,5 h). Normal p99 1,4 min.
 sla:
   - id: limitar_duracion
     type: MAX_DURATION
-    duration: PT30M
+    duration: PT10M
     behavior: CANCEL
 
 labels:

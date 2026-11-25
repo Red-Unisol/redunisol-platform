@@ -5,12 +5,11 @@ concurrency:
   limit: 1
   behavior: QUEUE
 # Con concurrency 1, una vuelta colgada frena todo el prefill (22/11: 55,8 h tras un
-# reinicio de Kestra). 30 min la corta y deja correr la siguiente. Debe ser mayor que
-# el SLA de bitrix24_lead_prefill_one (20 min) para no liberar el lote con un hijo escribiendo.
+# reinicio de Kestra). A los 10 min Kestra solicita cancelar la tanda y sus subflows.
 sla:
 - id: limitar_duracion
   type: MAX_DURATION
-  duration: PT30M
+  duration: PT10M
   behavior: CANCEL
 labels:
   env: prod

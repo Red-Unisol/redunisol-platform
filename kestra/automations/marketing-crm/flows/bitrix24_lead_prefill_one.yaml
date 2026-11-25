@@ -4,13 +4,12 @@ description: Enriquece un lead del lote serializado de bitrix24_lead_prefill. Us
 concurrency:
   limit: 2
   behavior: QUEUE
-# Un lead normal tarda segundos (p99 < 4 min); en los dias lentos de oct/nov hubo
-# ejecuciones validas de hasta 6 h. 20 min corta una colgada sin cortar dias lentos
-# normales. Debe ser menor que el SLA del padre (bitrix24_lead_prefill, 30 min).
+# Un lead normal tarda segundos (p99 < 4 min). El hijo tiene su propio tope de
+# 10 min. Tambien puede recibir la cancelacion en cascada del padre.
 sla:
 - id: limitar_duracion
   type: MAX_DURATION
-  duration: PT20M
+  duration: PT10M
   behavior: CANCEL
 labels:
   env: prod

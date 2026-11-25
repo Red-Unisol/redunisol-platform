@@ -13,12 +13,12 @@ concurrency:
   limit: 1
   behavior: QUEUE
 # Con concurrency 1, una ejecucion colgada frena la calificacion de todos los leads.
-# Normal p99 6 min; mas de 30 min solo en los dias lentos de oct/nov. Si se cancela, el
+# Normal p99 6 min. Si llega al tope de 10 min, el
 # receptor la reconcilia como fallo (ok=false) y reintenta el lead a los 60 s.
 sla:
 - id: limitar_duracion
   type: MAX_DURATION
-  duration: PT30M
+  duration: PT10M
   behavior: CANCEL
 tasks:
 - type: io.kestra.plugin.core.http.Request
