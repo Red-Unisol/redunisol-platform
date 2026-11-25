@@ -1,8 +1,10 @@
 <?php
 
 use App\Actions\SubmitFormToKestra;
+use App\Exceptions\RetryableFormPersistenceFailure;
 use App\Jobs\PersistFormSubmission;
 use App\Services\MetaConversionsApiService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -289,21 +291,110 @@ it('fails the queued job without sending meta when bitrix persistence fails', fu
         'https://graph.facebook.com/*' => Http::response(['events_received' => 1]),
     ]);
 
-    $job = new PersistFormSubmission(
+    $job = (new PersistFormSubmission(
         input: validFormPayload(),
         qualified: true,
-    );
+    ))->withFakeQueueInteractions();
 
-    expect(fn () => $job->handle(
+    $job->handle(
         app(SubmitFormToKestra::class),
         app(MetaConversionsApiService::class),
-    ))->toThrow(RequestException::class);
+    );
+
+    // HTTP 500: Kestra pudo haber creado el lead, asi que no se reintenta.
+    $job->assertFailedWith(RequestException::class);
 
     Http::assertNotSent(fn ($request) => str_starts_with(
         $request->url(),
         'https://graph.facebook.com/',
     ));
 });
+
+it('retries only with waits of several minutes', function () {
+    $job = new PersistFormSubmission(input: validFormPayload(), qualified: false);
+
+    expect($job->tries)->toBe(4)
+        ->and($job->backoff)->toBe([300, 900, 1800]);
+});
+
+it('retries when bitrix rejects the lead before creating it', function (string $message) {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    Http::fake([
+        'https://kestra.example.test/webhook' => Http::response([
+            'ok' => false, 'lead_id' => '', 'contact_id' => '77', 'action' => 'error', 'message' => $message,
+        ]),
+    ]);
+
+    $job = (new PersistFormSubmission(input: validFormPayload(), qualified: false))->withFakeQueueInteractions();
+
+    expect(fn () => $job->handle(app(SubmitFormToKestra::class), app(MetaConversionsApiService::class)))
+        ->toThrow(RetryableFormPersistenceFailure::class);
+    $job->assertNotFailed();
+})->with([
+    'limite de pedidos' => ['Bitrix24 devolvio HTTP 503: {"error":"QUERY_LIMIT_EXCEEDED","error_description":"Too many requests"}'],
+    'limite sin http' => ['Too many requests'],
+    'bitrix 502' => ['Bitrix24 devolvio HTTP 502: <html>Bad Gateway</html>'],
+    'red' => ['Error de red contra Bitrix24: [Errno 111] Connection refused'],
+]);
+
+it('does not retry a bitrix rejection that cannot succeed or already created the lead', function (array $body) {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    Http::fake(['https://kestra.example.test/webhook' => Http::response($body)]);
+
+    $job = (new PersistFormSubmission(input: validFormPayload(), qualified: false))->withFakeQueueInteractions();
+    $job->handle(app(SubmitFormToKestra::class), app(MetaConversionsApiService::class));
+
+    $job->assertFailed();
+})->with([
+    'email invalido' => [['ok' => false, 'lead_id' => '', 'message' => 'Bitrix24 devolvio HTTP 400: {"error":"","error_description":"Email invalido"}']],
+    'lead ya creado' => [['ok' => false, 'lead_id' => '205', 'message' => 'Bitrix24 devolvio HTTP 503: QUERY_LIMIT_EXCEEDED']],
+    'sin mensaje' => [['ok' => false]],
+]);
+
+it('retries only the http errors where kestra never got the form', function (int $status, bool $retried) {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    Http::fake(['https://kestra.example.test/webhook' => Http::response('', $status)]);
+
+    $job = (new PersistFormSubmission(input: validFormPayload(), qualified: false))->withFakeQueueInteractions();
+    $run = fn () => $job->handle(app(SubmitFormToKestra::class), app(MetaConversionsApiService::class));
+
+    if ($retried) {
+        expect($run)->toThrow(RetryableFormPersistenceFailure::class);
+        $job->assertNotFailed();
+    } else {
+        $run();
+        $job->assertFailed();
+    }
+})->with([
+    'proxy 502' => [502, true],
+    'proxy 503' => [503, true],
+    'cloudflare origen caido 521' => [521, true],
+    'cloudflare tls 525' => [525, true],
+    'error interno 500' => [500, false],
+    'gateway timeout 504' => [504, false],
+    'cloudflare desconocido 520' => [520, false],
+    'cloudflare timeout 524' => [524, false],
+]);
+
+it('retries a connection failure but not a timeout', function (string $message, bool $retried) {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    Http::fake(fn () => throw new ConnectionException($message));
+
+    $job = (new PersistFormSubmission(input: validFormPayload(), qualified: false))->withFakeQueueInteractions();
+    $run = fn () => $job->handle(app(SubmitFormToKestra::class), app(MetaConversionsApiService::class));
+
+    if ($retried) {
+        expect($run)->toThrow(RetryableFormPersistenceFailure::class);
+        $job->assertNotFailed();
+    } else {
+        $run();
+        $job->assertFailedWith(ConnectionException::class);
+    }
+})->with([
+    'conexion rechazada' => ['cURL error 7: Failed to connect to kestra.example.test port 443', true],
+    'dns' => ['cURL error 6: Could not resolve host: kestra.example.test', true],
+    'tiempo agotado' => ['cURL error 28: Operation timed out after 60001 milliseconds', false],
+]);
 
 it('encrypts personal data in the database queue payload', function () {
     config()->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
