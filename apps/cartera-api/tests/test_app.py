@@ -100,3 +100,40 @@ def test_limite_por_minuto(client, monkeypatch):
 
 def test_health_sin_token(client):
     assert client.get("/health").json()["ok"] is True
+
+
+def test_registro_ips_escribe_solo_ips_nuevas(client, monkeypatch):
+    escrituras = []
+    original = app_mod.RegistroIPs._guardar
+
+    def contar(self, ip, consultas):
+        escrituras.append((ip, consultas))
+        return original(self, ip, consultas)
+
+    monkeypatch.setattr(app_mod.RegistroIPs, "_guardar", contar)
+    registro = app_mod.RegistroIPs()
+    for _ in range(50):
+        registro.registrar("203.0.113.5")
+    assert escrituras == [("203.0.113.5", 1)]  # 50 consultas, una sola escritura
+    registro.registrar("203.0.113.6")
+    assert len(escrituras) == 2
+
+
+def test_registro_ips_guarda_el_acumulado_cada_tanto(client, monkeypatch):
+    registro = app_mod.RegistroIPs()
+    registro.GUARDAR_CADA = 0
+    for _ in range(3):
+        registro.registrar("203.0.113.7")
+    conn = app_mod.connect_lectura(app_mod._db_path())
+    assert conn.execute("SELECT consultas FROM ips_vistas WHERE ip = '203.0.113.7'").fetchone()[0] == 3
+
+
+def test_consultas_no_escriben_en_la_base(client):
+    import os
+    db = app_mod._db_path()
+    client.get("/v1/estado", headers=AUTH)  # primera: registra la IP
+    antes = os.path.getmtime(db + "-wal") if os.path.exists(db + "-wal") else None
+    for _ in range(5):
+        assert client.get("/v1/cuotas", headers=AUTH).status_code == 200
+    despues = os.path.getmtime(db + "-wal") if os.path.exists(db + "-wal") else None
+    assert antes == despues
