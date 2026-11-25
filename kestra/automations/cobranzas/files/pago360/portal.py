@@ -125,11 +125,13 @@ class PortalClient:
             uuid_text(job.get("operacion_id"))
         return data["trabajos"]
 
-    def claim(self, operation_id: str, executor_id: str) -> dict:
+    def claim(self, operation_id: str, executor_id: str, lease_seconds: int = 300) -> dict:
         if not isinstance(executor_id, str) or not 1 <= len(executor_id) <= 100:
             raise ContractError("Invalid executor")
+        if type(lease_seconds) is not int or not 30 <= lease_seconds <= 3600:
+            raise ContractError("Invalid lease duration")
         return self._request("POST", f"trabajos/{uuid_text(operation_id)}/claim",
-                             body={"executor_id": executor_id, "lease_segundos": 300})
+                             body={"executor_id": executor_id, "lease_segundos": lease_seconds})
 
     @staticmethod
     def _lease(token: str, fencing: int) -> dict:
@@ -146,7 +148,7 @@ class PortalClient:
         if state not in {"received", "verified", "uncertain", "rejected"}:
             raise ContractError("Invalid attempt transition")
         body = self._lease(token, fencing)
-        if state in {"received", "verified"}:
+        if state in {"received", "verified"} or (state == "uncertain" and proof is not None):
             if not isinstance(proof, dict):
                 raise ContractError("Explicit receipt or new verification required")
             legacy_id(proof.get("cuota_prestamo_id"))
@@ -177,3 +179,11 @@ class PortalClient:
             raise ContractError("Release reason required")
         return self._request("POST", f"trabajos/{uuid_text(operation_id)}/release",
                              body=self._lease(token, fencing) | {"motivo": reason})
+
+
+    def verify_payment(self, operation_id: str) -> dict:
+        data = self._request("GET", f"trabajos/{uuid_text(operation_id)}/verificar-pago")
+        proof = data.get("pago")
+        if not isinstance(proof, dict) or proof.get("consultado_ahora") is not True:
+            raise PortalError(200, "UNVERIFIED_PROVIDER")
+        return proof

@@ -141,3 +141,27 @@ La escritura real permanecerá bloqueada hasta completar las verificaciones ante
 - [Tarea Bitrix 23595](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23595/).
 
 Los comentarios históricos y las pruebas con respuestas simuladas describen evidencia previa; no sustituyen una validación operativa del circuito de Pago360.
+
+## Incremento del 23/11/2026: prueba real supervisada de PagoDeuda
+
+Con autorización explícita del usuario para una única operación real a cuenta,
+se envió importe exacto, idCuota, el cobrador PAGOS 360 comprobado activo y fecha
+contable solicitada, con idCuentaAmv=null y permitirPagarFueraDeOrden=false.
+No se aplicaron migraciones ni se activaron flujos de Kestra.
+
+El HTTP 200 devolvió **un entero**, ID de CuotaPrestamoCobro. Su relectura
+verificó préstamo, cobrador e importe por `TotalPago` (negativo en el recibo).
+`MovimientoPrestamo.TransaccionAjuste.ID` vinculó ese recibo con la cuota indicada
+por `TransaccionPrestamo.ID`. MontoTotal del recibo no representa necesariamente
+el importe cobrado: en la prueba fue cero.
+
+La fecha del recibo fue el día de ejecución, aunque el JSON contenía otra fecha
+contable. Hubo movimientos de punitorios y la variación del saldo total no
+permitió acreditar por sí sola la conservación del remanente. No se infiere el
+motivo de ese comportamiento ni se considera el endpoint validado para la
+integración automática. No se repitió ni revirtió la petición.
+
+La evidencia detallada queda fuera de Git. Antes de nuevas escrituras se requiere
+revisión de Sistemas/Cobranzas de fecha y distribución, además de los controles
+pendientes de concurrencia con otros canales. El pago del caso probado ya tiene
+un recibo: debe excluirse de nuevos intentos, no volver a probar otro endpoint.

@@ -9,7 +9,11 @@ from pago360_cuotas.processor import Processor
 
 def main():
     execution_id = os.environ["KESTRA_EXECUTION_ID"]
-    processor = Processor()
+    if os.environ.get("PAGO360_MODE") == "enabled":
+        from .runtime import build_processor
+        processor = build_processor()
+    else:
+        processor = Processor()
     if sys.argv[1:] == ["recover"]:
         from .pending import pending_operations
 

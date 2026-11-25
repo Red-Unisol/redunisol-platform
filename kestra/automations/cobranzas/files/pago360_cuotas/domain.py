@@ -137,6 +137,7 @@ class VerifiedPayment:
     state: str
     collected_cents: int | None
     paid_at: datetime | None
+    paid_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -200,13 +201,13 @@ def validate_payment(operation: Operation, payment: VerifiedPayment) -> str | No
     if (type(payment.collected_cents) is not int
             or payment.collected_cents != operation.total_cents):
         return "AMOUNT_MISMATCH"
-    if (not isinstance(payment.paid_at, datetime) or payment.paid_at.tzinfo is None
+    if type(payment.paid_on) is not date and (not isinstance(payment.paid_at, datetime) or payment.paid_at.tzinfo is None
             or payment.paid_at.utcoffset() is None):
         return "PAID_DATE_UNKNOWN"
     return None
 
 
-def validate_debt(installment: Installment, debt: Debt, paid_on: date) -> str | None:
+def validate_debt(installment: Installment, debt: Debt, paid_on: date, *, exact_balance: bool = True) -> str | None:
     if (debt.loan_id, debt.installment_id, debt.number) != (
             installment.loan_id, installment.installment_id, installment.number):
         return "INSTALLMENT_MISMATCH"
@@ -214,6 +215,6 @@ def validate_debt(installment: Installment, debt: Debt, paid_on: date) -> str | 
         return "NOT_OVERDUE_OR_CHANGED"
     if debt.paid:
         return "PAID_BY_OTHER_OPERATION"
-    if type(debt.payable_cents) is not int or debt.payable_cents != installment.amount_cents:
+    if type(debt.payable_cents) is not int or (exact_balance and debt.payable_cents != installment.amount_cents):
         return "DEBT_CHANGED"
     return None
