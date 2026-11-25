@@ -935,3 +935,33 @@ test('a later ordinary entry cannot greet while a previous consent still awaits 
     Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
     $h['crm']->shouldNotHaveReceived('call');
 });
+
+test('the member benefits click is reserved before the credit menu and v3, even with an existing menu', function () {
+    foreach ([EdnaBenefitsRouting::NAME, \App\Services\EdnaMemberBenefitsButton::CUTOVER] as $name) {
+        DB::table('edna_intake_cutovers')->updateOrInsert(['name' => $name], ['entry_id_after' => 0, 'starts_at' => now()->subHour()]);
+    }
+    $h = organicMenuHarness();
+    $old = organicMenuCapture($h['service']);
+    organicMenuDue($old->id, ['chat_id' => '601', 'session_id' => '501']);
+    $label = 'Quiero mis beneficios';
+    $event = organicMenuEvent(['replyOutMessageId' => '123', 'messageContent' => ['type' => 'BUTTON', 'text' => $label, 'payload' => $label]]);
+    $payload = organicMenuPayload($event);
+    config(['edna.api_key' => 'test']);
+    $out = ['messageId' => 123, 'matcherId' => 63510, 'matcherName' => 'aviso_soysocio_v6final',
+        'direction' => 'OUT', 'channelType' => 'WHATSAPP', 'subjectId' => 2423, 'address' => $payload['subscriber']['identifier'],
+        'deliveryStatus' => 'READ', 'sentOrReceivedAt' => now()->subMinute()->toIso8601String(),
+        'content' => ['keyboard' => ['rows' => [['buttons' => [['text' => $label, 'payload' => $label]]]]]]];
+    Http::fake(['app.edna.io/api/messages/history' => Http::sequence()->push([], 503)->push(['hasNext' => false, 'content' => [$out]])]);
+    $h['transport']->shouldNotReceive('schedule');
+    expect((new EdnaIntake)->receiveEntry($event, $payload))->toBeTrue();
+    $id = DB::table('edna_organic_menus')->where('entry_event_id', $event->id)->value('id');
+    expect($h['service']->process($id)['state'])->toBe('waiting');
+    expect(DB::table('edna_benefit_chat_routes')->count())->toBe(0);
+    organicMenuDue($id);
+    expect($h['service']->process($id)['reason'])->toBe('benefits_routing');
+    expect(DB::table('edna_benefit_chat_routes')->first())->toMatchObject(['target_id' => 117941, 'deal_id' => null, 'session_id' => 501]);
+    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertPushed(\App\Jobs\RouteEdnaBenefitsChat::class, 1);
+    Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
+    $h['crm']->shouldNotHaveReceived('call');
+});

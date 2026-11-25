@@ -465,3 +465,48 @@ test('activation is immutable and status never schedules work or reads CRM', fun
     expect(DB::table('edna_benefit_chat_routes')->count())->toBe(0);
     Queue::assertNothingPushed();
 });
+
+test('a proven member campaign reply without a deal respects live attention and has one transfer intent per session', function (string $scenario) {
+    $f = benefitsRouteFixture(false);
+    $f->cases->status = 'not_applicable';
+    $f->crm->dialog['entity_data_1'] = str_replace('DEAL|900', 'CONTACT|710', $f->crm->dialog['entity_data_1']);
+    $f->crm->dialog['entity_data_2'] = 'CONTACT|710';
+    $label = 'Quiero mis beneficios';
+    $event = benefitsRouteEvent(['replyOutMessageId' => '456', 'messageContent' => ['type' => 'BUTTON', 'text' => $label, 'payload' => $label]]);
+    $out = ['messageId' => '456', 'subjectId' => '2423', 'matcherId' => '63510', 'sentOrReceivedAt' => now()->subMinute()->toISOString()];
+    DB::table('edna_intake_cutovers')->updateOrInsert(['name' => \App\Services\EdnaMemberBenefitsButton::CUTOVER],
+        ['entry_id_after' => $scenario === 'old entry' ? $event->id : 0, 'starts_at' => now()->subMinute()]);
+    $proof = benefitsRouteProof($event);
+    if ($scenario === 'old entry') {
+        expect($f->service->reserveMemberButton($event, $proof, $out)['state'])->toBe('review')
+            ->and(DB::table('edna_benefit_chat_routes')->count())->toBe(0);
+        return;
+    }
+    if ($scenario === 'existing reservation') {
+        $f->cases->status = 'waiting';
+        $f->service->check($f->event, $f->proof);
+        $f->cases->status = 'not_applicable';
+    }
+    $caseReads = $f->cases->calls;
+    if ($scenario === 'human at final check') {
+        $f->guard->beforeInspect = function ($call) use ($f) { $f->crm->attended = $call === 2; };
+    }
+    $f->crm->mode = $scenario === 'lost response' ? 'lost_after_apply' : 'ack';
+    $f->service->reserveMemberButton($event, $proof, $out);
+    $f->service->reserveMemberButton($event, $proof, $out);
+    $rowId = DB::table('edna_benefit_chat_routes')->value('entry_event_id');
+    $result = $f->service->process($rowId);
+    expect($f->service->check($event, $proof)['state'])->toBe('preserved');
+    $f->service->reserveMemberButton($event, $proof, $out);
+    expect($f->service->process($rowId)['state'])->toBe('not_claimed');
+    $row = DB::table('edna_benefit_chat_routes')->first();
+    expect(DB::table('edna_benefit_chat_routes')->count())->toBe(1)
+        ->and($f->cases->calls)->toBe($caseReads)->and($row->deal_id)->toBeNull();
+    if ($scenario === 'human at final check') {
+        expect($result['state'])->toBe('preserved')->and($f->crm->posts)->toBe(0)->and($row->transfer_intent)->toBeNull();
+    } else {
+        expect($result['state'])->toBe('routed')->and($f->crm->posts)->toBe(1)
+            ->and($row->transfer_state)->toBe($scenario === 'lost response' ? 'observed' : 'confirmed')
+            ->and(json_decode($row->transfer_intent, true)['entry_event_id'])->toBe($event->id);
+    }
+})->with(['new contact only', 'human at final check', 'existing reservation', 'lost response', 'old entry']);

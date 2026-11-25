@@ -105,3 +105,25 @@ it('waits if the click precedes the end of the native timestamp matching window'
     expect(fn () => app(EdnaFormConsent::class)->verifiedReply(formConsentCallback()))->toThrow(RuntimeException::class, 'still open');
     Http::assertSentCount(1);
 });
+
+it('only recognizes the member benefits button on the exact delivered template', function (string $scenario) {
+    $label = 'Quiero mis beneficios';
+    $p = formConsentCallback($label);
+    $m = array_replace(formConsentOriginal(), ['matcherId' => 63510, 'matcherName' => 'aviso_soysocio_v6final',
+        'content' => ['keyboard' => ['rows' => [['buttons' => [['text' => $label, 'payload' => $label]]]]]]]);
+    match ($scenario) {
+        'other template' => [$m['matcherId'], $m['matcherName']] = [12345, 'otra_plantilla'],
+        'text' => $p['messageContent']['type'] = 'TEXT',
+        'no reply' => $p['replyOutMessageId'] = null,
+        'different button' => $p['messageContent']['text'] = 'Otro botón',
+        'payload mismatch' => $p['messageContent']['payload'] = 'otra_accion',
+        default => null,
+    };
+    Http::fake(['app.edna.io/api/messages/history' => Http::response(['content' => [$m], 'hasNext' => false])]);
+    $button = app(\App\Services\EdnaMemberBenefitsButton::class);
+    if ($scenario === 'payload mismatch') {
+        expect(fn () => $button->verifiedReply($p))->toThrow(RuntimeException::class);
+    } else {
+        expect($button->verifiedReply($p)['matcherId'] ?? null)->toBe($scenario === 'exact' ? '63510' : null);
+    }
+})->with(['exact', 'other template', 'text', 'no reply', 'different button', 'payload mismatch']);
