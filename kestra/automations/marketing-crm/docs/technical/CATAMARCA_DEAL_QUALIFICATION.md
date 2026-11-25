@@ -75,6 +75,13 @@ Si la provincia o situacion laboral no coincide con ningun bucket, la negociacio
 `C1:KESTRA_ROUTE_REVIEW`: no cambia de responsable, no transfiere el chat y Maru
 recibe una notificacion explicita.
 
+Desde el 2026-11-25 Maru tambien recibe una notificacion ("Negociación en revisión de
+enrutamiento", con el motivo) cuando la negociacion llega a esa etapa porque se
+conserva la atencion o la identidad: responsable humano, operador que ya respondio,
+transferencia manual, chat que no se pudo revisar o cambios durante la asignacion.
+Se envia una sola vez; si falla, la negociacion queda igual en la etapa. Antes estas
+negociaciones entraban sin aviso (25/11: 208 de 369 en diez dias sin respuesta al cliente).
+
 Para una negociacion con bucket:
 
 - si el contacto tuvo una negociacion previa del mismo bucket con alguien disponible

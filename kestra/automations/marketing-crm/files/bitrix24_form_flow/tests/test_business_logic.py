@@ -5433,7 +5433,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.chat_transfers, [])
         self.assertEqual(result["transferred_chat_count"], 0)
         self.assertEqual(result["action"], "routing_review")
-        self.assertEqual(result["reason"], "attention_inspection_unavailable")
+        self.assertEqual(result["reason"], "attention_evidence_ambiguous")
         self.assertEqual(client.deals[930]["assignedById"], 57)
         self.assertEqual(client.deals[930]["stageId"], "C1:KESTRA_ROUTE_REVIEW")
 

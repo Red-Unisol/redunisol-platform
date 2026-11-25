@@ -34,18 +34,20 @@ tasks:
       BITRIX24_LIST_URL: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.item.list.json"
       BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
       BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
+      BITRIX24_DEAL_QUEUE_ACTION_FIELD: "{{ envs.bitrix24_deal_queue_action_field ?? 'ufCrmKqAction' }}"
     script: |
       import json, os, urllib.request
-      body = json.dumps({
-          "entityTypeId": 2,
-          "filter": {"=categoryId": os.environ["BITRIX24_DEAL_CATEGORY_ID"],
-                     "=stageId": os.environ["BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID"]},
-          "select": ["id"],
-      }).encode()
-      request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
-                                       headers={"Content-Type": "application/json"})
-      with urllib.request.urlopen(request, timeout=15) as response:
-          total = json.load(response).get("total")
+      def count(filters):
+          filters["=categoryId"] = os.environ["BITRIX24_DEAL_CATEGORY_ID"]
+          body = json.dumps({"entityTypeId": 2, "filter": filters, "select": ["id"]}).encode()
+          request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
+                                           headers={"Content-Type": "application/json"})
+          with urllib.request.urlopen(request, timeout=15) as response:
+              return json.load(response).get("total")
+
+      total = count({"=stageId": os.environ["BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID"]})
+      if total == 0:
+          total = count({"=" + os.environ["BITRIX24_DEAL_QUEUE_ACTION_FIELD"]: "attention_chat_pending"})
       # Sin total no se sabe: corre el clasificador, como antes de esta tarea.
       print("::" + json.dumps({"outputs": {"total": total if isinstance(total, int) else 1}}) + "::")
 
@@ -133,6 +135,9 @@ tasks:
       - python -m bitrix24_form_flow.kestra_catamarca_deal_batch_entrypoint
 
 outputs:
+  - id: attention_deliveries_json
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars.attention_deliveries_json ?? '[]' }}"
   - id: events_json
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars.events_json ?? '[]' }}"
