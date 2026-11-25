@@ -66,7 +66,7 @@ class EdnaOrganicMenu
             return true;
         }
         $menu = DB::table('edna_organic_menus')->where('request_id', $choice['request_id'])->lockForUpdate()->first();
-        if (! $menu || ! $this->matchesChoice($menu, $event, $stored, false)
+        if (! $menu || $menu->form_consent !== null || ! $this->matchesChoice($menu, $event, $stored, false)
             || in_array($menu->state, ['duplicate', 'review', 'preserved', 'expired'], true)) {
             $this->record($event->id, 'organic_choice_unmatched');
 
@@ -97,14 +97,25 @@ class EdnaOrganicMenu
         return DB::transaction(fn () => $this->captureEntry($event, $payload));
     }
 
-    private function captureEntry(object $event, array $payload): bool
+    /** Only reserve locally here. Provider reads belong to the durable worker. */
+    public function receiveConsentCandidate(object $event, array $payload): bool
     {
-        $stored = $this->authenticatedPayload($event, $payload);
-        if (! $stored || ! $this->eligible($event, $stored)
-            || app(EdnaPaidEntry::class)->classify($event, $stored)) {
+        if (! app(EdnaFormConsent::class)->candidate($payload)
+            || ! app(EdnaFreshIntake::class)->entry($event, 'form-consent-v1')) {
             return false;
         }
-        if (app(WebChatContinuity::class)->receive($event, $stored)) {
+
+        return DB::transaction(fn () => $this->captureEntry($event, $payload, true));
+    }
+
+    private function captureEntry(object $event, array $payload, bool $consent = false): bool
+    {
+        $stored = $this->authenticatedPayload($event, $payload);
+        if (! $stored || ! $this->eligible($event, $stored, ! $consent)
+            || (! $consent && app(EdnaPaidEntry::class)->classify($event, $stored))) {
+            return false;
+        }
+        if (! $consent && app(WebChatContinuity::class)->receive($event, $stored)) {
             $this->record($event->id, 'web_form_continuation');
 
             return true;
@@ -115,15 +126,18 @@ class EdnaOrganicMenu
             'request_id' => (string) Str::uuid(), 'entry_event_id' => $event->id,
             'subject_id' => $event->subject_id, 'cascade_id' => (string) config('edna.cascade_id'),
             'phone_hash' => (new AttributionJourney)->phoneHash($phone), 'recipient' => Crypt::encryptString($phone),
-            'state' => 'pending', 'send_state' => 'pending', 'transfer_state' => 'pending',
+            'state' => $consent ? 'consent_pending' : 'pending', 'send_state' => $consent ? 'verify_consent' : 'pending',
+            'transfer_state' => 'pending',
             'entry_received_at' => $received, 'expires_at' => $received->addHours(24),
             'available_at' => now(), 'enqueued_at' => now(), 'created_at' => now(), 'updated_at' => now(),
-        ]);
+        ] + ($consent ? ['form_consent' => json_encode(['entry_event_id' => (int) $event->id,
+            'reply_out_message_id' => (string) $stored['replyOutMessageId'], 'received_at' => $stored['receivedAt']],
+            JSON_THROW_ON_ERROR)] : []));
         if ($inserted) {
             $id = DB::table('edna_organic_menus')->where('entry_event_id', $event->id)->value('id');
             app(EdnaWorkQueue::class)->push(new ProcessEdnaOrganicMenu((int) $id));
         }
-        $this->record($event->id, 'organic_menu_reserved');
+        $this->record($event->id, $consent ? 'form_consent_verification' : 'organic_menu_reserved');
 
         return true;
     }
@@ -136,7 +150,7 @@ class EdnaOrganicMenu
             $queue = app(EdnaWorkQueue::class);
             $rows = $queue->withoutPending(DB::table('edna_organic_menus'), ProcessEdnaOrganicMenu::class, 'edna_organic_menus.id')
                 ->where(function ($query): void {
-                    $query->whereIn('state', ['pending', 'waiting', 'selected', 'unknown', 'route_pending'])
+                    $query->whereIn('state', ['pending', 'consent_pending', 'waiting', 'selected', 'unknown', 'route_pending'])
                         ->orWhere(fn ($q) => $q->where('state', 'awaiting_choice')->where(fn ($choice) => $choice
                             ->whereNotNull('choice_event_id')->orWhere('expires_at', '<=', now())));
                 })->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))
@@ -166,7 +180,8 @@ class EdnaOrganicMenu
         }
         $this->token = $menu->lease_token;
         try {
-            $event = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+            $consent = $menu->form_consent ? json_decode($menu->form_consent, true, 32, JSON_THROW_ON_ERROR) : null;
+            $event = DB::table('edna_incoming_events')->find($consent['entry_event_id'] ?? $menu->entry_event_id);
             $payload = $event ? $this->authenticatedPayload($event) : null;
             if (! $payload || ! $this->matchesMenu($menu, $event, $payload)) {
                 return $this->finish('review', 'authenticated_entry_unavailable');
@@ -176,7 +191,25 @@ class EdnaOrganicMenu
             if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
                 return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
             }
-            if ($menu->send_state === 'pending'
+            if ($consent !== null && ! $uncertainTransfer && CarbonImmutable::parse($menu->expires_at)->lte(now())) {
+                return $this->finish('expired', 'form_consent_window_elapsed');
+            }
+            if ($consent !== null && ! isset($consent['choice'])) {
+                $verified = app(EdnaFormConsent::class)->verifiedReply($payload);
+                if ($verified !== null) {
+                    $consent += $verified + ['received_at' => $payload['receivedAt']];
+                    $this->write(['form_consent' => json_encode($consent, JSON_THROW_ON_ERROR), 'send_state' => 'not_needed']);
+                } else {
+                    // An unrelated template can use the same labels. Restore normal channel precedence.
+                    if (app(WebFormContinuation::class)->receive($event, $payload)) {
+                        return $this->finish('preserved', 'web_continuity_priority', ['form_consent' => null]);
+                    }
+                    $consent = null;
+                    $this->write(['form_consent' => null, 'send_state' => 'pending']);
+                }
+                $menu = $this->current();
+            }
+            if ($consent === null && $menu->send_state === 'pending'
                 && app(WebChatContinuity::class)->blocksOutbound($event, $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null)) {
                 return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
             }
@@ -192,7 +225,7 @@ class EdnaOrganicMenu
                         $sendId ? ['flow_send_id' => $sendId, 'transfer_state' => 'preserved'] : ['transfer_state' => 'preserved']);
                 });
             }
-            $proof = $menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null;
+            $proof = $consent['native_proof'] ?? ($menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null);
             if (! $proof) {
                 $this->assertBudget(35);
                 $proof = $this->binding->resolveCurrent($event, $payload);
@@ -206,16 +239,42 @@ class EdnaOrganicMenu
             if (! $this->lockChat((string) $proof['chat_id'])) {
                 return $this->wait('chat_routing_in_progress');
             }
+            if ($consent === null && ! $uncertainSend && ! $uncertainTransfer && $this->unboundConsentBefore($menu)) {
+                return $this->wait('earlier_form_consent_pending');
+            }
             $other = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)
                 ->where('chat_id', $proof['chat_id'])->where('session_id', $proof['session_id'])->where('id', '!=', $menu->id)->first();
             if ($other) {
+                if ($consent !== null && ! $uncertainTransfer) {
+                    return $this->continueConsentOnSession($menu, $other, $consent, $proof);
+                }
                 return $this->finish('duplicate', 'menu_already_reserved_for_session', [
                     'canonical_menu_id' => $other->canonical_menu_id ?: $other->id,
                 ]);
             }
-            $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
-                'proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+            if (! isset($consent['native_proof'])) {
+                $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+                    'proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+            }
             $menu = $this->current();
+            if ($consent !== null) {
+                if ($uncertainTransfer) {
+                    return $this->reconcileTransfer($menu, $proof);
+                }
+                if ($consent['choice'] === 'no') {
+                    return $this->finish('preserved', 'form_consent_declined', ['transfer_state' => 'not_needed']);
+                }
+                $case = app(EdnaConsentCase::class)->resolve($proof, $payload, $consent['outbound']);
+                if (! $case) {
+                    return $this->wait('form_consent_case_unverified');
+                }
+                if ($menu->deal_id && ((string) $menu->deal_id !== $case['ID'] || (string) $menu->seller_id !== $case['ASSIGNED_BY_ID'])) {
+                    return $this->finish('preserved', 'form_consent_assignment_changed');
+                }
+                $this->write(['deal_id' => $case['ID'], 'seller_id' => $case['ASSIGNED_BY_ID']]);
+
+                return $this->transfer($this->current(), $proof, (int) $case['ASSIGNED_BY_ID'], $case);
+            }
             if ($menu->send_state === 'pending'
                 && app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash)) {
                 return $this->wait('paid_intake_binding_pending');
@@ -322,6 +381,51 @@ class EdnaOrganicMenu
         }
     }
 
+    /** A callback can arrive after an ordinary greeting in the same session. Keep one writer and its original receipt. */
+    private function continueConsentOnSession(object $menu, object $other, array $consent, array $proof): array
+    {
+        return DB::transaction(function () use ($menu, $other, $consent, $proof): array {
+            $canonical = DB::table('edna_organic_menus')->where('id', $other->id)->lockForUpdate()->firstOrFail();
+            if ($canonical->lease_until && CarbonImmutable::parse($canonical->lease_until)->isFuture()) {
+                return $this->wait('form_consent_session_busy');
+            }
+            $previous = $canonical->form_consent ? json_decode($canonical->form_consent, true, 32, JSON_THROW_ON_ERROR) : null;
+            if (! $canonical->transfer_intent && in_array($canonical->send_state, ['sending', 'accepted', 'unknown'], true)
+                && in_array($canonical->state, ['waiting', 'pending', 'unknown'], true)) {
+                return $this->wait('form_consent_prior_send_pending');
+            }
+            $canContinue = in_array($canonical->state, ['pending', 'consent_pending', 'waiting', 'awaiting_choice'], true)
+                || $canonical->reason === 'form_consent_declined';
+            $at = CarbonImmutable::parse($consent['received_at']);
+            $previousAt = isset($previous['received_at']) ? CarbonImmutable::parse($previous['received_at']) : null;
+            $newer = ! $previous || ($previousAt && ($at->gt($previousAt)
+                || ($at->equalTo($previousAt) && $consent['choice'] === 'no' && ($previous['choice'] ?? '') !== 'no')));
+            if ($canContinue && ! $canonical->transfer_intent && ! $canonical->flow_send_id && ! $canonical->choice_event_id
+                && ! in_array($canonical->send_state, ['sending', 'accepted', 'unknown'], true)
+                && $newer) {
+                $consent['native_proof'] = $proof;
+                DB::table('edna_organic_menus')->where('id', $canonical->id)->update([
+                    'form_consent' => json_encode($consent, JSON_THROW_ON_ERROR),
+                    'state' => 'consent_pending', 'reason' => 'form_consent_received', 'expires_at' => $menu->expires_at,
+                    'send_state' => $canonical->send_state === 'pending' ? 'not_needed' : $canonical->send_state,
+                    'attempts' => 0, 'available_at' => now(), 'enqueued_at' => null, 'updated_at' => now(),
+                ]);
+            }
+
+            return $this->finish('duplicate', 'form_consent_existing_session', ['canonical_menu_id' => $canonical->id]);
+        });
+    }
+
+    private function unboundConsentBefore(object $menu): bool
+    {
+        // Another worker may bind this button after our native read. Recipient alone can defer an
+        // effect, never authorize one. The session lease serializes the two writers after binding.
+        return DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)->where('phone_hash', $menu->phone_hash)
+            ->where('id', '!=', $menu->id)->whereNotNull('form_consent')->whereNull('session_id')
+            ->whereNull('canonical_menu_id')->where('expires_at', '>', now())->where('entry_received_at', '<=', $menu->entry_received_at)
+            ->whereIn('state', ['consent_pending', 'waiting', 'pending'])->exists();
+    }
+
     private function send(object $menu, array $proof): array
     {
         if (CarbonImmutable::parse($menu->entry_received_at)->lt(now()->subHours(23))) {
@@ -350,7 +454,11 @@ class EdnaOrganicMenu
             return $this->wait('menu_send_gate_changed');
         }
         $this->assertBudget(13);
-        $claim = function () use ($menu, $proof): bool {
+        $consentPending = false;
+        $claim = function () use ($menu, $proof, &$consentPending): bool {
+            if ($consentPending = $this->unboundConsentBefore($menu)) {
+                return false;
+            }
             $event = DB::table('edna_incoming_events')->find($menu->entry_event_id);
             if ($event && app(WebChatContinuity::class)->blocksOutbound($event, $proof)) {
                 return false;
@@ -363,6 +471,9 @@ class EdnaOrganicMenu
         $claimed = $entry && app(WebChatContinuity::class)->eligibleEntry($entry)
             ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
         if (! $claimed) {
+            if ($consentPending) {
+                return $this->wait('earlier_form_consent_pending');
+            }
             return $this->finish('preserved', 'web_continuity_priority', ['transfer_state' => 'preserved']);
         }
         $this->assertLease();
@@ -397,13 +508,13 @@ class EdnaOrganicMenu
             ['transfer_state' => 'preserved']);
     }
 
-    private function transfer(object $menu, array $proof, int $target): array
+    private function transfer(object $menu, array $proof, int $target, ?array $consentCase = null): array
     {
         $this->assertBudget(6);
         if ($target < 1 || ! $this->attention->targetActive($target)) {
-            return $this->finish('review', 'routing_target_unavailable');
+            return $consentCase !== null ? $this->wait('form_consent_seller_unavailable') : $this->finish('review', 'routing_target_unavailable');
         }
-        $case = $this->commercialCase($menu, $target);
+        $case = $consentCase ?? $this->commercialCase($menu, $target);
         if ($menu->state === 'route_pending' && $case === null) {
             return $this->finish('preserved', 'commercial_assignment_changed');
         }
@@ -418,7 +529,7 @@ class EdnaOrganicMenu
         $before = $attention['native_snapshot'] ?? null;
         $otherInquiry = $menu->choice === 'other' && $case === null
             && $target === (int) config('edna.organic_other_operator_id', 5737);
-        $verifiedContact = isset($case['contact_deal_stage']) ? $case['CONTACT_ID'] : null;
+        $verifiedContact = isset($case['contact_deal_stage']) || $consentCase !== null ? $case['CONTACT_ID'] : null;
         if (! is_array($before) || ! $this->attention->canTransfer($before, $target, $otherInquiry, $verifiedContact)) {
             return $this->finish('preserved', 'native_crm_assignment_preserved');
         }
@@ -431,12 +542,38 @@ class EdnaOrganicMenu
         if (! is_array($fresh['native_snapshot'] ?? null)
             || ! $this->attention->compatible($before, $fresh['native_snapshot'], $target, false, $otherInquiry, $verifiedContact)
             || ! $this->attention->targetActive($target)
-            || ($case !== null && $this->commercialCase($menu, $target) !== $case)) {
+            || ($case !== null && $this->commercialCase($menu, $target, true) !== $case)) {
             return $this->finish('preserved', 'routing_context_changed');
         }
-        if ($verifiedContact !== null && ! $this->attention->confirmContactDeal($proof, $fresh['native_snapshot'],
+        if (isset($case['contact_deal_stage']) && ! $this->attention->confirmContactDeal($proof, $fresh['native_snapshot'],
             $verifiedContact, $case['ID'], $target, $case['contact_deal_stage'])) {
             return $this->finish('preserved', 'contact_deal_or_attention_changed');
+        }
+        if ($consentCase !== null) {
+            $last = $this->attention->inspect($proof, $target);
+            if (($last['status'] ?? '') !== 'ready') {
+                return $this->attentionDecision($last);
+            }
+            if (! is_array($last['native_snapshot'] ?? null)
+                || ! $this->attention->compatible($fresh['native_snapshot'], $last['native_snapshot'], $target, false, false, $verifiedContact)
+                || (string) $last['owner_id'] !== (string) $fresh['owner_id']) {
+                return $this->finish('preserved', 'form_consent_attention_changed');
+            }
+            if (CarbonImmutable::parse($menu->expires_at)->lte(now())) {
+                return $this->finish('expired', 'form_consent_window_elapsed');
+            }
+            $consent = json_decode($menu->form_consent, true, 32, JSON_THROW_ON_ERROR);
+            // A newer click for the same original send may be awaiting its own worker, including an opt-out.
+            $siblings = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)->where('phone_hash', $menu->phone_hash)
+                ->where('form_consent->reply_out_message_id', $consent['reply_out_message_id'])->where('id', '!=', $menu->id)
+                ->whereNull('canonical_menu_id')->pluck('form_consent');
+            foreach ($siblings as $sibling) {
+                $other = json_decode($sibling, true, 32, JSON_THROW_ON_ERROR);
+                if ($other['entry_event_id'] !== $consent['entry_event_id']
+                    && CarbonImmutable::parse($other['received_at'])->gte(CarbonImmutable::parse($consent['received_at']))) {
+                    return $this->wait('form_consent_newer_reply_pending');
+                }
+            }
         }
         $intent = ['target_id' => (string) $target, 'session_id' => (string) $proof['session_id'],
             'owner_before' => (string) $fresh['owner_id'], 'snapshot' => $fresh['native_snapshot'],
@@ -480,7 +617,8 @@ class EdnaOrganicMenu
             $after = $this->attention->snapshot($proof);
             $otherInquiry = ($intent['routing_policy'] ?? '') === 'other_inquiry' && $menu->choice === 'other'
                 && $intent['commercial_case'] === null && $target === (int) config('edna.organic_other_operator_id', 5737);
-            $verifiedContact = isset($intent['commercial_case']['contact_deal_stage']) ? $intent['commercial_case']['CONTACT_ID'] : null;
+            $verifiedContact = isset($intent['commercial_case']['contact_deal_stage']) || isset($intent['commercial_case']['consent_activity_id'])
+                ? $intent['commercial_case']['CONTACT_ID'] : null;
             if (! $this->attention->compatible($intent['snapshot'], $after, $target, true, $otherInquiry, $verifiedContact)
                 || ($intent['commercial_case'] !== null && $this->commercialCase($menu, $target, true) !== $intent['commercial_case'])) {
                 return $this->finish('review', 'crm_changed_after_transfer', ['transfer_state' => 'observed']);
@@ -498,6 +636,16 @@ class EdnaOrganicMenu
 
     private function commercialCase(object $menu, int $target, bool $required = false): ?array
     {
+        if ($menu->form_consent !== null) {
+            $consent = json_decode($menu->form_consent, true, 32, JSON_THROW_ON_ERROR);
+            $entry = DB::table('edna_incoming_events')->find($consent['entry_event_id']);
+            $payload = $entry ? $this->authenticatedPayload($entry) : null;
+            $proof = $consent['native_proof'] ?? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR);
+            $case = $payload && ($consent['choice'] ?? '') === 'yes'
+                ? app(EdnaConsentCase::class)->resolve($proof, $payload, $consent['outbound']) : null;
+
+            return $case && (string) $case['ASSIGNED_BY_ID'] === (string) $target && (string) $case['ID'] === (string) $menu->deal_id ? $case : null;
+        }
         if ($menu->state !== 'route_pending' && ! $required) {
             return null;
         }
@@ -695,7 +843,7 @@ class EdnaOrganicMenu
     {
         return DB::transaction(function (): ?object {
             $row = $this->current(true);
-            if (! $row || ! in_array($row->state, ['pending', 'waiting', 'selected', 'unknown', 'route_pending', 'awaiting_choice'], true)
+            if (! $row || ! in_array($row->state, ['pending', 'consent_pending', 'waiting', 'selected', 'unknown', 'route_pending', 'awaiting_choice'], true)
                 || ($row->lease_until && CarbonImmutable::parse($row->lease_until)->isFuture())
                 || ($row->available_at && CarbonImmutable::parse($row->available_at)->isFuture())
                 || ($row->state === 'awaiting_choice' && ! $row->choice_event_id && CarbonImmutable::parse($row->expires_at)->isFuture())) {
@@ -765,6 +913,7 @@ class EdnaOrganicMenu
         }
         try {
             $row = $this->current();
+            $consent = $row->form_consent ? json_decode($row->form_consent, true, 32, JSON_THROW_ON_ERROR) : null;
             app(JourneyLedger::class)->record('whatsapp.organic_menu', [
                 'menu_id' => $row->id, 'request_id' => $row->request_id, 'entry_event_id' => $row->entry_event_id,
                 'choice_event_id' => $row->choice_event_id, 'chat_id' => $row->chat_id, 'native_session_id' => $row->session_id,
@@ -772,6 +921,9 @@ class EdnaOrganicMenu
                 'outgoing_message_id' => $row->outgoing_message_id, 'flow_send_id' => $row->flow_send_id,
                 'seller_id' => $row->seller_id, 'transfer_state' => $row->transfer_state,
                 'transfer_acknowledged' => (bool) $row->transfer_acknowledged,
+                'consent_entry_event_id' => $consent['entry_event_id'] ?? null,
+                'consent_choice' => $consent['choice'] ?? null,
+                'consent_out_message_id' => $consent['outbound']['messageId'] ?? null,
             ], array_filter(['deal_id' => $row->deal_id, 'case_id' => $row->case_id]), 'whatsapp.organic');
             app(JourneyLedger::class)->flush();
         } catch (Throwable) {

@@ -115,6 +115,15 @@ evidencia actual de pauta pasan directamente al v3, sin el menú general. Un
 reingreso antiguo sin continuación web vigente ni pauta actual también puede ver
 el menú.
 
+Desde el corte `form-consent-v1`, el worker verifica los botones de la plantilla
+`recepcion_consentimiento_ok` (58478) por el identificador del mensaje original en Edna.
+Con «Sí, quiero asesoramiento» cruza el recibo de emisión de WhatsApp en Bitrix y la
+actividad de la sesión entrante. Ambas deben pertenecer a la misma negociación
+comercial abierta. Verifica el vendedor vigente y la atención humana antes de
+transferir. Con «No, gracias» registra la negativa y termina el recorrido.
+Los recibos ambiguos quedan pendientes de verificación. La repetición de un
+callback o un acuse de transferencia incierto se concilia con la intención guardada.
+
 `Quiero un préstamo` reutiliza un perfil completo y confirmado dentro de los
 últimos seis meses calendario; sólo los datos faltantes, vencidos o insuficientes
 requieren el v3. `Otra consulta` deriva el chat a Tincho, usuario `5737`, con

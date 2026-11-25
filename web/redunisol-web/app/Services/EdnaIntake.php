@@ -80,6 +80,9 @@ class EdnaIntake
     // The authenticated inbox worker owns the surrounding event transaction.
     public function receiveEntry(object $event, array $payload): bool
     {
+        if (app(EdnaOrganicMenu::class)->receiveConsentCandidate($event, $payload)) {
+            return true;
+        }
         $continuationChecked = false;
         if ($this->salesChannelEntry($event, $payload) && app(WebChatContinuity::class)->eligibleEntry($event)) {
             $continuationChecked = true;
