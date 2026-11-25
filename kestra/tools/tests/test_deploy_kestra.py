@@ -270,8 +270,10 @@ triggers:
         infra = yaml.safe_load((REPO_ROOT / ".github/workflows/deploy-infra.yml").read_text(encoding="utf8"))
         prod = yaml.safe_load((REPO_ROOT / ".github/workflows/deploy-prod.yml").read_text(encoding="utf8"))
         marketing = prod["jobs"]["deploy-prod-marketing-crm"]
-        self.assertEqual(infra["concurrency"], marketing["concurrency"])
+        self.assertEqual(infra["concurrency"]["group"], marketing["concurrency"]["group"])
+        self.assertFalse(infra["concurrency"]["cancel-in-progress"])
         self.assertFalse(marketing["concurrency"]["cancel-in-progress"])
+        self.assertEqual(marketing["concurrency"]["queue"], "max")
         self.assertEqual(marketing["steps"][0]["with"]["ref"], "${{ github.sha }}")
 
 

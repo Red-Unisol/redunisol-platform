@@ -8,8 +8,11 @@ on:
       - 'kestra/automations/**'
       - 'kestra/platform/system/**'
       - 'kestra/tools/deploy_kestra.py'
+      - 'kestra/tools/reconcile_marketing_crm.py'
       - 'kestra/tools/requirements.txt'
       - '.github/workflows/deploy-prod.yml'
+  schedule:
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
       domain:
@@ -36,6 +39,7 @@ jobs:
           [ "${GITHUB_REF}" = "refs/heads/main" ]
 
   detect-changes:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       marketing-crm: ${{ steps.filter.outputs.marketing-crm }}
@@ -56,6 +60,8 @@ jobs:
             marketing-crm:
               - 'kestra/automations/marketing-crm/**'
               - 'kestra/tools/deploy_kestra.py'
+              - 'kestra/tools/reconcile_marketing_crm.py'
+              - 'kestra/tools/requirements.txt'
             analisis-credito:
               - 'kestra/automations/analisis-credito/**'
               - 'kestra/tools/deploy_kestra.py'
@@ -72,20 +78,50 @@ jobs:
               - 'kestra/platform/system/**'
               - 'kestra/tools/deploy_kestra.py'
 
+  check-marketing-crm:
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: kestra-prod
+      deployment: false
+    outputs:
+      needed: ${{ steps.receipt.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r kestra/tools/requirements.txt
+      - name: Compare main with the last completed CRM deployment
+        id: receipt
+        run: python kestra/tools/reconcile_marketing_crm.py check
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
   deploy-prod-marketing-crm:
     runs-on: ubuntu-latest
     environment: kestra-prod
     concurrency:
       group: kestra-prod-runtime
       cancel-in-progress: false
+      queue: max
     needs:
       - guard-manual-prod-dispatch
       - detect-changes
+      - check-marketing-crm
     if: >-
-      always() &&
-      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
-      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'marketing-crm') ||
-      (github.event_name == 'push' && needs.detect-changes.outputs.marketing-crm == 'true'))
+      github.ref == 'refs/heads/main' && !cancelled() &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'marketing-crm' && needs.guard-manual-prod-dispatch.result == 'success') ||
+       (github.event_name == 'push' && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.marketing-crm == 'true') ||
+       (github.event_name == 'schedule' && needs.check-marketing-crm.result == 'success' && needs.check-marketing-crm.outputs.needed == 'true'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,7 +139,24 @@ jobs:
           pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Marketing CRM to prod
-        run: python kestra/tools/deploy_kestra.py --environment prod --domain marketing-crm
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin refs/heads/main
+          relevant_paths=(
+            kestra/automations/marketing-crm/flows kestra/automations/marketing-crm/files
+            kestra/tools/deploy_kestra.py kestra/tools/reconcile_marketing_crm.py
+            kestra/tools/requirements.txt .github/workflows/deploy-prod.yml
+          )
+          if git diff --quiet HEAD FETCH_HEAD -- "${relevant_paths[@]}"; then
+            args=(apply)
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then args+=(--force); fi
+            python kestra/tools/reconcile_marketing_crm.py "${args[@]}"
+          else
+            status=$?
+            if [[ "$status" != 1 ]]; then exit "$status"; fi
+            echo "::notice::A newer CRM deployment is desired on main. Skipping this superseded run."
+          fi
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
