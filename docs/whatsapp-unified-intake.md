@@ -888,3 +888,7 @@ Rollback: conservar la tabla, el corte, las intenciones y los acuses. Mantener u
 consumidor compatible con los jobs reservados; no borrar recibos ni resetear el
 corte para rescatar históricos. Una recuperación de casos anteriores requiere un
 pedido específico.
+
+### Respuesta de la campaña de beneficios
+
+Desde el corte `member-benefits-button-v1`, el botón «Quiero mis beneficios» de `aviso_soysocio_v6final` (matcher 63510) deriva el chat de VENTAS a Victoria Cornier (117941), incluso si sólo hay un contacto. El worker verifica el envío original y su teclado en Edna y vincula el mensaje entrante exacto a la sesión de Bitrix. Si la verificación está pendiente, espera. Si alguien ya atendió el chat o la sesión cambió, conserva la atención. La tabla `edna_benefit_chat_routes` guarda la evidencia del botón, la intención de pase, el acuse y la transferencia nativa. Un callback repetido no genera otro pase.
