@@ -802,8 +802,37 @@ def _counter(value):
     return int(value)
 
 
-def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, verify_window=False,
-                              failed_at=None, now=None, window_evidence=None):
+CHAT_CHANGE_REVERIFICATIONS = 2
+
+
+def _unattended_sales_session(client, chat_id, initial, **kwargs):
+    """Verify attention; repeat the whole verification if only the chat moved on.
+
+    A customer writing while Kestra distributes changes the native dialog between
+    the first and the final read (1254489, 1256739). When the chat keeps its
+    identity, owner and session, the change is not evidence of attention: the
+    full check is repeated on the fresh dialog, which still detects any human
+    message, acceptance or transfer. A different owner, line or session, or a
+    chat that keeps changing, stays preserved as before.
+    """
+    for attempt in range(CHAT_CHANGE_REVERIFICATIONS + 1):
+        ready, reason = _unattended_sales_session_once(client, chat_id, initial, **kwargs)
+        if reason != "chat_changed_before_transfer" or attempt == CHAT_CHANGE_REVERIFICATIONS:
+            return ready, reason
+        try:
+            current = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        except Exception:
+            return False, "attention_inspection_unavailable"
+        if (not isinstance(current, dict)
+                or active_open_line_session_id(current) != active_open_line_session_id(initial)
+                or any(current.get(key) != initial.get(key) for key in ("id", "owner", "entity_type", "entity_id"))):
+            return False, "chat_changed_before_transfer"
+        initial = current
+    return False, "chat_changed_before_transfer"
+
+
+def _unattended_sales_session_once(client, chat_id, initial, *, entry_binding=None, verify_window=False,
+                                   failed_at=None, now=None, window_evidence=None):
     """Read the exact current session twice, then reread its identity/owner.
 
     No accepting/starting/transfer is used for inspection. The external transfer
