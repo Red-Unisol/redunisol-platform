@@ -60,8 +60,8 @@ export class SolicitudAdjuntosPrismaDatasource {
     const solicitudId = inputs[0]?.solicitudId;
     const created = sellerReviewStartedAt && solicitudId
       ? await this.prisma.$transaction(async tx => {
-          // Share the lock used to close the review. A concurrent close must
-          // either see these attachments or cause this upload to be retried.
+          // Share the review's lock so an upload started in Liquidada
+          // cannot save with stale permissions after review completion.
           const [current] = await tx.$queryRaw<{ startedAt: Date | null }[]>`
             SELECT s.seller_review_started_at AS "startedAt"
             FROM solicitudes s
