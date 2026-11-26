@@ -90,6 +90,13 @@ class RedunisolWebDeployTests(unittest.TestCase):
         schedule = (ROOT / 'web/redunisol-web/routes/console.php').read_text()
         self.assertIn("Schedule::command('edna:benefits-chats poll')->everyMinute()", schedule)
 
+    def test_deal_rejection_cutover_is_only_armed_after_verified_application_health(self):
+        command = 'artisan edna:rejected-chats activate-deals'
+        for environment, script in self.scripts.items():
+            with self.subTest(environment=environment):
+                self.assertEqual(script.count(command), 1)
+                self.assertGreater(script.index(command), script.index('if [ "$status_code" != "200" ]'))
+
     def test_attached_commands_cannot_swallow_the_remaining_deploy_script(self):
         mock = 'set -eu\ndocker() { cat > /dev/null; }\n'
         for environment, script in self.scripts.items():

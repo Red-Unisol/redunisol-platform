@@ -72,7 +72,7 @@ class EdnaRejectedChatCandidates
             ->whereBetween('w.created_at', [$since, $until])->whereBetween('r.created_at', [$since, $until])
             ->whereBetween('e.created_at', [$since, $until])
             ->orderByDesc('w.created_at')->orderByDesc('w.entry_event_id')->limit($limit)
-            ->get(['w.entry_event_id as id', 'w.entry_event_id', 'w.proof', 'r.lead_id',
+            ->get(['w.entry_event_id as id', 'w.entry_event_id', 'w.proof', 'r.lead_id', 'r.received_at as form_received_at',
                 'e.message_id as external_id', 'w.created_at as source_created_at']) as $row) {
             if (($proof = $this->proof($row)) && $this->id($row->lead_id)) {
                 $this->add($candidates, $row, $proof, $row->lead_id, 'web_form_chat_route');
@@ -114,7 +114,8 @@ class EdnaRejectedChatCandidates
     private function add(array &$candidates, object $row, array $proof, mixed $lead, string $type): void
     {
         $candidates[] = ['lead_id' => (string) $lead, 'proof' => $proof, 'source_type' => $type,
-            'source_id' => (string) $row->id, 'source_created_at' => CarbonImmutable::parse($row->source_created_at)->toIso8601String()];
+            'source_id' => (string) $row->id, 'source_created_at' => CarbonImmutable::parse($row->source_created_at)->toIso8601String(),
+            'form_received_at' => isset($row->form_received_at) ? CarbonImmutable::parse($row->form_received_at)->toIso8601String() : null];
     }
 
     private function decode(mixed $value): array

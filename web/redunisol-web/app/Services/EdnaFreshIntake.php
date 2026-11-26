@@ -21,7 +21,13 @@ class EdnaFreshIntake
     public function entry(object $event, string $cutover = 'native-v3-v1'): bool
     {
         $cut = DB::table('edna_intake_cutovers')->where('name', $cutover)->first();
-        if (! $cut || (int) $event->id <= (int) $cut->entry_id_after) {
+
+        return $cut && $this->entryAfter($event, $cut);
+    }
+
+    public function entryAfter(object $event, object $cut): bool
+    {
+        if ((int) $event->id <= (int) $cut->entry_id_after) {
             return false;
         }
         try {

@@ -15,13 +15,33 @@ class EdnaRejectionNotice
 
     public function match(string $text, string $reasonLabel): ?array
     {
+        return $this->matchNotice($text, $reasonLabel, false);
+    }
+
+    public function matchDeal(string $text, string $stageId): ?array
+    {
+        $reason = EdnaRejectedDealDiscovery::STAGE_REASONS[$stageId] ?? null;
+        if ($reason === null) {
+            return null;
+        }
+
+        return $this->matchNotice($text, $reason, $stageId === 'C1:5');
+    }
+
+    private function matchNotice(string $text, string $reasonLabel, bool $allowBcraDealGreeting): ?array
+    {
         $text = $this->normalize($text);
         $reasonLabel = $this->normalize($reasonLabel);
         if ($text === null || $reasonLabel === null) {
             return null;
         }
         foreach ($this->notices() as $notice) {
-            if ($notice['reason_label'] === $reasonLabel && hash_equals($notice['normalized_sha256'], hash('sha256', $text))) {
+            if ($notice['reason_label'] !== $reasonLabel) {
+                continue;
+            }
+            // Bitrix also sends this exact greeting and sign-off around the BCRA deal notice.
+            if (hash_equals($notice['normalized_sha256'], hash('sha256', $text))
+                || ($allowBcraDealGreeting && $text === '¡Hola! '.$this->normalize($notice['text']).'  ¡Gracias por tu consulta!')) {
                 return ['template_sha256' => $notice['template_sha256']];
             }
         }
