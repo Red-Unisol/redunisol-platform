@@ -50,7 +50,15 @@ class EdnaOrganicTransport
     {
         $request = is_string($menu) ? $menu : (string) ($menu->request_id ?? '');
 
-        return ['contentType' => 'TEXT', 'text' => self::TEXT,
+        $campaign = is_object($menu) && isset($menu->campaign_prompt)
+            ? json_decode($menu->campaign_prompt, true, 32, JSON_THROW_ON_ERROR) : null;
+        $text = match ($campaign['action'] ?? null) {
+            'offer' => '¿Querés iniciar una solicitud de préstamo o hacer otra consulta?',
+            'clarify' => '¿Tu consulta es por un préstamo o por otro tema?',
+            default => self::TEXT,
+        };
+
+        return ['contentType' => 'TEXT', 'text' => $text,
             'keyboard' => ['rows' => [['buttons' => [
                 ['text' => self::LOAN_LABEL, 'type' => 'QUICK_REPLY', 'payload' => self::payload($request, 'loan')],
                 ['text' => self::OTHER_LABEL, 'type' => 'QUICK_REPLY', 'payload' => self::payload($request, 'other')],
@@ -147,7 +155,7 @@ class EdnaOrganicTransport
             }
             $content = $message['content'] ?? null;
             $content = is_string($content) ? json_decode($content, true, 32, JSON_THROW_ON_ERROR) : $content;
-            if (! is_array($content) || ($content['type'] ?? '') !== 'TEXT' || ($content['text'] ?? null) !== self::TEXT
+            if (! is_array($content) || ($content['type'] ?? '') !== 'TEXT' || ($content['text'] ?? null) !== $this->content($menu)['text']
                 || (array_key_exists('keyboard', $content)
                     && $this->canonical($content['keyboard']) !== $this->canonical($this->content($menu)['keyboard']))) {
                 return $unknown;

@@ -4,6 +4,7 @@ use App\Jobs\PrepareEdnaOrganicLoan;
 use App\Jobs\ProcessEdnaOrganicMenu;
 use App\Services\AttributionJourney;
 use App\Services\EdnaBenefitsRouting;
+use App\Services\EdnaCampaignTemplate;
 use App\Services\EdnaConsentCase;
 use App\Services\EdnaFormConsent;
 use App\Services\EdnaBitrix;
@@ -774,6 +775,133 @@ function organicFormConsentCapture(array $h): int
 
     return (int) DB::table('edna_organic_menus')->where('entry_event_id', $h['event']->id)->sole()->id;
 }
+
+function organicCampaignHarness(string $action, string $label): array
+{
+    $h = organicFormConsentHarness($label);
+    DB::table('edna_intake_cutovers')->where('name', EdnaCampaignTemplate::CUTOVER)
+        ->update(['entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    $template = Mockery::mock(EdnaCampaignTemplate::class)->makePartial();
+    $h['receipt'] = ['action' => $action, 'outbound' => [
+        'messageId' => '901', 'matcherId' => 62276, 'matcherName' => 'prueba2_promo_jubilados_ola1',
+        'subjectId' => '2423', 'uniqueAroundSend' => true, 'sentOrReceivedAt' => now()->subMinute()->toIso8601String(),
+    ]];
+    $template->shouldReceive('verifiedReply')->once()->with($h['payload'])->andReturn($h['receipt']);
+    app()->instance(EdnaCampaignTemplate::class, $template);
+
+    return $h;
+}
+
+test('campaign follow-up waits for the allocator and respects a human who takes the chat before the transfer', function () {
+    $h = organicCampaignHarness('continue', 'Continuar gestión');
+    $h['case']->shouldReceive('campaign')->andReturn(
+        ['status' => 'waiting_assignment', 'reason' => 'campaign_awaiting_seller', 'case' => null],
+        ['status' => 'assigned', 'reason' => 'assigned', 'case' => $h['sale']],
+    );
+    $h['attention']->shouldReceive('inspect')->once()->andReturn([
+        'status' => 'preserved', 'reason' => 'operator_answered',
+    ]);
+    $h['transport']->shouldNotReceive('schedule');
+    $h['crm']->shouldNotReceive('call');
+    $id = organicFormConsentCapture($h);
+    organicMenuDue($id, ['attempts' => 13]);
+    expect($h['service']->process($id)['state'])->toBe('waiting');
+    organicMenuDue($id);
+    expect($h['service']->process($id)['reason'])->toBe('operator_answered');
+    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+});
+
+test('a verified sales reply transfers to the active seller and retries only reconcile the first post', function () {
+    $h = organicCampaignHarness('continue', 'Continuar gestión');
+    $h['case']->shouldReceive('campaign')->andReturn(['status' => 'assigned', 'reason' => 'assigned', 'case' => $h['sale']]);
+    $h['transport']->shouldNotReceive('schedule');
+    $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 29])->andReturnTrue();
+    $h['crm']->shouldReceive('call')->once()->with('imopenlines.dialog.get', ['CHAT_ID' => 601])
+        ->andReturn(['id' => 601, 'owner' => 29, 'entity_data_1' => 'Y|LEAD|101|N|N|501|1794400000', 'text_field_enabled' => true]);
+    $id = organicFormConsentCapture($h);
+    expect($h['service']->process($id)['state'])->toBe('unknown');
+    organicMenuDue($id);
+    expect($h['service']->process($id)['state'])->toBe('routed')
+        ->and(DB::table('edna_organic_menus')->find($id)->transfer_state)->toBe('confirmed');
+});
+
+test('a response to a campaign is recorded once without starting credit intake', function (string $action) {
+    $h = organicCampaignHarness($action, 'Ahora no');
+    $h['transport']->shouldNotReceive('schedule');
+    $h['case']->shouldNotReceive('campaign');
+    $h['crm']->shouldNotReceive('call');
+    $id = organicFormConsentCapture($h);
+    expect($h['service']->process($id)['reason'])->toBe('campaign_'.$action.'_recorded')
+        ->and(organicFormConsentCapture($h))->toBe($id)
+        ->and($h['service']->process($id)['state'])->toBe('not_claimed');
+    $receipt = json_decode(DB::table('edna_organic_menus')->find($id)->form_consent, true);
+    expect($receipt['native_proof']['session_id'])->toBe('501')
+        ->and($receipt['outbound']['messageId'])->toBe('901')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+})->with(['decline', 'defer', 'feedback', 'link']);
+
+test('asking about an offer without an active case requires a new explicit signed loan choice', function () {
+    $h = organicCampaignHarness('offer', 'Sí, quiero conocerlo');
+    $h['case']->shouldReceive('campaign')->andReturn(['status' => 'no_active_case', 'case' => null, 'reason' => 'no_active_case']);
+    $id = organicFormConsentCapture($h);
+    $h['service']->process($id);
+    organicMenuDue($id);
+    $h['service']->process($id);
+    $menu = DB::table('edna_organic_menus')->find($id);
+    expect($menu->state)->toBe('awaiting_choice')->and($menu->send_state)->toBe('confirmed')
+        ->and($menu->form_consent)->toBeNull()->and($menu->choice_event_id)->toBeNull()
+        ->and((new EdnaOrganicTransport)->content($menu)['text'])->toContain('iniciar una solicitud')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
+});
+
+test('a decline on a different emission preserves the loan question already delivered in this session', function () {
+    $h = organicCampaignHarness('offer', 'Sí, quiero conocerlo');
+    $h['case']->shouldReceive('campaign')->andReturn(['status' => 'no_active_case', 'case' => null, 'reason' => 'no_active_case']);
+    $id = organicFormConsentCapture($h);
+    $h['service']->process($id);
+    organicMenuDue($id);
+    $h['service']->process($id);
+    $event = organicMenuEvent(['replyOutMessageId' => '902',
+        'messageContent' => ['type' => 'BUTTON', 'text' => 'Ahora no', 'payload' => 'Ahora no']]);
+    $payload = organicMenuPayload($event);
+    $receipt = ['action' => 'decline', 'outbound' => ['messageId' => '902', 'matcherId' => '63508']];
+    app(EdnaCampaignTemplate::class)->shouldReceive('verifiedReply')->once()->with($payload)->andReturn($receipt);
+    $next = organicFormConsentCapture(['event' => $event, 'payload' => $payload]);
+    expect($h['service']->process($next)['reason'])->toBe('campaign_decline_recorded')
+        ->and(DB::table('edna_organic_menus')->find($id)->state)->toBe('awaiting_choice');
+});
+
+test('the commercial transfer yields to a verified benefits route in the same session', function () {
+    $h = organicCampaignHarness('continue', 'Continuar gestión');
+    $h['case']->shouldReceive('campaign')->andReturn(['status' => 'assigned', 'case' => $h['sale'], 'reason' => 'assigned']);
+    $id = organicFormConsentCapture($h);
+    DB::table('edna_benefit_chat_routes')->insert(['entry_event_id' => 99, 'last_entry_event_id' => 99,
+        'chat_id' => 601, 'session_id' => 501, 'proof' => '{}', 'campaign_reply' => '{"action":"benefits"}',
+        'received_at' => now(), 'expires_at' => now()->addHours(8), 'state' => 'pending']);
+    $h['crm']->shouldNotReceive('call');
+    expect($h['service']->process($id)['reason'])->toBe('campaign_benefits_session_preserved');
+});
+
+test('a seller assigned between an offer and a signed loan choice receives the chat without a second intake', function () {
+    $h = organicCampaignHarness('offer', 'Sí, quiero conocerlo');
+    $h['case']->shouldReceive('campaign')->andReturn(
+        ['status' => 'no_active_case', 'case' => null, 'reason' => 'no_active_case'],
+        ['status' => 'assigned', 'case' => $h['sale'], 'reason' => 'assigned'],
+    );
+    $id = organicFormConsentCapture($h);
+    $h['service']->process($id);
+    organicMenuDue($id);
+    $h['service']->process($id);
+    $menu = DB::table('edna_organic_menus')->find($id);
+    $choice = organicMenuChoice($menu);
+    $h['crm']->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 29])->andReturnTrue();
+    expect($h['service']->receiveChoice($choice, organicMenuPayload($choice)))->toBeTrue();
+    organicMenuDue($id);
+    expect($h['service']->process($id)['state'])->toBe('unknown')
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+    Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
+});
 
 test('a verified form consent hands the chat to its assigned seller exactly once across retries', function () {
     $h = organicFormConsentHarness();

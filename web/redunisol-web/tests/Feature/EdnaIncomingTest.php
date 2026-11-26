@@ -46,6 +46,16 @@ test('BUTTON callbacks persist their action and reply references once instead of
         ->and(DB::table('jobs')->count())->toBe(1);
 })->with(['website', 'sales_channel']);
 
+test('quoted incoming callbacks are indexed atomically before the inbox worker and only once', function () {
+    $reply = ednaMessage(['replyOutMessageId' => '9001', 'messageContent' => ['type' => 'BUTTON', 'text' => 'Ahora no']]);
+    sendEdna([$reply, ednaMessage(['id' => 102])])->assertOk()->assertJsonPath('accepted', 2);
+    sendEdna($reply)->assertOk()->assertJsonPath('duplicates', 1);
+    $row = DB::table('edna_campaign_reply_inbox')->sole();
+    expect($row->outbound_message_id)->toBe('9001')->and($row->subject_id)->toBe('2423')
+        ->and((int) $row->entry_event_id)->toBe((int) DB::table('edna_incoming_events')->where('message_id', '101')->value('id'))
+        ->and(DB::table('edna_organic_menus')->count())->toBe(0);
+});
+
 test('unsupported authenticated message types leave technical rejection evidence without the message body', function () {
     Log::spy();
     sendEdna(ednaMessage(['messageContent' => ['type' => 'UNKNOWN', 'text' => 'private-body-sentinel']]))

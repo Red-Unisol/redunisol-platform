@@ -28,12 +28,24 @@ function consentCaseFixture(): array
     return compact('proof', 'payload', 'outbound', 'results', 'tuple');
 }
 
-function consentCaseResolve(array $f): ?array
+function consentCaseResolve(array $f, ?string $action = null): ?array
 {
     $crm = Mockery::mock(EdnaBitrix::class);
     $crm->shouldReceive('call')->andReturnUsing(function (string $method, array $args) use ($f) {
         if ($method === 'crm.activity.list') {
             expect($args['filter'])->toHaveKey('>=CREATED')->toHaveKey('<=CREATED')->not->toHaveKey('OWNER_ID');
+        }
+        if ($method === 'crm.deal.list' && isset($args['filter']['=LEAD_ID'])) {
+            return $f['lead_deals'];
+        }
+        if ($method === 'crm.duplicate.findbycomm') {
+            return $f['duplicates'][$args['entity_type']];
+        }
+        if ($method === 'crm.lead.list' && isset($args['filter']['@ID'])) {
+            return $f['phone_open_leads'];
+        }
+        if ($method === 'crm.deal.list' && isset($args['filter']['@LEAD_ID'])) {
+            return $f['phone_open_deals'];
         }
 
         return $f['results'][$method];
@@ -41,7 +53,10 @@ function consentCaseResolve(array $f): ?array
     $attention = Mockery::mock(EdnaOrganicAttention::class);
     $attention->shouldReceive('snapshot')->with($f['proof'])->andReturn(['dialog_tuple' => $f['tuple']]);
 
-    return (new EdnaConsentCase($crm, $attention))->resolve($f['proof'], $f['payload'], $f['outbound']);
+    $service = new EdnaConsentCase($crm, $attention);
+
+    return $action === null ? $service->resolve($f['proof'], $f['payload'], $f['outbound'])
+        : $service->campaign($f['proof'], $f['payload'], ['action' => $action, 'outbound' => $f['outbound']]);
 }
 
 it('recovers the seller in RESPUESTA from the outgoing and incoming activities of the same deal', function () {
@@ -91,4 +106,128 @@ it('retries incomplete activity reads instead of treating a partial page as a un
     $f = consentCaseFixture();
     $f['results']['crm.activity.list'] = array_fill(0, 50, $f['results']['crm.activity.list'][0]);
     expect(fn () => consentCaseResolve($f))->toThrow(RuntimeException::class);
+});
+
+function campaignCaseFixture(string $owner = 'deal', string $action = 'continue'): array
+{
+    $f = consentCaseFixture();
+    [$matcher, $name, $type, $text] = match ($action) {
+        'offer' => ['63977', 'reactivacion_paii', 'BUTTON', 'Consultar disponible'],
+        'clarify' => ['54655', 'ingreso_basico', 'TEXT', 'Tengo una pregunta'],
+        default => ['58749', 'reingreso_consent', 'BUTTON', 'Sí, quiero asesoramiento'],
+    };
+    $f['payload']['messageContent'] = ['type' => $type, 'text' => $text, 'payload' => $text];
+    $f['outbound']['matcherId'] = $matcher;
+    $f['outbound']['matcherName'] = $name;
+    $send = &$f['results']['crm.activity.list'][0];
+    $send['SETTINGS']['ORIGINAL_TEMPLATE_ID'] = $matcher;
+    if ($owner !== 'deal') {
+        $id = $owner === 'lead' ? '62' : '61';
+        $type = $owner === 'lead' ? '1' : '3';
+        $f['tuple']['primary_entity'] = $owner;
+        $f['tuple']['primary_id'] = $id;
+        $f['tuple']['bindings'] = [$owner => $id, 'contact' => '61'];
+        $send['OWNER_TYPE_ID'] = $type;
+        $send['OWNER_ID'] = $id;
+        $f['results']['crm.activity.get']['OWNER_TYPE_ID'] = $type;
+        $f['results']['crm.activity.get']['OWNER_ID'] = $id;
+    }
+    $f['results']['crm.lead.get'] = ['ID' => '62', 'CONTACT_ID' => '61', 'STATUS_SEMANTIC_ID' => 'S'];
+    $f['lead_deals'] = $f['results']['crm.deal.list'];
+    $f['duplicates'] = ['CONTACT' => ['CONTACT' => [61]], 'LEAD' => ['LEAD' => [62]]];
+    $f['results']['crm.lead.list'] = [];
+    $f['phone_open_leads'] = $f['phone_open_deals'] = [];
+
+    return $f;
+}
+
+it('resolves a verified campaign to its current seller through the originating deal or lead', function (string $entity, string $action) {
+    $f = campaignCaseFixture($entity, $action);
+    $result = consentCaseResolve($f, $action);
+    expect($result['status'])->toBe('assigned')
+        ->and($result['case'])->toMatchArray(['ID' => '60', 'ASSIGNED_BY_ID' => '63', 'consent_activity_id' => '81']);
+})->with([['deal', 'continue'], ['lead', 'continue'], ['deal', 'clarify'], ['deal', 'offer']]);
+
+it('rechecks the seller and resumes the same case after distribution without creating anything', function () {
+    $f = campaignCaseFixture();
+    $f['results']['crm.deal.get']['ASSIGNED_BY_ID'] = '74827';
+    $f['results']['crm.deal.get']['STAGE_ID'] = 'C1:KESTRA_QUEUE';
+    $f['results']['crm.deal.list'] = [$f['results']['crm.deal.get']];
+    expect(consentCaseResolve($f, 'continue'))->toMatchArray(['status' => 'waiting_assignment', 'case' => null]);
+    $f['results']['crm.deal.get']['ASSIGNED_BY_ID'] = '89';
+    $f['results']['crm.deal.get']['STAGE_ID'] = 'C1:UC_ZH5DGU';
+    $f['results']['crm.deal.list'] = [$f['results']['crm.deal.get']];
+    expect(consentCaseResolve($f, 'continue')['case'])->toMatchArray(['ID' => '60', 'ASSIGNED_BY_ID' => '89']);
+});
+
+it('waits for conversion of the exact pending lead, even if another deal exists for the same phone', function () {
+    $f = campaignCaseFixture('lead');
+    $f['results']['crm.lead.get']['STATUS_SEMANTIC_ID'] = 'P';
+    $f['lead_deals'] = [];
+    expect(consentCaseResolve($f, 'continue'))->toMatchArray(['status' => 'waiting_assignment', 'reason' => 'campaign_lead_awaiting_deal', 'case' => null]);
+});
+
+it('never infers a seller from a contact, another lead, a closed deal or a business conflict', function (string $scenario) {
+    $f = campaignCaseFixture($scenario === 'contact' ? 'contact' : 'deal');
+    if ($scenario === 'other-lead') {
+        $f['results']['crm.activity.list'][0]['OWNER_TYPE_ID'] = '1';
+        $f['results']['crm.activity.list'][0]['OWNER_ID'] = '91';
+    } elseif ($scenario === 'closed') {
+        $f['results']['crm.deal.get']['CLOSED'] = 'Y';
+        $f['results']['crm.deal.get']['STAGE_SEMANTIC_ID'] = 'F';
+    } elseif ($scenario === 'multiple-open') {
+        $f['results']['crm.deal.list'][] = ['ID' => '92'];
+    } elseif ($scenario === 'emission-unverified') {
+        $f['results']['crm.activity.list'] = [];
+    }
+    $result = consentCaseResolve($f, 'continue');
+    expect($result)->toMatchArray(['status' => $scenario === 'closed' ? 'closed' : 'unverified', 'case' => null]);
+})->with(['contact', 'other-lead', 'closed', 'multiple-open', 'emission-unverified']);
+
+it('allows a new offer inquiry only after proving that this exact recipient has no reusable case', function (string $scenario, string $expected) {
+    $f = campaignCaseFixture('contact', 'offer');
+    $f['results']['crm.deal.list'] = [];
+    switch ($scenario) {
+        case 'provider-broadcast': $f['results']['crm.activity.list'] = []; break;
+        case 'failed-read': $f['duplicates']['LEAD'] = ['error' => 'unavailable']; break;
+        case 'duplicate-phone-contact': $f['duplicates']['CONTACT']['CONTACT'][] = '97'; break;
+        case 'other-open-deal': $f['results']['crm.deal.list'] = [['ID' => '93']]; break;
+        case 'other-open-lead': $f['results']['crm.lead.list'] = [['ID' => '94']]; break;
+        case 'unlinked-lead': $f['phone_open_leads'] = [['ID' => '62']]; break;
+        case 'unlinked-deal': $f['phone_open_deals'] = [['ID' => '95']]; break;
+        case 'wrong-recipient':
+            $f['results']['crm.activity.get']['PROVIDER_PARAMS']['USER_CODE'] = 'whatsappbyedna|1|5491100001001@44|7';
+            break;
+        case 'ambiguous-emission': $f['results']['crm.activity.list'][] = $f['results']['crm.activity.list'][0]; break;
+    }
+    if ($expected === 'retry') {
+        expect(fn () => consentCaseResolve($f, 'offer'))->toThrow(RuntimeException::class);
+    } else {
+        expect(consentCaseResolve($f, 'offer'))->toMatchArray(['status' => $expected, 'case' => null]);
+    }
+})->with([
+    ['contact-emission', 'no_active_case'], ['provider-broadcast', 'no_active_case'], ['failed-read', 'retry'],
+    ['duplicate-phone-contact', 'unverified'], ['other-open-deal', 'unverified'], ['other-open-lead', 'unverified'],
+    ['unlinked-lead', 'unverified'], ['unlinked-deal', 'unverified'], ['wrong-recipient', 'unverified'], ['ambiguous-emission', 'unverified'],
+]);
+
+it('does not reinterpret a declined button or a policy change on recheck', function () {
+    $f = campaignCaseFixture('deal', 'offer');
+    $f['payload']['messageContent'] = ['type' => 'BUTTON', 'text' => 'No me interesa', 'payload' => 'No me interesa'];
+    expect(consentCaseResolve($f, 'offer'))->toMatchArray(['status' => 'unverified', 'case' => null]);
+});
+
+it('can ask a clarification for a verified broadcast without an open case', function () {
+    $f = campaignCaseFixture('contact', 'clarify');
+    $f['results']['crm.deal.list'] = $f['results']['crm.activity.list'] = [];
+    expect(consentCaseResolve($f, 'clarify'))->toMatchArray(['status' => 'no_active_case', 'case' => null]);
+});
+
+it('distinguishes a converted lead from a rejection that conflicts with its still-open deal', function () {
+    $f = campaignCaseFixture();
+    $f['results']['crm.activity.list'][0]['OWNER_TYPE_ID'] = '1';
+    $f['results']['crm.activity.list'][0]['OWNER_ID'] = '62';
+    expect(consentCaseResolve($f, 'continue')['case'])->toMatchArray(['ID' => '60', 'ASSIGNED_BY_ID' => '63']);
+    $f['results']['crm.lead.get']['STATUS_SEMANTIC_ID'] = 'F';
+    expect(consentCaseResolve($f, 'continue'))->toMatchArray(['status' => 'unverified', 'case' => null]);
 });
