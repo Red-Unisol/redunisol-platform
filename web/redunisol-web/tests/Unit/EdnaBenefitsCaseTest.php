@@ -136,6 +136,42 @@ test('the native benefit may lack CUIL without asking a credit form to recognize
     expect(benefitsCaseResolve($crm)['status'])->toBe('benefits');
 });
 
+test('a chat-only decision follows its benefits deal and keeps all historical owners intact', function (bool $origin) {
+    $crm = new BenefitsCaseReadFake;
+    $proof = benefitsCaseAddLead($crm, '71159', '71283');
+    if (! $origin) {
+        $crm->records['deal:900']['LEAD_ID'] = '0';
+        $crm->records['contact:800']['LEAD_ID'] = '700';
+    }
+    $crm->dialog['entity_data_2'] = 'LEAD|0|CONTACT|800|COMPANY|0|DEAL|900';
+    $proof['native_lead_id'] = null;
+    $service = new EdnaBenefitsCase($crm);
+    $original = $crm->records;
+    expect($service->resolve($proof)['status'])->toBe('review');
+    $before = $service->resolveUnified($proof);
+    expect($before['status'])->toBe('benefits')->and($before['case']['responsible_id'])->toBe('117941')
+        ->and($service->compatible($before, $service->resolveUnified($proof)))->toBeTrue();
+    $crm->dialog['owner'] = 117941;
+    expect($service->compatible($before, $service->resolveUnified($proof), true))->toBeTrue()
+        ->and($crm->records)->toBe($original);
+    $crm->records['lead:700']['ASSIGNED_BY_ID'] = '117941';
+    expect($service->compatible($before, $service->resolveUnified($proof), true))->toBeFalse();
+})->with(['91943 historical lead owner' => [true], '133797 extra lead of the same contact' => [false]]);
+
+test('a historical lead cannot authorize the benefits deal for a different or unproved person', function (string $conflict) {
+    $crm = new BenefitsCaseReadFake;
+    $proof = benefitsCaseAddLead($crm, '71159', '71283');
+    $crm->records['deal:900']['LEAD_ID'] = '0';
+    $crm->records['contact:800']['LEAD_ID'] = '700';
+    if ($conflict === 'different identity') {
+        $crm->records['lead:700']['UF_CRM_1693840106704'] = '20999999999';
+    } else {
+        $crm->records['lead:700']['CONTACT_ID'] = $conflict === 'unproved contact' ? '0' : '810';
+        $crm->records['contact:810'] = array_replace($crm->records['contact:800'], ['ID' => '810']);
+    }
+    expect((new EdnaBenefitsCase($crm))->resolveUnified($proof)['status'])->toBe('review');
+})->with(['different identity', 'different contact', 'unproved contact']);
+
 test('a primary deal from another category is not replaced by a phone search for benefits', function () {
     $crm = new BenefitsCaseReadFake;
     $crm->records['deal:900']['CATEGORY_ID'] = '1';

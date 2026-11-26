@@ -296,6 +296,8 @@ jobs:
           tests/Feature/CommercialChatCandidatesTest.php tests/Feature/CommercialChatStatusTest.php
       - name: Test template buttons and sales chat handoff
         run: php vendor/bin/pest tests/Feature/EdnaCampaignTemplateTest.php tests/Feature/EdnaFormConsentTest.php tests/Feature/EdnaConsentCaseTest.php tests/Feature/EdnaOrganicMenuTest.php tests/Feature/EdnaBenefitsRoutingTest.php
+      - name: Test native Benefits decisions and reopened sales sessions
+        run: php vendor/bin/pest tests/Unit/EdnaBenefitsCaseTest.php tests/Feature/SalesChatReopeningTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

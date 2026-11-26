@@ -90,7 +90,18 @@ class CommercialChatStatus
             $add('WhatsApp v3 #', $row->request_id, $selection['seller_id'] ?? $case['seller_id'] ?? null,
                 $selection['deal_id'] ?? $case['deal_id'] ?? null);
         }
+        // A second inbound in the same session may point to a canonical menu
+        // while the exact new message and its seller live on the handoff receipt.
+        $reopening = DB::table('edna_sales_chat_handoffs as h')
+            ->leftJoin('edna_organic_menus as m', 'm.entry_event_id', '=', 'h.entry_event_id')
+            ->where('h.chat_id', $chatId)->where('h.session_id', $sessionId)->where('h.family', 'reopening')
+            ->first(['h.entry_event_id', 'h.target_id', 'm.seller_id', 'm.deal_id']);
+        if ($reopening) {
+            $deal = (string) $reopening->seller_id === (string) $reopening->target_id ? $reopening->deal_id : null;
+            $add('Reapertura · ingreso #', $reopening->entry_event_id, $reopening->target_id, $deal);
+        }
         foreach (DB::table('edna_organic_menus')->where('chat_id', $chatId)->where('session_id', $sessionId)
+            ->when($reopening, fn ($query) => $query->where('entry_event_id', '!=', $reopening->entry_event_id))
             ->get(['id', 'seller_id', 'deal_id']) as $menu) {
             if ($menu->seller_id) {
                 $add('Menú #', $menu->id, $menu->seller_id, $menu->deal_id);

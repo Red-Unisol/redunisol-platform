@@ -20,6 +20,17 @@ class EdnaBenefitsCase
 
     public function resolve(array $proof): array
     {
+        return $this->resolveCase($proof, false);
+    }
+
+    /** Read-only decision for a new intake; also usable in observation. */
+    public function resolveUnified(array $proof): array
+    {
+        return $this->resolveCase($proof, true);
+    }
+
+    private function resolveCase(array $proof, bool $unified): array
+    {
         try {
             if (($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
                 || ($proof['evidence'] ?? '') !== 'external_message_id') {
@@ -52,7 +63,7 @@ class EdnaBenefitsCase
             if (! $native || count($deals) !== 1) {
                 throw new RuntimeException('Native deal record is unavailable.');
             }
-            $this->relations($tuple, $records, $native);
+            $this->relations($tuple, $records, $native, $unified);
             if (! is_string($native['category_id'] ?? null) || ! preg_match('/^(?:0|[1-9][0-9]*)$/D', $native['category_id'])) {
                 throw new RuntimeException('Native deal category is incomplete.');
             }
@@ -85,7 +96,9 @@ class EdnaBenefitsCase
                 throw new RuntimeException('Native benefits case state is incomplete.');
             }
 
-            return $this->result('benefits', 'native_active_benefits_case', $case, $snapshot);
+            $result = $this->result('benefits', 'native_active_benefits_case', $case, $snapshot);
+
+            return $unified ? $result + ['routing_policy' => SalesChatRoutingPolicy::CUTOVER] : $result;
         } catch (Throwable) {
             // A provider error may carry a secret URL or personal information.
             return $this->result('review', 'native_benefits_case_unverified');
@@ -96,6 +109,11 @@ class EdnaBenefitsCase
     public function compatible(array $before, array $after, bool $afterTransfer = false): bool
     {
         try {
+            $policy = $before['routing_policy'] ?? null;
+            if ($policy !== ($after['routing_policy'] ?? null) || ! in_array($policy, [null, SalesChatRoutingPolicy::CUTOVER], true)) {
+                return false;
+            }
+            $unified = $policy !== null;
             foreach ([$before, $after] as $result) {
                 if (($result['status'] ?? '') !== 'benefits' || ! is_array($result['case'] ?? null)
                     || ! is_array($result['snapshot'] ?? null)) {
@@ -124,7 +142,7 @@ class EdnaBenefitsCase
                     || (($tuple['bindings']['deal'] ?? $case['deal_id']) !== $case['deal_id'])) {
                     return false;
                 }
-                $this->relations($tuple, $records, $record);
+                $this->relations($tuple, $records, $record, $unified);
             }
             if ($before['case'] !== $after['case'] || count($before['snapshot']['records']) !== count($after['snapshot']['records'])) {
                 return false;
@@ -138,7 +156,7 @@ class EdnaBenefitsCase
                 }
                 $expected['dialog_tuple']['owner'] = $target;
                 foreach ($expected['records'] as $index => &$record) {
-                    if ($record === $after['snapshot']['records'][$index]) {
+                    if ($unified || $record === $after['snapshot']['records'][$index]) {
                         continue;
                     }
                     if ($record['entity'] === 'lead' && $record['native'] === true
@@ -247,30 +265,40 @@ class EdnaBenefitsCase
         }
     }
 
-    private function relations(array $tuple, array $records, array $deal): void
+    private function relations(array $tuple, array $records, array $deal, bool $unified = false): void
     {
         $ids = ['contact' => $deal['contact_id'] ?? '', 'lead' => $deal['lead_id'] ?? '', 'company' => $deal['company_id'] ?? ''];
+        $chatOnly = $unified && $deal['category_id'] === '15';
         if ($ids['contact'] === '' && $ids['lead'] === '') {
             throw new RuntimeException('Native benefits person is unavailable.');
         }
         foreach ($ids as $entity => $id) {
+            if ($id !== '' && ! isset($records[$entity.':'.$this->id($id)])) {
+                throw new RuntimeException('Native benefits relationship is missing.');
+            }
             $bound = $tuple['bindings'][$entity] ?? '';
             $primary = ($tuple['primary_entity'] ?? '') === $entity ? ($tuple['primary_id'] ?? '') : '';
-            if (($bound !== '' && $bound !== $id) || ($primary !== '' && $primary !== $id)
-                || ($id !== '' && ! isset($records[$entity.':'.$this->id($id)]))) {
+            // records() already requires every binding to exist. Below we verify
+            // the actual contact on each additional lead, including bound ones.
+            if ($chatOnly && $entity === 'lead' && $ids['contact'] !== '') {
+                continue;
+            }
+            if (($bound !== '' && $bound !== $id) || ($primary !== '' && $primary !== $id)) {
                 throw new RuntimeException('Native benefits relationship conflicts.');
             }
         }
         $identities = [];
         foreach ($records as $record) {
+            $relatedLead = $chatOnly && $record['entity'] === 'lead' && $ids['contact'] !== ''
+                && $record['contact_id'] === $ids['contact'];
             if (in_array($record['entity'], ['lead', 'contact'], true)
-                && $record['id'] !== $ids[$record['entity']]) {
+                && $record['id'] !== $ids[$record['entity']] && ! $relatedLead) {
                 throw new RuntimeException('Unrelated native person.');
             }
             if ($record['entity'] === 'lead' && ($record['contact_id'] ?? '') !== '' && $record['contact_id'] !== $ids['contact']) {
                 throw new RuntimeException('Native lead/contact relationship conflicts.');
             }
-            if ($deal['category_id'] === '15' && $record['entity'] === 'lead' && $record['owner'] !== $deal['owner']) {
+            if (! $chatOnly && $deal['category_id'] === '15' && $record['entity'] === 'lead' && $record['owner'] !== $deal['owner']) {
                 $provisional = $record['native'] === true && (in_array($record['owner'], ['', '0'], true)
                     || (in_array($record['owner'], ['57', '74827'], true) && $record['creator'] === $record['owner']));
                 if (! $provisional) {
