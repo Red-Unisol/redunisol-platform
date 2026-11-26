@@ -52,3 +52,9 @@ class QueueProbeTests(unittest.TestCase):
                                ((29, 57), {**self.calendar, "holidays": ["2026-12-07"]})):
             self.assertEqual(ready_count(page, lambda: ({"cordoba_general": pool}, calendar),
                                          "reason", "bucket", self.now), 1)
+
+    def test_legacy_work_runs_even_when_the_new_endpoint_fails(self):
+        fetch = Mock(return_value={"result": {"items": [{**self.row, "reason": "approved"}]}, "total": 1})
+        failing = Mock(side_effect=RuntimeError("No commercial readiness"))
+        self.assertEqual(eligible(fetch, failing, ("action", "reason", "bucket"), self.now, failing), 1)
+        failing.assert_not_called()

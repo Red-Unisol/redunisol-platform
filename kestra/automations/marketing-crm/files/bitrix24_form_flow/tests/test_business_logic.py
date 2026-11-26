@@ -5921,6 +5921,13 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.chat_transfers, [])
 
         # Seller manually chosen on this specific waiting deal must survive.
+        client.leads[962] = self._cordoba_enriched_lead(962, employment_id="1239", bcra_entities=[])
+        client.deals[962] = self._queued_deal(962, 962, "cordoba_general", received)
+        with patch.object(ownership, "candidate_filters", side_effect=RuntimeError("Laravel unavailable")):
+            legacy = process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(), now=friday)
+            self.assertEqual(legacy["distributed_count"], 1)
+            self.assertEqual(client.deals[962]["assignedById"], 10451)
+            self.assertEqual(client.deals[960]["assignedById"], 57)
         client.deals[960]["assignedById"] = 29
         with patch.object(ownership, "readiness", return_value={960: ("outbound", 567)}), patch(
             "bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee"

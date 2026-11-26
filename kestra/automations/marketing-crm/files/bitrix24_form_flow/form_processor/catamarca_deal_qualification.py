@@ -1038,18 +1038,18 @@ def process_distribution_queue(
                 _queue_error_result(config, oldest, processed_at, exc)
             )
     enrolled = {"="+action_field: request_ownership.WAIT}
-    sample = _list_queued_deals(client, config, enrolled, sample=True)
-    if sample:
-        if not schedule.sales_closed_window(_local_datetime(source, now), config.sales_calendar):
-            try:
-                requests = {}
-                for positive in request_ownership.candidate_filters(source):
-                    for row in _list_queued_deals(client, config, {**enrolled, **positive}):
-                        requests[int(row["id"])] = row
-                request_rows = sorted(requests.values(), key=lambda row: (str(row.get("createdTime") or ""), int(row["id"])))
-                events.extend(_distribute_ready_requests(client, config, request_rows, active_logger, source, now))
-            except Exception as error:
-                events.append(_queue_error_result(config, sample[0], processed_at, error))
+    sample, requests = [], {}
+    try:
+        sample = _list_queued_deals(client, config, enrolled, sample=True)
+        if sample and not schedule.sales_closed_window(_local_datetime(source, now), config.sales_calendar):
+            for positive in request_ownership.candidate_filters(source):
+                for row in _list_queued_deals(client, config, {**enrolled, **positive}):
+                    requests[int(row["id"])] = row
+    except Exception as error:
+        events.append(_queue_error_result(config, sample[0] if sample else {}, processed_at, error))
+    if requests:
+        request_rows = sorted(requests.values(), key=lambda row: (str(row.get("createdTime") or ""), int(row["id"])))
+        events.extend(_distribute_ready_requests(client, config, request_rows, active_logger, source, now))
     return _queue_batch_result(events, processed_at)
 
 
