@@ -99,6 +99,47 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(result["reason"], "operator_message_preserved")
         self.assert_no_assignment()
 
+    # Exact copy Bitrix posted with user 57 on 2026-11-25 (chat 147191) after an earlier
+    # submission of the same customer was rejected for "OTRO BANCO".
+    REJECTION_NOTICE = ("Por el momento no tenemos convenio con tu banco de cobro. \nAgradecemos tu contacto y te "
+                        "invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay "
+                        "algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊")
+
+    def post_operator_messages(self, *messages, operator_count=None):
+        self.client.history_changes = {
+            "message": {str(index): {"id": str(index), "chatid": "777", "senderid": str(sender), "text": text}
+                        for index, (sender, text) in enumerate(messages, start=1)},
+            "users": {str(sender): {"connector": False} for sender, _ in messages}}
+        self.client.stat_changes = {"messagesOperatorCount": len(messages) if operator_count is None else operator_count}
+
+    def test_bitrix_rejection_notices_of_an_earlier_submission_are_not_attention(self):
+        self.post_operator_messages((57, self.REJECTION_NOTICE), (57, "\r\n" + self.REJECTION_NOTICE + " "))
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        self.assertEqual(self.client.deals[930]["assignedById"], 68579)
+
+    def test_any_other_operator_message_still_preserves_the_chat(self):
+        cases = {
+            "maru_writes_by_hand": [(57, "Hola, ¿con qué banco cobrás?")],
+            "notice_from_another_user": [(90231, self.REJECTION_NOTICE)],
+            "edited_notice": [(57, self.REJECTION_NOTICE.replace("convenio", "acuerdo"))],
+            "notice_plus_human_reply": [(57, self.REJECTION_NOTICE), (90231, "Te escribo yo")],
+        }
+        for name, messages in cases.items():
+            with self.subTest(case=name):
+                self.reset_client()
+                self.post_operator_messages(*messages)
+                result = self.run_qualification()
+                self.assertEqual(result["reason"], "operator_message_preserved")
+                self.assert_no_assignment()
+
+    def test_an_operator_count_not_explained_by_visible_notices_preserves_the_chat(self):
+        self.post_operator_messages((57, self.REJECTION_NOTICE), operator_count=2)
+        result = self.run_qualification()
+        self.assertEqual(result["reason"], "operator_message_preserved")
+        self.assert_no_assignment()
+
     def set_chat_owner(self, chat_id, owner):
         dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
         self.client.open_line_dialogs[chat_id] = {**dialog, "owner": owner}

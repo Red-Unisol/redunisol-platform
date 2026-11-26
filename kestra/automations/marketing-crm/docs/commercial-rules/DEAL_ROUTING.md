@@ -185,6 +185,17 @@ la entrada, la sesión nativa y el prospecto coinciden y la sesión sigue sin
 atención humana. Una reasignación, una respuesta o una transferencia humana
 conserva la atención existente. La evidencia ambigua queda para revisión.
 
+### Avisos de rechazo de Bitrix (desde 2026-11-26)
+
+El robot de rechazo de Bitrix publica su aviso con el usuario provisional (`57`) y
+Bitrix lo cuenta como mensaje de operador. Cuando un cliente reintenta el
+formulario y un envío anterior fue rechazado (por ejemplo, otro banco), ese aviso
+queda en el mismo chat. No es atención humana: si el mensaje es de `57` y coincide
+exactamente con un texto del catálogo de rechazos
+(`web/redunisol-web/resources/crm/rejection-notices.json`), no frena el reparto.
+El conteo de mensajes de operador de Bitrix tiene que quedar explicado por esos
+avisos; cualquier otro mensaje, de `57` o de otra persona, conserva la atención.
+
 ### Chat ya en manos de un vendedor del grupo (desde 2026-11-25)
 
 La entrada web y de WhatsApp pasa el chat al vendedor del caso o la negociación
