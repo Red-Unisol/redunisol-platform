@@ -39,6 +39,8 @@ def queue_marker_sleeping(raw: object, now: datetime) -> bool:
 def decode_queue_reason(raw: str) -> tuple[str, str]:
     """Unmarked records retain the historical weekly policy and their commercial reason."""
     state, separator, remainder = raw.partition("|")
+    if state == "waiting_for_request_chat" and len(raw.split("|", 3)) == 4:
+        return state, raw.split("|", 3)[3]
     if not separator or state not in QUEUE_COHORT_REASONS:
         return "", raw
     if state == WAIT_FOR_OPENING:

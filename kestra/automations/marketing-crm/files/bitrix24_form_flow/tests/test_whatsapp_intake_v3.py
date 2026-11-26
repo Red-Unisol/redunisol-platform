@@ -25,7 +25,7 @@ def answer(province, situation, bank='nacion', organism='anses'):
 class IntakeV3Tests(unittest.TestCase):
     def test_separated_benefits_render_their_own_organism_and_bank_and_reach_identity(self):
         root = next(p for p in Path(__file__).resolve().parents if (p / 'docs/whatsapp-website-intake-v3.flow.json').exists())
-        flow = json.loads((root / 'docs/whatsapp-website-intake-v3.flow.json').read_text(encoding='utf-8'))
+        flow = json.loads((root / 'docs/whatsapp-website-intake-v3.1.flow.json').read_text(encoding='utf-8'))
         fields = flow['screens'][0]['layout']['children'][0]['children']
 
         def condition(expression, values):
@@ -71,7 +71,7 @@ class IntakeV3Tests(unittest.TestCase):
                         self.assertEqual([f['name'] for f in rendered if f.get('name', '').startswith('organismo')],
                                          ['organismo' if province == 'cordoba' else 'organismo_' + province])
                         banks = [f['name'] for f in rendered if f.get('name', '').startswith('banco_')]
-                        caja_retirement = province == 'cordoba' and situation == 'jubilado' and organism == 'caja_cordoba'
+                        caja_retirement = province == 'cordoba' and organism == 'caja_cordoba'
                         self.assertEqual(banks, [] if caja_retirement else [
                             'banco_jubilado' if province == 'cordoba' else 'banco_' + province])
                         self.assertFalse(any(f.get('name') in {'cuil', 'email'} for f in rendered))
@@ -83,20 +83,26 @@ class IntakeV3Tests(unittest.TestCase):
                             'Jubilado Nacional' if organism == 'anses' else 'Jubilado Provincial')
                         self.assertEqual(normalized['employment_status'], expected)
 
-    def test_cordoba_pensioner_keeps_generic_category_and_bank_even_when_declaring_caja(self):
-        for organism in ['anses', 'caja_cordoba']:
-            data = answer('cordoba', 'pensionado', organism=organism)
-            api = IntakeCrm()
-            result = process(payload(**data), env=CONFIG, client=api)
-            self.assertEqual(result['action'], 'queued')
-            lead = api.leads[result['lead_id']]
-            self.assertEqual(lead[api.config.fields.lead_employment_status], '2569')
-            self.assertEqual(lead[api.config.fields.lead_payment_bank], ['439'])
-            self.assertEqual(lead['UF_CRM_WA_ORGANISMO'], organism)
-            self.assertEqual(lead['UF_CRM_WA_SEGMENT'], 'cordoba_pensionado')
-            data.pop('banco_jubilado')
-            with self.assertRaises(ValueError):
-                normalize_answer(data)
+    def test_cordoba_pensioner_can_omit_bank_only_for_caja_and_keeps_old_v3_declaration(self):
+        old_flow = '950118281197789'
+        data = answer('cordoba', 'pensionado', organism='caja_cordoba')
+        self.assertEqual(normalize_answer(data, flow_id=old_flow)['bank'], 'nacion')
+        self.assertEqual(normalize_answer(data, flow_id='whatsapp-intake-v3')['bank'], 'nacion')
+        for revision in [None, 'updated-flow']:
+            self.assertEqual(normalize_answer(data, flow_id=revision)['bank'], '')
+        self.assertEqual(normalize_answer(dict(data, banco_jubilado='ayuda'), flow_id=old_flow)['bank'], '')
+        data.pop('banco_jubilado')
+        api = IntakeCrm()
+        request = dict(payload(**data), flow_id=old_flow)
+        result = process(request, env={**CONFIG, 'EDNA_INTAKE_FLOW_ID': old_flow}, client=api)
+        self.assertEqual(result['action'], 'queued')
+        lead = api.leads[result['lead_id']]
+        self.assertEqual(lead[api.config.fields.lead_employment_status], '2569')
+        self.assertFalse(lead.get(api.config.fields.lead_payment_bank))
+        self.assertEqual(lead['UF_CRM_WA_SEGMENT'], 'cordoba_pensionado')
+        self.assertTrue(evaluate_prequalification(build_prequalification_input_from_lead(lead, api.config)).qualified)
+        with self.assertRaises(ValueError):
+            normalize_answer(dict(data, organismo='anses'), flow_id=old_flow)
 
     def test_expanded_provinces_persist_the_same_categories_and_decisions_as_the_web(self):
         profiles = {

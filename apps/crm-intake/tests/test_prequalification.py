@@ -32,8 +32,10 @@ class PrequalificationTest(unittest.TestCase):
         wa = {"provincia": "cordoba", "organismo": "caja_cordoba"}
         cases = [
             ("web", "web-loan-v1", {"province": "Córdoba", "employment_status": "Jubilado Provincial"}),
+            ("web", "web-loan-v1", {"province": "Córdoba", "employment_status": "Pensionado", "organismo": "caja_cordoba"}),
             ("whatsapp", "whatsapp-intake-v3", wa | {"situacion_cordoba": "jubilado"}),
             ("whatsapp", "whatsapp-intake-v3", wa | {"situacion_cordoba": "pensionado"}),
+            ("whatsapp", "whatsapp-intake-v3.1", wa | {"situacion_cordoba": "pensionado", "banco_jubilado": "otro"}),
             ("whatsapp", "whatsapp-grouped-v1", wa | {"situacion_cordoba": "jubilado_pensionado"}),
         ]
         for channel, version, answers in cases:

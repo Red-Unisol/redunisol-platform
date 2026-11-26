@@ -6,6 +6,7 @@ use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFreshIntake;
+use App\Services\EdnaFreshCaseRoute;
 use App\Services\WebChatContinuity;
 use App\Services\EdnaIntakeBinding;
 use App\Services\EdnaIntakeChatRouting;
@@ -150,6 +151,147 @@ function freshCompletedRequest(): array
 
     return [DB::table('edna_intake_requests')->find($id), DB::table('edna_flow_sends')->find($send->id), $proof];
 }
+
+function independentCompletedFlow(): array
+{
+    [$request, $send, $proof] = freshCompletedRequest();
+    DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::DECLARATION, 'starts_at' => now()->subMinute(), 'entry_id_after' => 0]);
+    DB::table('edna_flow_sends')->where('id', $send->id)->update(['outgoing_message_id' => '6200']);
+    $payload = ['subjectId' => $send->subject_id, 'id' => '700099', 'subscriber' => ['identifier' => Crypt::decryptString($send->recipient)],
+        'receivedAt' => now()->toIso8601String(), 'replyOutMessageId' => '6200', 'replyOutMessageExternalRequestId' => $send->request_id,
+        'messageContent' => ['type' => 'FLOW', 'text' => Crypt::decryptString($request->answer)]];
+    DB::table('edna_incoming_events')->insert(['id' => $request->response_event_id, 'subject_id' => $send->subject_id, 'message_id' => $payload['id'],
+        'payload' => Crypt::encryptString(json_encode($payload)), 'status' => 'delivered', 'created_at' => now(), 'updated_at' => now()]);
+
+    return [$request, DB::table('edna_flow_sends')->find($send->id), $proof];
+}
+
+test('a newly completed real v3 retains its Flow and tracks its own lead until the seller is known', function () {
+    [$request, $send, $proof] = independentCompletedFlow();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->andReturn(['status' => 'ready']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    Http::fake(['example.test/*' => Http::response(['ok' => true, 'contract' => EdnaFreshIntake::DECLARATION,
+        'case_id' => $send->request_id, 'action' => 'queued', 'reason' => 'ready',
+        'write_attempted' => true, 'lead_id' => '909', 'contact_id' => ''])]);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => $r['flow_id'] === $send->flow_id && $r['attribution']['wa']['WA_FLOW_ID'] === $send->flow_id
+        && $r['response']['event_id'] === 88 && $r['response']['outgoing_message_id'] === '6200' && ! isset($r['provenance']));
+    $route = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->sole();
+    expect(json_decode($route->assigned_case, true))->toMatchArray(['lead_id' => '909', 'request_uuid' => $send->request_id])
+        ->and(json_decode($route->proof, true)['session_id'])->toBe($proof['session_id']);
+    Queue::assertPushed(RouteEdnaIntakeChat::class, 1);
+});
+
+test('a historical owner is protected unless native CRM reassignment is disabled', function () {
+    $case = ['lead_id' => '501'];
+    $record = ['entity' => 'lead', 'id' => '101', 'owner' => '901', 'creator' => '901'];
+    $crm = Mockery::mock(EdnaBitrix::class);
+    $crm->shouldReceive('call')->twice()->with('imopenlines.config.get', ['CONFIG_ID' => 1])
+        ->andReturn(['ID' => '1', 'CRM_TRANSFER_CHANGE' => 'Y'], ['ID' => '1', 'CRM_TRANSFER_CHANGE' => 'N']);
+    $route = new EdnaFreshCaseRoute;
+    expect($route->protectsHistoricalOwners(['records' => [$record]], $case, 123, $crm))->toBeFalse()
+        ->and($route->protectsHistoricalOwners(['records' => [$record]], $case, 123, $crm))->toBeTrue()
+        ->and($route->protectsHistoricalOwners(['records' => [$record, [...$record, 'id' => '501']]], $case, 123, $crm))->toBeFalse()
+        ->and($route->protectsHistoricalOwners(['records' => [[...$record, 'id' => '501', 'owner' => '71283', 'creator' => '71283']]], $case, 123, $crm))->toBeTrue();
+});
+
+test('a verified web reference and new declaration share a request only in the same session and for the same CUIL', function (bool $matching) {
+    [$request, $send, $proof] = independentCompletedFlow();
+    DB::table('edna_intake_cutovers')->updateOrInsert(['name' => WebChatContinuity::NAME], ['starts_at' => now()->subMinute(), 'entry_id_after' => 0]);
+    $token = str_repeat('a', 32);
+    $uuid = 'eeeeeeee-2222-4222-8222-222222222222';
+    $hash = (new AttributionJourney)->phoneHash('5493510000000');
+    DB::table('web_form_receipts')->insert(['id' => $uuid, 'source' => 'web_server', 'phone_hash' => $hash,
+        'reference_hash' => hash('sha256', $token), 'identity_hash' => (new WebFormReceipt)->identityHash($matching ? '20123456786' : '20999999999'),
+        'state' => 'synced', 'lead_id' => '707', 'contact_id' => '708', 'received_at' => now()->subSeconds(3), 'expires_at' => now()->addDay(),
+        'persisted_at' => now(), 'created_at' => now()->subSeconds(3), 'updated_at' => now()]);
+    $payload = ['subjectId' => '2423', 'id' => '880001', 'receivedAt' => now()->toIso8601String(), 'subscriber' => ['identifier' => '5493510000000'],
+        'messageContent' => ['type' => 'TEXT', 'text' => "(solicitud: $token)"]];
+    $anchorId = DB::table('edna_incoming_events')->insertGetId(['subject_id' => $send->subject_id, 'message_id' => '880001',
+        'payload' => Crypt::encryptString(json_encode($payload)), 'status' => 'delivered', 'created_at' => now(), 'updated_at' => now()]);
+    $anchor = DB::table('edna_incoming_events')->find($anchorId);
+    $id = (new WebChatContinuity)->captureReference($anchor, DB::table('web_form_receipts')->find($uuid));
+    $anchorProof = [...$proof, 'entry_event_id' => $anchorId, 'entry_message_id' => '880001', 'message_id' => '852'];
+    DB::table('web_chat_contexts')->where('id', $id)->update(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+        'proof' => json_encode($anchorProof), 'state' => 'bound']);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->andReturn(['status' => 'ready']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    Http::fake(['example.test/*' => Http::response(['ok' => true, 'contract' => EdnaFreshIntake::DECLARATION,
+        'case_id' => $send->request_id, 'action' => 'queued', 'reason' => 'ready', 'write_attempted' => true, 'lead_id' => '909'])]);
+    (new EdnaNativeIntake)->process($request, $send, $proof);
+    $stored = DB::table('edna_intake_requests')->find($request->id);
+    if ($matching) {
+        expect($stored)->toMatchObject(['state' => 'pending_requalification', 'web_submission_id' => $uuid, 'lead_id' => '707']);
+        Http::assertNothingSent();
+        Queue::assertPushed(\App\Jobs\RequalifyEdnaWebDeclaration::class, 1);
+    } else {
+        expect($stored->state)->toBe('synced')->and($stored->web_submission_id)->toBeNull()->and($stored->lead_id)->toBe('909');
+        Http::assertSentCount(1);
+    }
+})->with([true, false]);
+
+test('a later authenticated inbound in the original session extends the valid handoff time', function () {
+    [$request, $send, $proof] = independentCompletedFlow();
+    $this->travel(25)->hours();
+    $payload = ['id' => '700150', 'subjectId' => $send->subject_id, 'receivedAt' => now()->subMinutes(5)->toIso8601String(),
+        'subscriber' => ['identifier' => Crypt::decryptString($send->recipient)], 'messageContent' => ['type' => 'TEXT', 'text' => 'Consulta']];
+    DB::table('edna_incoming_events')->insert(['subject_id' => $send->subject_id, 'message_id' => $payload['id'],
+        'payload' => Crypt::encryptString(json_encode($payload)), 'status' => 'delivered', 'created_at' => now(), 'updated_at' => now()]);
+    $crm = Mockery::mock(EdnaBitrix::class);
+    $crm->shouldReceive('call')->once()->with('imopenlines.session.history.get', ['SESSION_ID' => (int) $proof['session_id']])
+        ->andReturn(['sessionId' => $proof['session_id'], 'chatId' => $proof['chat_id'], 'hasNextPage' => false,
+            'users' => ['900' => ['connector' => true]], 'message' => [['senderid' => '900', 'chatid' => $proof['chat_id'],
+                'params' => ['connectorMid' => [$payload['id']]]]]]);
+    expect((new EdnaFreshCaseRoute)->expiresAt($send, $request, $proof, $crm)->toIso8601String())
+        ->toBe(now()->subMinutes(5)->addDay()->toIso8601String());
+});
+
+test('the exact new lead hands its session to its assigned seller once, preserving a human takeover and foreign CRM owners', function (string $scenario) {
+    [$request, $send, $proof] = independentCompletedFlow();
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => 'synced', 'lead_id' => '909']);
+    $case = ['lead_id' => '909', 'request_uuid' => $send->request_id, 'identity_hash' => (new WebFormReceipt)->identityHash('20123456786')];
+    DB::table('edna_intake_chat_routes')->insert(['request_id' => $request->id, 'proof' => json_encode($proof),
+        'assigned_case' => json_encode($case), 'state' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+    $allowed = Mockery::mock(\App\Support\BitrixSellerRegistry::class);
+    $allowed->shouldReceive('enabledIds')->andReturn([5737]);
+    app()->instance(\App\Support\BitrixSellerRegistry::class, $allowed);
+    $crm = Mockery::mock(EdnaBitrix::class);
+    $crm->shouldReceive('call')->with('crm.lead.get', ['id' => '909'])->andReturn(['ID' => '909', 'UF_CRM_1693840106704' => '20123456786',
+        'ORIGINATOR_ID' => 'redunisol.edna.fresh-v3', 'ORIGIN_ID' => $send->request_id, 'UF_CRM_WA_ASSISTANCE_ID' => $send->request_id,
+        'STATUS_SEMANTIC_ID' => 'S', 'CONTACT_ID' => '0']);
+    $crm->shouldReceive('call')->withArgs(fn ($m, $p) => $m === 'crm.deal.list' && $p['filter']['=LEAD_ID'] === '909')
+        ->andReturn([['ID' => '800', 'LEAD_ID' => '909', 'CATEGORY_ID' => '1', 'STAGE_ID' => 'C1:NEW',
+            'STAGE_SEMANTIC_ID' => 'P', 'CLOSED' => 'N', 'ASSIGNED_BY_ID' => '5737', 'CONTACT_ID' => '0']]);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('targetActive')->once()->with(5737)->andReturn(true);
+    $attention->shouldReceive('canTransfer')->once()->andReturn(true);
+    $snapshot = ['dialog_tuple' => ['owner' => '74827'], 'records' => [['entity' => 'lead', 'id' => '101', 'owner' => '42', 'creator' => '42']]];
+    $ready = ['status' => 'ready', 'owner_id' => '74827', 'native_snapshot' => $snapshot];
+    $attention->shouldReceive('inspect')->twice()->andReturn($ready, $scenario === 'manual'
+        ? ['status' => 'preserved', 'reason' => 'operator_attention_preserved'] : $ready);
+    if ($scenario !== 'manual') {
+        $attention->shouldReceive('compatible')->andReturn(true);
+        $crm->shouldReceive('call')->once()->with('imopenlines.config.get', ['CONFIG_ID' => 1])->andReturn(['ID' => 1,
+            'CRM_TRANSFER_CHANGE' => $scenario === 'safe' ? 'N' : 'Y']);
+    }
+    app()->instance(EdnaBitrix::class, $crm);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    if ($scenario === 'safe') {
+        $crm->shouldReceive('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => (int) $proof['chat_id'], 'USER_ID' => 5737])->andReturn(true);
+        $attention->shouldReceive('snapshot')->once()->andReturn(['dialog_tuple' => ['owner' => '5737']]);
+        expect(fn () => (new EdnaIntakeChatRouting)->route($request->id))->toThrow(RuntimeException::class);
+    }
+    (new EdnaIntakeChatRouting)->route($request->id);
+    (new EdnaIntakeChatRouting)->route($request->id);
+    $reason = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->value('reason');
+    expect($reason)->toBe(match ($scenario) {
+        'safe' => 'target_confirmed', 'manual' => 'operator_attention_preserved', 'foreign' => 'native_crm_transfer_would_change_owner',
+    });
+})->with(['safe', 'manual', 'foreign']);
 
 test('fresh completed v3 reuses the existing identity contract and enqueues its assigned chat once', function () {
     [$request, $send, $proof] = freshCompletedRequest();

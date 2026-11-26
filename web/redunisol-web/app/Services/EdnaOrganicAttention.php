@@ -114,11 +114,16 @@ class EdnaOrganicAttention
         }
     }
 
-    public function canTransfer(array $snapshot, int $targetId, bool $otherInquiry = false, ?string $verifiedContact = null): bool
+    public function canTransfer(array $snapshot, int $targetId, bool $otherInquiry = false, ?string $verifiedContact = null, bool $independent = false): bool
     {
         if ($targetId < 1 || ! $this->validSnapshot($snapshot)
             || ! in_array($snapshot['dialog_tuple']['owner'], ['', '0', '57', '74827', (string) $targetId], true)) {
             return false;
+        }
+        if ($independent) {
+            // The caller verifies CRM_TRANSFER_CHANGE live before the POST.
+            // The native records are historical context for this session.
+            return true;
         }
         foreach ($snapshot['records'] as $record) {
             // An explicit non-loan inquiry routes the chat, not the contact's
@@ -201,9 +206,9 @@ class EdnaOrganicAttention
         }
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null, bool $independent = false, ?string $freshLead = null): bool
     {
-        if (! $this->canTransfer($before, $targetId, $otherInquiry, $verifiedContact) || ! $this->validSnapshot($after)) {
+        if (! $this->canTransfer($before, $targetId, $otherInquiry, $verifiedContact, $independent) || ! $this->validSnapshot($after)) {
             return false;
         }
         if (! $afterTransfer) {
@@ -222,7 +227,8 @@ class EdnaOrganicAttention
             if ($record === $current) {
                 continue;
             }
-            if (! $this->provisionalLead($record) || $current['owner'] !== (string) $targetId) {
+            $provisional = $independent ? EdnaFreshCaseRoute::provisionalOwnLead($record, $freshLead) : $this->provisionalLead($record);
+            if (! $provisional || $current['owner'] !== (string) $targetId) {
                 return false;
             }
             $record['owner'] = (string) $targetId;

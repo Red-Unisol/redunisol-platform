@@ -23,6 +23,7 @@ class PrequalifyFormWithKestra
                 'province' => $this->normalizeString($input['provincia'] ?? null),
                 'employment_status' => $this->normalizeString($input['situacion_laboral'] ?? null),
                 'payment_bank' => $this->normalizeString($input['banco'] ?? null),
+                ...(isset($input['organismo']) ? ['organismo' => $input['organismo']] : []),
             ]);
     }
 

@@ -56,6 +56,8 @@ class WebChatLinkerCrmFake extends EdnaBitrix
 
     public int $transferCalls = 0;
 
+    public string $propagation = 'Y';
+
     public int $sessionId = 501;
 
     public int $activityOwnerType = 1;
@@ -82,6 +84,7 @@ class WebChatLinkerCrmFake extends EdnaBitrix
             'crm.activity.binding.list' => $this->bindings,
             'crm.activity.binding.add' => $this->addBinding($payload),
             'imopenlines.dialog.get' => $this->dialog,
+            'imopenlines.config.get' => ['ID' => '1', 'CRM_TRANSFER_CHANGE' => $this->propagation],
             'imopenlines.operator.transfer' => $this->transfer($payload),
             'batch' => $this->batch($payload),
             default => throw new RuntimeException('Unexpected CRM operation in linker fixture: '.$method),
@@ -105,7 +108,9 @@ class WebChatLinkerCrmFake extends EdnaBitrix
             $this->dialog['owner'] = (int) $payload['USER_ID'];
             // Emulate Bitrix's existing native Guest side effect, without editing
             // the pre-existing website lead, contact or negotiation.
-            $this->native['ASSIGNED_BY_ID'] = (string) $payload['USER_ID'];
+            if ($this->propagation === 'Y') {
+                $this->native['ASSIGNED_BY_ID'] = (string) $payload['USER_ID'];
+            }
         }
         if ($this->transferMode !== 'ack') {
             throw new RuntimeException('A response was lost after a bounded provider request.');
@@ -237,6 +242,132 @@ function webChatLinkerRow(object $fixture): object
 {
     return DB::table('web_form_chat_routes')->where('entry_event_id', $fixture->event->id)->first();
 }
+
+test('a new web request follows its deal without changing the historical owners or a human takeover', function (string $scenario, int $expected) {
+    $f = webChatLinkerFixture();
+    $f->crm->web += ['ORIGIN_ID' => $f->submission, 'ORIGINATOR_ID' => 'redunisol.web.chat-owner-v1'];
+    $f->crm->web['ASSIGNED_BY_ID'] = '57';
+    $f->crm->contact['ASSIGNED_BY_ID'] = '90001';
+    $f->crm->native['ASSIGNED_BY_ID'] = '90002';
+    $f->crm->propagation = $scenario === 'propagation' ? 'Y' : 'N';
+    if ($scenario === 'human') {
+        $f->guard->beforeInspect = function (int $call) use ($f) {
+            if ($call === 2) {
+                $f->crm->dialog['owner'] = 74827;
+            }
+        };
+    }
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe($expected)
+        ->and($f->crm->web['ASSIGNED_BY_ID'])->toBe('57')
+        ->and($f->crm->native['ASSIGNED_BY_ID'])->toBe('90002')
+        ->and($f->crm->contact['ASSIGNED_BY_ID'])->toBe('90001');
+})->with([['ok', 1], ['propagation', 0], ['human', 0]]);
+
+test('queue readiness binds the actual request and rechecks current attention before allocating a turn', function () {
+    $f = webChatLinkerFixture();
+    $f->crm->web += ['ORIGIN_ID' => $f->submission, 'ORIGINATOR_ID' => 'redunisol.web.chat-owner-v1'];
+    $f->crm->deal['STAGE_ID'] = 'C1:KESTRA_QUEUE';
+    $f->crm->deal['CLOSED'] = 'N';
+    $f->crm->deal['ASSIGNED_BY_ID'] = '57';
+    DB::table('edna_intake_cutovers')->insert(['name' => \App\Services\EdnaFreshIntake::OWNERSHIP,
+        'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    $f->linker->process($f->event->id);
+    $case = ['channel' => 'web', 'request_id' => $f->submission, 'deal_id' => 900, 'lead_id' => 700];
+    $app = new \App\Services\CommercialChatReadiness($f->crm, new \App\Services\EdnaOrganicAttention($f->crm, $f->guard));
+    expect($app->check([$case], false)[0]['state'])->toBe('ready');
+    expect($app->check([$case], true)[0]['state'])->toBe('ready');
+    $f->crm->deal['STAGE_ID'] = 'C1:5';
+    expect($app->check([$case], true)[0]['state'])->toBe('waiting');
+    $f->crm->deal['STAGE_ID'] = 'C1:KESTRA_QUEUE';
+    $f->guard->status = 'preserved';
+    expect($app->check([$case], true)[0]['state'])->toBe('waiting')
+        ->and($app->check([array_replace($case, ['deal_id' => 999])], false)[0]['state'])->toBe('waiting');
+    $this->travel(25)->hours();
+    expect($app->check([$case], false)[0]['state'])->toBe('waiting')->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('the request-owned web route preserves the overnight wait only until the customer window closes', function (bool $weekend) {
+    $entry = CarbonImmutable::parse($weekend ? '2026-11-27T23:00:00Z' : '2026-11-26T23:00:00Z');
+    $opening = CarbonImmutable::parse($weekend ? '2026-11-30T12:00:00Z' : '2026-11-27T12:00:00Z');
+    $this->travelTo($entry);
+    $f = webChatLinkerFixture();
+    $f->crm->web += ['ORIGIN_ID' => $f->submission, 'ORIGINATOR_ID' => 'redunisol.web.chat-owner-v1'];
+    $f->crm->propagation = 'N';
+    $assigned = $f->crm->deal;
+    $f->crm->deal = array_replace($assigned, ['ASSIGNED_BY_ID' => '57', 'STAGE_ID' => 'C1:KESTRA_QUEUE',
+        'DATE_CREATE' => now()->toIso8601String(), 'UF_CRM_KQ_REASON' => 'waiting_for_request_chat|web|'.$f->submission.'|anses']);
+    $settings = $this->mock(\App\Support\WhatsAppOutOfHoursSettings::class);
+    $settings->shouldReceive('get')->andReturn(['timezone' => 'America/Argentina/Cordoba']);
+    $settings->shouldReceive('window')->once()->andReturn(['start' => $entry->subHours(3), 'end' => $opening]);
+
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'waiting', 'reason' => 'waiting_for_sales_opening']);
+    $row = webChatLinkerRow($f);
+    expect(CarbonImmutable::parse($row->available_at)->eq($opening->min($entry->addDay())))->toBeTrue()
+        ->and(CarbonImmutable::parse($row->retry_expires_at)->eq($opening->addHours(8)->min($entry->addDay())))->toBeTrue()
+        ->and($row->attempts)->toBe(0);
+    $f->crm->deal = $assigned;
+    $this->travelTo($opening);
+    (new WebFormChatRouting)->poll();
+    $f->linker->process($f->event->id);
+    expect(webChatLinkerRow($f)->state)->toBe($weekend ? 'expired' : 'routed')
+        ->and($f->crm->transferCalls)->toBe($weekend ? 0 : 1);
+})->with([false, true]);
+
+test('a rejected deal in a nonterminal Bitrix stage cannot take the new web chat', function () {
+    $f = webChatLinkerFixture();
+    $f->crm->web += ['ORIGIN_ID' => $f->submission, 'ORIGINATOR_ID' => 'redunisol.web.chat-owner-v1'];
+    $f->crm->deal['STAGE_ID'] = 'C1:5';
+    expect($f->linker->process($f->event->id))->toMatchArray(['state' => 'preserved', 'reason' => 'commercial_case_rejected'])
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+function webChatRevision(string $submission, int $secondsAgo, ?string $outcome, ?string $uuid = null): int
+{
+    $response = 15000 + DB::table('edna_flow_sends')->count();
+    $received = now()->subSeconds($secondsAgo);
+    $send = DB::table('edna_flow_sends')->insertGetId(['request_id' => $uuid ?? (string) Str::uuid(), 'entry_event_id' => $response + 15000,
+        'scope' => 'web-revision', 'subject_id' => '2423', 'cascade_id' => '2557', 'flow_id' => '950118281197789',
+        'state' => 'completed', 'entry_received_at' => $received, 'response_event_id' => $response]);
+
+    return DB::table('edna_intake_requests')->insertGetId(['flow_send_id' => $send, 'response_event_id' => $response,
+        'received_at' => $received, 'state' => $outcome ? 'synced' : 'pending_requalification', 'web_submission_id' => $submission,
+        'web_prequalification' => $outcome ? json_encode(['scope' => 'declared_data_prequalification',
+            'applies_to_web_request' => true, 'outcome' => $outcome], JSON_THROW_ON_ERROR) : null]);
+}
+
+test('the newest declaration by source time overrides an older positive web decision even if the older callback is processed later', function () {
+    $f = webChatLinkerFixture();
+    webChatRevision($f->submission, 3, 'rejected', 'ffffffff-ffff-4fff-8fff-ffffffffffff');
+    webChatRevision($f->submission, 3, 'qualified', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    webChatRevision($f->submission, 60, 'qualified');
+    expect($f->linker->process($f->event->id))->toBe(['state' => 'preserved', 'reason' => 'web_revision_prequalification_rejected'])
+        ->and($f->crm->calls)->toBe([])
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('a revision registered during commercial checks defers the unissued POST until a qualified decision is durable', function () {
+    $f = webChatLinkerFixture();
+    webChatRevision($f->submission, 60, 'qualified');
+    $pendingId = null;
+    $f->guard->beforeInspect = function ($call) use ($f, &$pendingId) {
+        if ($call === 2) {
+            $pendingId = webChatRevision($f->submission, 0, null);
+        }
+    };
+    expect($f->linker->process($f->event->id))->toBe(['state' => 'waiting', 'reason' => 'web_revision_prequalification_pending'])
+        ->and($f->crm->transferCalls)->toBe(0);
+    $route = webChatLinkerRow($f);
+    expect($route->transfer_state)->toBe('pending')
+        ->and(json_decode($route->proof, true))->not->toHaveKey('transfer_intent');
+    DB::table('edna_intake_requests')->where('id', $pendingId)->update(['state' => 'synced',
+        'web_prequalification' => json_encode(['scope' => 'declared_data_prequalification', 'applies_to_web_request' => true, 'outcome' => 'qualified'])]);
+    webChatRevision((string) Str::uuid(), 0, 'rejected');
+    $this->travelTo(now()->addMinutes(2));
+    $f->linker->process($f->event->id);
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe(1)->and(webChatLinkerRow($f)->state)->toBe('routed');
+});
 
 class WebChatLinkerContinuityFake extends WebChatContinuity
 {

@@ -4,7 +4,7 @@ from typing import Any
 
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
-from .lead_service import update_lead_fields
+from .lead_service import linked_contact_id, update_lead_fields
 from .logger import Logger, create_logger
 from .normalization import normalize_birthdate
 
@@ -62,7 +62,7 @@ def backfill_contact_birthdate_to_leads(
 
     for lead in leads:
         lead_id = int(str(lead.get("ID") or "0"))
-        contact_id = _optional_int(lead.get("CONTACT_ID"))
+        contact_id = linked_contact_id(lead)
         if not lead_id or contact_id is None:
             result["skipped_missing_contact_count"] = int(result["skipped_missing_contact_count"]) + 1
             continue
@@ -132,9 +132,3 @@ def get_contact_birthdate(client: BitrixClient, contact_id: int) -> str:
     if not isinstance(contact, dict):
         raise RuntimeError(f"Bitrix24 devolvio un contacto invalido para {contact_id}.")
     return normalize_birthdate(contact.get("BIRTHDATE"))
-
-
-def _optional_int(raw_value: object) -> int | None:
-    if raw_value is None or str(raw_value).strip() == "":
-        return None
-    return int(str(raw_value))

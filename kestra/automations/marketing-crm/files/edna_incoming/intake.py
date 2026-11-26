@@ -87,14 +87,21 @@ def normalize_answer(data, *, retain_invalid_identity=False, flow_id=None):
                 "Jubilado Nacional" if organism == "anses" else "Jubilado Provincial")
     # Meta includes hidden values: never use organism or bank from another branch.
     bank = ""
-    caja_retirement = organism == "caja_cordoba" and situation != "pensionado"
-    if not caja_retirement:
+    caja_benefit = organism == "caja_cordoba"
+    if caja_benefit:
+        # The published v3 asked pensioners for this bank. Laravel's normalized
+        # v3 profiles can also retain that declaration. New Flows hide the field.
+        reported_bank = data.get("banco_jubilado")
+        if (situation == "pensionado" and flow_id in ("950118281197789", "whatsapp-intake-v3")
+                and isinstance(reported_bank, str) and reported_bank in BANKS):
+            bank = reported_bank
+    else:
         bank = data.get("banco_jubilado" if province == "cordoba" and retired else "banco_" + province)
         if not isinstance(bank, str) or bank not in {*BANKS, "ayuda"}:
             raise ValueError("Invalid intake bank.")
     segment = "cordoba_jubilado" if province == "cordoba" and situation in {"jubilado", "jubilado_pensionado"} else (
         "otra_provincia" if province == "otra" and not retired else province + "_" + situation)
-    automatic = bool(cuil) and not email_invalid and bool(employment) and (caja_retirement or bank in BANKS)
+    automatic = bool(cuil) and not email_invalid and bool(employment) and (caja_benefit or bank in BANKS)
     # Unresolved benefit/organism is manual even in another province; it may be
     # ANSES. Only an identified non-ANSES case keeps the provincial rejection.
     rejection = "province_not_eligible" if province == "otra" and (not retired or employment not in {"", "Jubilado Nacional"}) else (

@@ -83,14 +83,20 @@ class EdnaOrganicLoan
             }
             $snapshot = $this->attention->snapshot($proof);
             $proof['contact_id'] = ($snapshot['dialog_tuple']['bindings']['contact'] ?? null) ?: null;
-            $profile = $this->profiles->resolve($menu, $proof);
+            $preferFresh = app(EdnaFreshIntake::class)->declaration($menu);
+            $profile = $this->profiles->resolve($menu, $proof, $preferFresh);
             if (($profile['status'] ?? '') === 'pending') {
                 $this->finish($menu, $menu->attempts >= 12 ? 'review' : 'loan_pending', $profile['reason']);
 
                 return;
             }
-            if (($profile['status'] ?? '') !== 'reusable') {
+            if (in_array($profile['status'] ?? '', ['ambiguous', 'missing'], true)) {
                 $this->fallback($menu, $profile['reason'] ?? 'profile_requires_confirmation');
+
+                return;
+            }
+            if (($profile['status'] ?? '') !== 'reusable') {
+                $this->finish($menu, 'preserved', $profile['reason'] ?? 'profile_entry_unverified');
 
                 return;
             }
@@ -101,13 +107,18 @@ class EdnaOrganicLoan
             $binding['contact_id'] = $contactId ?: null;
             $binding['native_lead_id'] = $proof['native_lead_id'] ?: null;
             if (! $binding['native_lead_id'] && ! $binding['contact_id']) {
-                $this->finish($menu, 'review', 'organic_native_crm_identity_unavailable');
+                if ($preferFresh) {
+                    $this->fallback($menu, 'organic_native_crm_identity_unavailable');
+                } else {
+                    $this->finish($menu, 'review', 'organic_native_crm_identity_unavailable');
+                }
 
                 return;
             }
             $this->finish($menu, 'submission_pending', 'recent_profile_ready', [
                 'profile_snapshot' => Crypt::encryptString(json_encode($profile['answer'], JSON_THROW_ON_ERROR)),
-                'profile_evidence' => json_encode(['provenance' => $profile['provenance'], 'crm_binding' => $binding, 'native_snapshot' => $snapshot], JSON_THROW_ON_ERROR),
+                'profile_evidence' => json_encode(['provenance' => $profile['provenance'], 'crm_binding' => $binding,
+                    'native_snapshot' => $snapshot, 'fresh_declaration' => $preferFresh], JSON_THROW_ON_ERROR),
                 'case_id' => $menu->request_id, 'available_at' => now(), 'enqueued_at' => null,
             ]);
             $this->enqueue($menuId);
@@ -165,6 +176,7 @@ class EdnaOrganicLoan
             $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
             $choicePayload = json_decode(Crypt::decryptString($choice->payload), true, 32, JSON_THROW_ON_ERROR);
             $evidence = json_decode($menu->profile_evidence, true, 16, JSON_THROW_ON_ERROR);
+            $preferFresh = ($evidence['fresh_declaration'] ?? false) === true;
             $phone = Crypt::decryptString($menu->recipient);
             if (CarbonImmutable::parse($menu->expires_at)->lte(now())) {
                 $this->finish($menu, 'expired', 'conversation_window_elapsed');
@@ -176,7 +188,7 @@ class EdnaOrganicLoan
             if (! is_string($evidence['native_snapshot']['fingerprint'] ?? null)
                 || ! is_string($snapshot['fingerprint'] ?? null)
                 || ! hash_equals($evidence['native_snapshot']['fingerprint'], $snapshot['fingerprint'])
-                || ! $this->profiles->stillCurrent($menu, $answer, $evidence['provenance'], $snapshot)) {
+                || ! $this->profiles->stillCurrent($menu, $answer, $evidence['provenance'], $snapshot, $preferFresh)) {
                 $this->finish($menu, 'loan_pending', 'profile_or_native_identity_changed');
 
                 return;
@@ -252,13 +264,16 @@ class EdnaOrganicLoan
                 throw new RuntimeException('Organic inquiry acknowledgement unavailable.');
             }
             $action = $result['action'] ?? '';
-            if ($action === 'reused_not_valid' && $result['write_attempted'] === false) {
+            $requestFresh = ($result['request_fresh_profile'] ?? null) === true
+                || ($action === 'reused_not_valid' && ($result['reason'] ?? '') === 'current_person_unproven');
+            $canFallback = $preferFresh ? $requestFresh && in_array($action, ['reused_not_valid', 'manual_review'], true) : $action === 'reused_not_valid';
+            if ($result['write_attempted'] === false && $canFallback) {
                 // Persist the acknowledged no-write outcome. A delayed purpose
                 // check resumes only this fallback, never the business POST.
-                $menu->state = 'fallback_pending';
                 $this->update($menu, ['state' => 'fallback_pending', 'reason' => 'profile_requires_fresh_confirmation',
                     'profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result,
-                        array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
+                        array_flip(['action', 'reason', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
+                $menu->state = 'fallback_pending';
                 $this->fallback($menu, 'profile_requires_fresh_confirmation');
             } elseif ($action === 'assigned_case' && $result['write_attempted'] === false
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['deal_id'] ?? ''))
@@ -281,7 +296,11 @@ class EdnaOrganicLoan
                 $this->finish($menu, 'review', 'organic_reuse_'.(in_array($action, ['manual_review', 'disabled'], true) ? $action : 'acknowledgement_invalid'));
             }
         } catch (Throwable) {
-            $this->finish($menu, $started ? 'loan_unknown' : 'submission_pending', $started ? 'organic_reuse_result_uncertain' : 'organic_reuse_preflight_pending');
+            if ($menu->state === 'fallback_pending') {
+                $this->finish($menu, 'fallback_pending', 'profile_fallback_pending');
+            } else {
+                $this->finish($menu, $started ? 'loan_unknown' : 'submission_pending', $started ? 'organic_reuse_result_uncertain' : 'organic_reuse_preflight_pending');
+            }
         } finally {
             try {
                 $lock?->release();
@@ -295,6 +314,18 @@ class EdnaOrganicLoan
     {
         $proof = json_decode($menu->proof, true, 16, JSON_THROW_ON_ERROR);
         if ($this->preserveBenefits($menu, $proof)) {
+            return;
+        }
+        if (CarbonImmutable::parse($menu->expires_at)->lte(now())) {
+            $this->finish($menu, 'expired', 'conversation_window_elapsed');
+
+            return;
+        }
+        $attention = $this->attention->inspectWelcome($proof);
+        if (($attention['status'] ?? '') !== 'ready') {
+            $this->finish($menu, ($attention['status'] ?? '') === 'waiting' ? 'fallback_pending' : 'preserved',
+                $attention['reason'] ?? 'chat_attention_unverified');
+
             return;
         }
         DB::transaction(function () use ($menu, $reason): void {

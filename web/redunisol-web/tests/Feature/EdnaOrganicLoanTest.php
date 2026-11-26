@@ -5,6 +5,7 @@ use App\Jobs\SendEdnaFlow;
 use App\Jobs\SubmitEdnaOrganicLoan;
 use App\Services\AttributionJourney;
 use App\Services\EdnaBenefitsRouting;
+use App\Services\EdnaFreshIntake;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicProfile;
@@ -60,7 +61,7 @@ class OrganicLoanProfileFake extends EdnaOrganicProfile
             $this->result['answer'], $this->result['provenance']['confirmed_at'], '900', '800');
     }
 
-    public function resolve(object $menu, array $proof): array
+    public function resolve(object $menu, array $proof, bool $preferFresh = false): array
     {
         $this->calls++;
         if ($this->beforeResolve) {
@@ -70,13 +71,13 @@ class OrganicLoanProfileFake extends EdnaOrganicProfile
         return $this->result;
     }
 
-    public function stillCurrent(object $menu, array $answer, array $provenance, array $nativeSnapshot): bool
+    public function stillCurrent(object $menu, array $answer, array $provenance, array $nativeSnapshot, bool $preferFresh = false): bool
     {
         if ($this->beforeStillCurrent) {
             ($this->beforeStillCurrent)($menu);
         }
 
-        return parent::stillCurrent($menu, $answer, $provenance, $nativeSnapshot);
+        return parent::stillCurrent($menu, $answer, $provenance, $nativeSnapshot, $preferFresh);
     }
 }
 
@@ -113,7 +114,7 @@ class OrganicLoanAttentionFake extends EdnaOrganicAttention
         return $this->native + ['fingerprint' => hash('sha256', json_encode($this->native, JSON_THROW_ON_ERROR))];
     }
 
-    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null): bool
+    public function compatible(array $before, array $after, int $targetId, bool $afterTransfer = false, bool $otherInquiry = false, ?string $verifiedContact = null, bool $independent = false, ?string $freshLead = null): bool
     {
         $this->transferComparisons++;
         throw new RuntimeException('A credit inquiry must not apply Tincho transfer eligibility.');
@@ -168,6 +169,12 @@ function organicLoanAck(object $menu, array $changes = []): array
 function organicLoanContinuityCutover(int $entryAfter = 0): void
 {
     DB::table('edna_intake_cutovers')->insert(['name' => WebChatContinuity::NAME,
+        'entry_id_after' => $entryAfter, 'starts_at' => now()->subMinutes(10)]);
+}
+
+function organicLoanDeclarationCutover(int $entryAfter = 0): void
+{
+    DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::DECLARATION,
         'entry_id_after' => $entryAfter, 'starts_at' => now()->subMinutes(10)]);
 }
 
@@ -447,17 +454,68 @@ test('an assigned commercial case becomes route pending with the acknowledged ta
         ->and($updated->flow_send_id)->toBeNull()->and(DB::table('edna_flow_sends')->count())->toBe(0);
 });
 
-test('only an explicit backend no-write stale-profile result can start a fresh V3 after a POST', function (bool $wrote) {
+test('only a confirmed profile problem before any write can schedule a single fresh V3', function (array $ack, bool $fallback) {
+    organicLoanDeclarationCutover();
     $menu = organicLoanMenu();
     $service = organicLoanService();
     $service->prepare($menu->id);
-    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu, ['action' => 'reused_not_valid', 'write_attempted' => $wrote]))]);
+    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu, $ack))]);
     $service->submit($menu->id);
-    expect(DB::table('edna_flow_sends')->count())->toBe($wrote ? 0 : 1)
-        ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe($wrote ? 'review' : 'flow_scheduled');
-})->with([false, true]);
+    $service->submit($menu->id);
+    $service->prepare($menu->id);
+    expect(DB::table('edna_flow_sends')->count())->toBe($fallback ? 1 : 0)
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe($fallback ? 'flow_scheduled' : 'review');
+    Http::assertSentCount(1);
+})->with([
+    [['action' => 'manual_review', 'reason' => 'native_identity_conflict', 'request_fresh_profile' => true, 'write_attempted' => false], true],
+    [['action' => 'reused_not_valid', 'reason' => 'current_person_unproven', 'write_attempted' => false], true],
+    [['action' => 'manual_review', 'reason' => 'native_identity_conflict', 'request_fresh_profile' => true, 'write_attempted' => true], false],
+    [['action' => 'reused_not_valid', 'reason' => 'reused_profile_invalid', 'write_attempted' => false], false],
+    [['action' => 'manual_review', 'reason' => 'native_session_changed', 'write_attempted' => false], false],
+]);
+
+test('when a person takes the chat while Kestra evaluates reuse the bot preserves attention after the no-write response', function () {
+    organicLoanDeclarationCutover();
+    $menu = organicLoanMenu();
+    $service = organicLoanService($profile, $attention);
+    $service->prepare($menu->id);
+    Http::fake(function () use ($menu, $attention) {
+        $attention->welcome = ['status' => 'preserved', 'reason' => 'human_attention'];
+
+        return Http::response(organicLoanAck($menu, ['action' => 'manual_review', 'reason' => 'native_identity_conflict',
+            'request_fresh_profile' => true, 'write_attempted' => false]));
+    });
+    $service->submit($menu->id);
+    expect(DB::table('edna_flow_sends')->count())->toBe(0)
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved');
+    Queue::assertNotPushed(SendEdnaFlow::class);
+});
+
+test('the identity fallback and the profile resolver use the same original entry cutover', function (string $timing) {
+    $menu = organicLoanMenu();
+    if ($timing === 'new') {
+        organicLoanDeclarationCutover();
+    } elseif ($timing === 'late_old_callback') {
+        DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::DECLARATION, 'entry_id_after' => 0,
+            'starts_at' => now()->subMinutes(3)]);
+    }
+    $service = organicLoanService();
+    $service->prepare($menu->id);
+    $prepared = DB::table('edna_organic_menus')->find($menu->id);
+    expect(json_decode($prepared->profile_evidence, true)['fresh_declaration'])->toBe($timing === 'new');
+    if ($timing === 'already_prepared') {
+        organicLoanDeclarationCutover((int) $menu->choice_event_id);
+    }
+    Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu, [
+        'action' => 'manual_review', 'reason' => 'native_identity_conflict', 'request_fresh_profile' => true, 'write_attempted' => false,
+    ]))]);
+    $service->submit($menu->id);
+    expect(DB::table('edna_flow_sends')->count())->toBe($timing === 'new' ? 1 : 0)
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe($timing === 'new' ? 'flow_scheduled' : 'review');
+})->with(['new', 'already_prepared', 'late_old_callback']);
 
 test('data becoming stale or identifying someone else after capture cannot be submitted from its frozen copy', function (string $change) {
+    organicLoanDeclarationCutover();
     $menu = organicLoanMenu();
     $service = organicLoanService($profile);
     if ($change === 'stale') {
@@ -468,6 +526,10 @@ test('data becoming stale or identifying someone else after capture cannot be su
     $service->prepare($menu->id);
     if ($change === 'stale') {
         $this->travel(1)->minutes();
+    } elseif ($change === 'shared') {
+        $conflicting = array_replace($profile->result['answer'], ['cuil' => '20987654326']);
+        expect((new EdnaOrganicProfile)->record('web_form', (string) Str::uuid(), '5493510000000',
+            $conflicting, now()->subMonths(2)->toIso8601String(), '901', '801'))->toBeTrue();
     } else {
         $answer = $profile->result['answer'];
         $answer['cuil'] = '20987654326';
@@ -480,7 +542,7 @@ test('data becoming stale or identifying someone else after capture cannot be su
     $service->submit($menu->id);
     Http::assertNothingSent();
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->not->toBeIn(['loan_submitted', 'loan_unknown', 'submitting']);
-})->with(['stale', 'identity']);
+})->with(['stale', 'identity', 'shared']);
 
 test('an expired menu capture cannot submit a stored profile', function () {
     $menu = organicLoanMenu();
@@ -544,7 +606,7 @@ test('a delayed benefits decision after a no-write acknowledgement resumes fallb
         ['state' => 'waiting', 'reason' => 'benefits_case_reads_pending']);
     app()->instance(EdnaBenefitsRouting::class, $benefits);
     Http::fake(['kestra.example.test/*' => Http::response(organicLoanAck($menu,
-        ['action' => 'reused_not_valid', 'write_attempted' => false]))]);
+        ['action' => 'reused_not_valid', 'reason' => 'current_person_unproven', 'write_attempted' => false]))]);
 
     $service->submit($menu->id);
     expect(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('fallback_pending');

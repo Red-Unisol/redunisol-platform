@@ -1,5 +1,35 @@
 # Solicitud única dentro de WhatsApp
 
+La [revisión v3.1 para publicar](whatsapp-website-intake-v3.1.flow.json) omite
+el banco si se declaró jubilación o pensión de Caja Córdoba. El JSON v3 de octubre
+identifica el formulario que efectivamente se envió. Para activar v3.1 hace falta
+publicar un Flow con ID propio y habilitar ese ID en los receptores antes de
+cambiar el emisor. Los callbacks se interpretan según la versión que se envió.
+
+### Publicación y activación de v3.1
+
+1. En la cuenta de WhatsApp Manager que contiene el v3 `950118281197789`,
+   crear un Flow nuevo sin endpoint, cargar el JSON v3.1 y comprobar su vista
+   previa. Con jubilación **y** con pensión de Caja Córdoba debe pasar directo a
+   identidad. Con ANSES debe seguir pidiendo banco. Publicar, releer el estado
+   y cotejar el JSON del proveedor. El SHA-256 canónico del archivo v3.1 es
+   `7389016458965e8f205e4a6842deec06a8d2e190f9f92fef3d5a2c32633a8a93`
+   (UTF-8, claves ordenadas, sin espacios, caracteres Unicode sin escape).
+   [Edna usa el ID emitido por Meta](https://docs-pulse.edna.io/docs/additional-info/whatsapp/wa-flows/).
+2. Usar el ID publicado en `python tools/edna-pilot/prepare_intake_v31.py receiver --published-id ID --key-file RUTA_CLAVE`.
+   Por defecto sólo simula. Repetir con `--write` para preparar el cambio Git de
+   Kestra. El cambio conserva v1/v2/v3 y agrega v3.1. Desplegar la infraestructura
+   de Kestra y comprobar en su runtime el ID principal y los cuatro IDs aceptados.
+3. Con el receptor confirmado, ejecutar el mismo comando con `sender` en otro
+   cambio Git y desplegar Web. Sólo cambian el ID de envío y el nombre de la tanda
+   (`website-intake-v3-1`). Se conservan el alcance VENTAS, los cortes de
+   elegibilidad y el límite vigente. La reserva de un envío ordinario conserva
+   la versión de su tanda aun cuando la respuesta llegue después del cambio.
+4. Verificar el nuevo ID y tanda en los workers Web y, con el primer ingreso
+   nuevo, el ID del envío y del callback. Esta operación no recorre sesiones
+   ni relanza reservas o solicitudes anteriores. Para volver al v3, revertir
+   solamente la configuración del emisor hasta agotar las respuestas en curso.
+
 Definición acordada el 22/10 y ampliada el 27/10/2026: todos los segmentos del Router
 actual, exclusivamente para una entrada desde el botón de la web con referencia
 vigente y vinculada al teléfono/canal. CUIL obligatorio y email opcional.

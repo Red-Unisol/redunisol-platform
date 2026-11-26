@@ -73,6 +73,24 @@ it('queues form persistence after receiving commercial prequalification', functi
     Http::assertNotSent(fn ($request) => $request->url() === 'https://kestra.example.test/webhook');
 });
 
+it('passes the explicitly declared Caja Córdoba pension to both Kestra operations without a bank', function () {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
+    Queue::fake();
+    Http::fake(['kestra.example.test/*' => Http::response(['ok' => true, 'prequalified' => true])]);
+
+    $this->postJson('/api/form-submissions', ['landing_slug' => 'prueba', 'provincia' => 'Córdoba',
+        'situacion_laboral' => 'Pensionado', 'organismo' => 'caja_cordoba', 'terminos' => true])
+        ->assertOk()->assertJsonPath('qualified', true);
+    $job = Queue::pushed(PersistFormSubmission::class)->sole();
+    (new SubmitFormToKestra)->execute($job->input);
+    Http::assertSentCount(2);
+    foreach (Http::recorded() as [$request]) {
+        expect($request['employment_status'])->toBe('Pensionado')
+            ->and($request['organismo'])->toBe('caja_cordoba')->and($request->data()['payment_bank'] ?? null)->toBeNull();
+    }
+});
+
 it('requires the landing slug to submit the form', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');

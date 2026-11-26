@@ -7,7 +7,8 @@ from .capture import decode_json
 from .contract import NORMALIZER_VERSION as VERSION
 from .kestra_policy import catalogs
 
-SUPPORTED = {("web", "web-loan-v1"), ("whatsapp", "whatsapp-intake-v3"), ("whatsapp", "whatsapp-grouped-v1")}
+SUPPORTED = {("web", "web-loan-v1"), ("whatsapp", "whatsapp-intake-v3"), ("whatsapp", "whatsapp-intake-v3.1"),
+             ("whatsapp", "whatsapp-grouped-v1")}
 
 PROVINCES = {
     "cordoba": "cordoba", "catamarca": "catamarca", "buenos aires": "buenos_aires",
@@ -171,6 +172,9 @@ def web_fields(payload):
         fields["paying_organization"] = (
             fact("inferred", situation, value=organization) if organization else fact("missing", situation)
         )
+        if kind == "pensionado" and payload.get("organismo"):
+            provincial = "caja cordoba" if fields["province"].get("value") == "cordoba" else "caja provincial"
+            fields["paying_organization"] = choice(payload, "organismo", {"anses": "anses", provincial: "provincial_fund"})
     else:
         employment = catalog_choice(
             payload, situation, EMPLOYMENT, catalogs.SITUACIONES_LABORALES,
@@ -196,7 +200,8 @@ def web_fields(payload):
     return fields | identity(payload, "whatsapp")
 
 
-def whatsapp_fields(payload, *, legacy_grouped):
+def whatsapp_fields(payload, *, form_version):
+    legacy_grouped = form_version == "whatsapp-grouped-v1"
     province = choice(payload, "provincia", PROVINCES)
     fields = {"province": province}
     province_code = province.get("value")
@@ -224,7 +229,9 @@ def whatsapp_fields(payload, *, legacy_grouped):
         bank_field = "banco_jubilado" if branch == "cordoba" else f"banco_{branch}"
         if org.get("value") is None:
             fields["payment_bank"] = fact("undetermined", situation, org_field)
-        elif branch == "cordoba" and kind == "jubilado" and org.get("value") == "provincial_fund":
+        elif branch == "cordoba" and org.get("value") == "provincial_fund" and (
+            kind == "jubilado" or (kind == "pensionado" and form_version == "whatsapp-intake-v3.1")
+        ):
             fields["payment_bank"] = fact("not_applicable", situation, org_field)
         elif branch == "cordoba" and kind == "jubilado pensionado" and org.get("value") == "provincial_fund":
             fields["payment_bank"] = fact("undetermined", situation, org_field)
@@ -268,7 +275,7 @@ def normalize_document(channel, form_version, payload, path):
     if channel == "web":
         fields = web_fields(answers)
     else:
-        fields = whatsapp_fields(answers, legacy_grouped=form_version == "whatsapp-grouped-v1")
+        fields = whatsapp_fields(answers, form_version=form_version)
     return base | {"status": "interpreted", "fields": fields}
 
 

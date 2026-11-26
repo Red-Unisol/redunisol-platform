@@ -62,6 +62,15 @@ tasks:
       - python -m bitrix24_form_flow.kestra_whatsapp_intake_entrypoint
 
 outputs:
+  - id: web_submission_id
+    type: STRING
+    value: "{{ outputs.procesar.vars.web_submission_id ?? '' }}"
+  - id: input_digest
+    type: STRING
+    value: "{{ outputs.procesar.vars.input_digest ?? '' }}"
+  - id: rule_version
+    type: STRING
+    value: "{{ outputs.procesar.vars.rule_version ?? '' }}"
   - id: contract
     type: STRING
     value: "{{ outputs.procesar.vars.contract ?? '' }}"
@@ -77,6 +86,9 @@ outputs:
   - id: write_attempted
     type: BOOL
     value: "{{ outputs.procesar.vars.write_attempted ?? false }}"
+  - id: request_fresh_profile
+    type: BOOL
+    value: "{{ outputs.procesar.vars.request_fresh_profile ?? false }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.procesar.vars.ok }}"

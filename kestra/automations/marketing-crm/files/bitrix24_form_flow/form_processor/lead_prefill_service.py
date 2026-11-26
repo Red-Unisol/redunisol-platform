@@ -15,8 +15,10 @@ from .credixsa_employer_service import update_lead_with_credixsa_output
 from .lead_service import (
     build_submission_from_lead,
     get_lead,
+    linked_contact_id,
     resolve_processing_policy_enum_id,
     update_lead_fields,
+    uses_fresh_v3_receipt,
 )
 from .logger import Logger, create_logger
 from .normalization import normalize_birthdate
@@ -88,7 +90,7 @@ def select_new_leads_for_prefill(
             dni=dni,
         )
         keys = {f"lead:{lead_id}"}
-        contact_id = _optional_int(lead.get("CONTACT_ID"))
+        contact_id = linked_contact_id(lead)
         if contact_id and contact_id > 0:
             keys.add(f"contact:{contact_id}")
         # CUIL and Finguru DNI must collide before identity resolution runs.
@@ -286,9 +288,10 @@ def prefill_lead(
         str(lead.get(config.fields.lead_source) or "").strip() == FINGURU_SOURCE_ID
         and bool(cuil)
         and _is_valid_cuil(cuil or "")
-        and (_optional_int(lead.get("CONTACT_ID")) or 0) <= 0
+        and linked_contact_id(lead) is None
     )
-    if identity["status"] == IDENTITY_SANITIZED or should_link_finguru_contact:
+    if (not uses_fresh_v3_receipt(lead)
+            and (identity["status"] == IDENTITY_SANITIZED or should_link_finguru_contact)):
         try:
             contact = upsert_contact(
                 client,
@@ -445,7 +448,7 @@ def _apply_arca_output(
     if not bool(output.get("ok")):
         return False
 
-    contact_id = _optional_int(lead.get("CONTACT_ID"))
+    contact_id = linked_contact_id(lead)
     birthdate = normalize_birthdate(output.get("fecha_nacimiento"))
     nombre = _optional_str(output.get("nombre"))
     apellido = _optional_str(output.get("apellido"))
@@ -490,7 +493,7 @@ def _apply_bcra_name_fallback(
     logger: Logger,
 ) -> bool:
     """Replace only email-derived placeholder names with BCRA's holder name."""
-    contact_id = _optional_int(lead.get("CONTACT_ID"))
+    contact_id = linked_contact_id(lead)
     resolved_name = _optional_str(denominacion)
     if contact_id is None or resolved_name is None:
         return False

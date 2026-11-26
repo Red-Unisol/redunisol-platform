@@ -77,6 +77,7 @@ class FormSubmissionRequest extends FormRequest
             ],
             'provincia' => ['nullable', 'string', 'max:120'],
             'situacion_laboral' => ['nullable', 'string', 'max:120'],
+            'organismo' => ['nullable', 'in:caja_cordoba,anses,caja_provincial'],
             'banco' => ['nullable', 'string', 'max:255'],
             'terminos' => ['nullable', 'accepted'],
             'landing_slug' => ['required', 'string', 'max:255'],

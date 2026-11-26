@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Support\WhatsAppOutOfHoursSettings;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /** Bounds automatic recovery without discarding receipts of uncertain writes. */
@@ -45,14 +47,42 @@ class WebFormChatRetryPolicy
             - CarbonImmutable::parse($route->created_at)->addHours(self::WINDOW_HOURS)->timestamp);
     }
 
-    public function salesHold(object $route, array $deal, array $entryTimes): ?array
+    public function requestQueue(array $deal, ?string $requestId): bool
+    {
+        return $requestId !== null && str_starts_with((string) ($deal['UF_CRM_KQ_REASON'] ?? ''),
+            'waiting_for_request_chat|web|'.$requestId.'|');
+    }
+
+    public function salesHold(object $route, array $deal, array $entryTimes, ?string $requestId = null): ?array
     {
         if (($deal['STAGE_ID'] ?? '') !== 'C1:KESTRA_QUEUE' || (string) ($deal['ASSIGNED_BY_ID'] ?? '') !== '57'
             || (! empty($route->deal_id) && (string) $route->deal_id !== (string) $deal['ID'])) {
             return null;
         }
         $parts = explode('|', (string) ($deal['UF_CRM_KQ_REASON'] ?? ''), 4);
-        if (count($parts) !== 4 || $parts[0] !== 'waiting_for_sales_opening' || $parts[3] === '') {
+        if (count($parts) !== 4 || $parts[3] === '') {
+            return null;
+        }
+        $validUntil = null;
+        if ($this->requestQueue($deal, $requestId)) {
+            // The request marker survives the night. Read the same calendar used by Kestra.
+            // Concurrent waiting routes can share one answer for this minute and calendar.
+            $settings = app(WhatsAppOutOfHoursSettings::class);
+            $calendar = $settings->get();
+            $now = CarbonImmutable::now();
+            $key = 'web-chat:sales-window:'.$now->utc()->format('YmdHi').':'.hash('sha256', json_encode($calendar, JSON_THROW_ON_ERROR));
+            [$window] = Cache::remember($key, $now->addMinute()->startOfMinute(), fn () => [$settings->window($now, $calendar)]);
+            $received = $entryTimes[1] ?? null;
+            if (! $window || ! is_string($received) || ! preg_match('/(?:Z|[+-]\d{2}:\d{2})$/D', $received)) {
+                return null;
+            }
+            $validUntil = CarbonImmutable::parse($received)->addDay();
+            if ($validUntil->lte($now) || $window['start']->gt($now) || $window['end']->lte($now)) {
+                return null;
+            }
+            $parts[1] = $window['start']->utc()->toIso8601String();
+            $parts[2] = $window['end']->utc()->toIso8601String();
+        } elseif ($parts[0] !== 'waiting_for_sales_opening') {
             return null;
         }
         try {
@@ -77,7 +107,7 @@ class WebFormChatRetryPolicy
                 return null;
             }
 
-            return ['start' => $start, 'open' => $open];
+            return ['start' => $start, 'open' => $open, 'valid_until' => $validUntil];
         } catch (Throwable) {
             return null;
         }
