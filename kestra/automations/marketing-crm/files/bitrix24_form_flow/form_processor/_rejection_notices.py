@@ -29,6 +29,12 @@ NOTICE_SHA256 = frozenset({
     "102a4ae66bae8e917cbcf94f20bf2f64d74f00796cba72abb9087a06d425f49a",  # 407 NO CUMPLE REQUISITOS
 })
 
+# The deal-stage BCRA robot (C1:5) wraps notice 707 in a greeting and sign-off,
+# exactly as EdnaRejectionNotice::matchDeal accepts it in the web.
+BCRA_DEAL_GREETING = "¡Hola! "
+BCRA_DEAL_SIGN_OFF = "  ¡Gracias por tu consulta!"
+BCRA_DEAL_NOTICE_SHA256 = "43c21a7ff2c485ea1ccdf498d89a6463f12b42718d3be44e8d473a12ec3eb19a"
+
 
 def normalize(text):
     if not isinstance(text, str) or len(text) > 20000:
@@ -42,5 +48,7 @@ def normalize(text):
 def is_rejection_notice(sender_id, text):
     """True only for the robot sender posting an exact catalog notice."""
     normalized = normalize(text)
-    return (sender_id == ROBOT_SENDER_ID and normalized is not None
-            and sha256(normalized.encode("utf-8")).hexdigest() in NOTICE_SHA256)
+    if sender_id != ROBOT_SENDER_ID or normalized is None:
+        return False
+    digest = sha256(normalized.encode("utf-8")).hexdigest()
+    return digest in NOTICE_SHA256 or digest == BCRA_DEAL_NOTICE_SHA256

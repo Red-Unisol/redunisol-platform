@@ -18,6 +18,15 @@ class RejectionNoticeCatalogTests(unittest.TestCase):
         for item in catalog["notices"]:
             self.assertTrue(notices.is_rejection_notice(57, item["text"]), item["source_template_id"])
 
+    def test_the_bcra_deal_robot_variant_matches_like_in_the_web(self):
+        catalog = json.loads(WEB_CATALOG.read_text(encoding="utf-8"))
+        bcra = next(item["text"] for item in catalog["notices"] if item["reason_label"] == "SIT NEG BCRA")
+        wrapped = notices.BCRA_DEAL_GREETING + notices.normalize(bcra) + notices.BCRA_DEAL_SIGN_OFF
+        self.assertTrue(notices.is_rejection_notice(57, wrapped))
+        other = next(item["text"] for item in catalog["notices"] if item["reason_label"] == "OTRO BANCO")
+        self.assertFalse(notices.is_rejection_notice(
+            57, notices.BCRA_DEAL_GREETING + notices.normalize(other) + notices.BCRA_DEAL_SIGN_OFF))
+
     def test_only_the_robot_sender_and_the_exact_copy_match(self):
         text = json.loads(WEB_CATALOG.read_text(encoding="utf-8"))["notices"][0]["text"]
         self.assertTrue(notices.is_rejection_notice(57, "\r\n" + text + " \t"))
