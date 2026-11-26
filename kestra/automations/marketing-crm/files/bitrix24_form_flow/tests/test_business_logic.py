@@ -490,6 +490,10 @@ class FakeBitrixClient:
 
     def _deal_matches(self, deal: dict, filters: dict) -> bool:
         for raw_field, expected in filters.items():
+            if raw_field.startswith("!"):
+                if str(deal.get(raw_field[1:]) or "") == str(expected):
+                    return False
+                continue
             if raw_field.startswith(">="):
                 field_name = raw_field[2:]
                 if str(deal.get(field_name) or "") < str(expected):
@@ -3018,10 +3022,12 @@ class BusinessLogicTests(unittest.TestCase):
                     "cuil": "20-87654321-9", "province": "Cordoba", "employment_status": "Jubilado Provincial",
                     "payment_bank": "Banco Santander Rio S.A.", "lead_source": "Facebook",
                     "submission_channel": channel, "form_received_at": received,
+                    "chat_ownership_request_id": "85d82070-e559-45e9-a798-b949aaa33f78",
                 }, env=self.env, bitrix_client=client, logger=SilentLogger())
                 self.assertTrue(result["ok"])
                 added = next(body["fields"] for method, body in client.calls if method == "crm.lead.add")
                 self.assertEqual(added.get("ASSIGNED_BY_ID"), expected)
+                self.assertEqual(added.get("ORIGINATOR_ID"), "redunisol.web.chat-owner-v1" if expected else None)
 
     def test_ingest_submission_reuses_master_contact_when_cuil_is_duplicated(self) -> None:
         client = FakeBitrixClient()
@@ -5872,6 +5878,57 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[948]["ufCrmKqReason"], "cbu_approved")
         self.assertEqual(client.deals[948]["ufCrmKqStage"], "C1:NEW")
         self.assertEqual(client.chat_transfers, [])
+
+    def test_receipt_ownership_waits_for_actionable_work_and_only_assigns_that_deal(self):
+        from bitrix24_form_flow.form_processor import _chat_ownership as ownership
+        client = FakeBitrixClient()
+        client.online_user_ids = {10451}
+        received = "2026-12-04T10:00:00-03:00"
+        friday = datetime.fromisoformat(received)
+        for id_ in (960, 961):
+            client.leads[id_] = self._cordoba_enriched_lead(id_, employment_id="1239", bcra_entities=[])
+            client.leads[id_].update(DATE_CREATE=received, UF_CRM_BCRA_CHECKED_AT=received, ASSIGNED_BY_ID=57,
+                                      ORIGINATOR_ID=ownership.WEB_ORIGIN, ORIGIN_ID=f"82e06277-0d55-4383-996f-eabcd3180{id_:03d}")
+            client.deals[id_] = dict(self._pending_deal(id_, id_), createdTime=received)
+            if id_ == 961:
+                client.leads[id_].update(ORIGINATOR_ID="redunisol.edna.fresh-v3", SOURCE_DESCRIPTION=ownership.V3_DESCRIPTION)
+            with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee") as selector:
+                result = qualify_catamarca_deal(id_, env=self.env, bitrix_client=client, logger=SilentLogger(), now=friday)
+                self.assertEqual((result["reason"], result["commercial_action"]), (ownership.WAIT, "approved"))
+                selector.assert_not_called()
+
+        def run(at=friday):
+            with patch.object(ownership, "candidate_filters", return_value=[{"@leadId": [960, 961]}]):
+                return process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(), now=at)
+
+        with patch.object(ownership, "readiness", return_value={}) as lookup:
+            self.assertEqual(run(datetime.fromisoformat("2026-12-05T10:00:00-03:00"))["event_count"], 0)
+            lookup.assert_not_called()
+            self.assertEqual(run()["distributed_count"], 0)
+            self.assertEqual([client.deals[i]["assignedById"] for i in (960, 961)], [57, 57])
+
+        chat = {961: ("chat", 146801, 234)}
+        with patch.object(ownership, "readiness", side_effect=[chat, {}, chat, chat, {}]):
+            # A stale signal, then a human taking it between reads, must not assign.
+            self.assertEqual(run()["distributed_count"], 0)
+            self.assertEqual(run()["distributed_count"], 0)
+        self.assertEqual(client.deals[961]["stageId"], "C1:KESTRA_QUEUE")
+        with patch.object(ownership, "readiness", return_value=chat):
+            self.assertEqual(run()["distributed_count"], 1)
+            self.assertEqual(run()["distributed_count"], 0)
+        self.assertEqual(client.deals[961]["assignedById"], 10451)
+        self.assertEqual(client.leads[961]["ASSIGNED_BY_ID"], 57)
+        self.assertEqual(client.chat_transfers, [])
+
+        # Seller manually chosen on this specific waiting deal must survive.
+        client.deals[960]["assignedById"] = 29
+        with patch.object(ownership, "readiness", return_value={960: ("outbound", 567)}), patch(
+            "bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee"
+        ) as selector:
+            result = run()
+            self.assertEqual(result["events"][0]["reason"], "existing_request_owner_preserved")
+            self.assertEqual(client.deals[960]["assignedById"], 29)
+            selector.assert_not_called()
 
     def test_assignment_queue_processes_each_bucket_independently(self) -> None:
         client = FakeBitrixClient()

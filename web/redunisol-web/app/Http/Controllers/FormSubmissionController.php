@@ -7,6 +7,7 @@ use App\Http\Requests\FormSubmissionRequest;
 use App\Jobs\PersistFormSubmission;
 use App\Services\AttributionJourney;
 use App\Services\EdnaAssistance;
+use App\Services\EdnaFreshIntake;
 use App\Services\JourneyLedger;
 use App\Services\WebFormReceipt;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +43,9 @@ class FormSubmissionController extends Controller
         ], $input['_journey_links']);
         try {
             $continuationReference = app(WebFormReceipt::class)->register($input);
+            if (app(EdnaFreshIntake::class)->webOwnership($input['_form_received_at'])) {
+                $input['_chat_ownership_request_id'] = $input['_journey_links']['submission_id'];
+            }
         } catch (Throwable $exception) {
             report($exception);
 

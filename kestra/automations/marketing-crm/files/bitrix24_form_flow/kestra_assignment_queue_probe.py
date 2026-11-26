@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 from .form_processor._routing_cutover import new_routing_enabled
+from .form_processor import _chat_ownership as request_ownership
 from .form_processor.config import load_routing_settings
 from .form_processor._sales_opening import queue_marker_sleeping, sales_closed_window
 
@@ -46,16 +47,32 @@ def ready_count(fetch_page, settings, reason_field, bucket_field, now):
     return 0
 
 
+def eligible(fetch_page, settings, fields, now, positive_filters):
+    action, reason, bucket = fields
+    legacy = ready_count(lambda start: fetch_page(start, {"!" + action: request_ownership.WAIT}),
+                         settings, reason, bucket, now)
+    if legacy:
+        return legacy
+    enrolled = {"=" + action: request_ownership.WAIT}
+    if not fetch_page(-1, enrolled)["result"]["items"] or sales_closed_window(now, settings()[1]):
+        return 0
+    for positive in positive_filters():
+        if fetch_page(-1, {**enrolled, **positive})["result"]["items"]:
+            return 1
+    return 0
+
+
 def main():
     reason_field = os.environ["QUEUE_REASON_FIELD"]
     bucket_field = os.environ["ROUTING_BUCKET_FIELD"]
+    action_field = os.environ["QUEUE_ACTION_FIELD"]
 
-    def fetch_page(start):
+    def fetch_page(start, filters):
         params = {
             "entityTypeId": 2,
             "filter": {"=categoryId": os.environ["BITRIX24_DEAL_CATEGORY_ID"],
-                       "=stageId": os.environ["BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID"]},
-            "select": ["id", "createdTime", reason_field, bucket_field],
+                       "=stageId": os.environ["BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID"], **filters},
+            "select": ["id", "leadId", "createdTime", reason_field, bucket_field],
             "order": {"id": "ASC"}, "start": start,
         }
         request = Request(os.environ["BITRIX24_LIST_URL"], data=json.dumps(params).encode(),
@@ -66,8 +83,8 @@ def main():
         except OSError:
             raise RuntimeError("No se pudo consultar la cola comercial de Bitrix.") from None
 
-    total = ready_count(fetch_page, lambda: load_routing_settings(os.environ), reason_field, bucket_field,
-                        datetime.now(timezone.utc))
+    total = eligible(fetch_page, lambda: load_routing_settings(os.environ), (action_field, reason_field, bucket_field),
+                     datetime.now(timezone.utc), lambda: request_ownership.candidate_filters(os.environ))
     print("::" + json.dumps({"outputs": {"total": total}}) + "::")
 
 

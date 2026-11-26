@@ -427,7 +427,7 @@ test('a human accepting an organic chat during queue delay cancels its pending F
     Http::assertNothingSent();
 });
 
-test('acceptance during profile resolution is protected again when the reserved fallback actually sends', function () {
+test('acceptance during profile resolution stops the fallback before it reserves a new Flow', function () {
     $menu = organicFlowMenuForSend(false);
     $attended = false;
     $attention = Mockery::mock(EdnaOrganicAttention::class);
@@ -444,11 +444,8 @@ test('acceptance during profile resolution is protected again when the reserved 
     });
     (new EdnaOrganicLoan($profiles, $attention))->prepare($menu->id);
     $menu = DB::table('edna_organic_menus')->find($menu->id);
-    expect($menu->state)->toBe('flow_scheduled')->and($menu->flow_send_id)->not->toBeNull();
-
-    (new SendEdnaFlow($menu->flow_send_id))->handle();
-
-    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled');
+    expect($menu->state)->toBe('preserved')->and($menu->reason)->toBe('operator_attention_preserved')
+        ->and($menu->flow_send_id)->toBeNull();
     Http::assertNothingSent();
 });
 

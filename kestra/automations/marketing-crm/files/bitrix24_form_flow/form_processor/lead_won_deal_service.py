@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from .bitrix_client import BitrixClient
+from ._chat_ownership import lead_request
 from .business_logic import classify_lead
 from .config import load_config
 from .expanded_deal_family import expanded_deal_family
@@ -96,12 +97,13 @@ def process_lead_update_event(
             active_logger,
         )
 
+        receipt_routed = uses_fresh_v3_receipt(lead) or lead_request(lead) is not None
         existing_deal = find_deal_by_lead(client, lead_id=lead_id, logger=active_logger)
         if existing_deal is not None:
             deal_id = _optional_int(existing_deal.get("id") or existing_deal.get("ID"))
             if deal_id is None:
                 raise RuntimeError("La negociacion existente no tiene un ID valido.")
-            if not uses_fresh_v3_receipt(lead):
+            if not receipt_routed:
                 bind_open_line_activities_to_deal(
                     client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id, logger=active_logger,
                 )
@@ -142,7 +144,7 @@ def process_lead_update_event(
             deal_id=deal_id,
             logger=active_logger,
         )
-        if not uses_fresh_v3_receipt(lead):
+        if not receipt_routed:
             bind_open_line_activities_to_deal(
                 client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id, logger=active_logger,
             )

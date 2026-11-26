@@ -2,10 +2,12 @@
 
 namespace App\Filament\Pages;
 
+use App\Services\CommercialChatStatus;
 use App\Support\BitrixRoutingConfig;
 use App\Support\BitrixSellerRegistry;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
@@ -38,6 +40,26 @@ class BitrixRoutingSettingsPage extends Page
 
     #[Locked]
     public int $catalogRevision = 0;
+
+    public string $chatLookup = '';
+
+    #[Locked]
+    public ?array $chatStatus = null;
+
+    public function lookupChat(CommercialChatStatus $lookup): void
+    {
+        abort_unless(auth()->user()?->canAccessPanel(Filament::getPanel('admin')), 403);
+        $this->chatStatus = null;
+        $this->validate(['chatLookup' => ['required', 'regex:/^[1-9][0-9]{0,14}$/D']], [
+            'chatLookup.required' => 'Ingresá el número de chat.',
+            'chatLookup.regex' => 'Usá el ID numérico del chat de Bitrix.',
+        ]);
+        try {
+            $this->chatStatus = $lookup->lookup((int) $this->chatLookup);
+        } catch (\Throwable) {
+            $this->addError('chatLookup', 'No se pudo verificar la sesión de VENTAS en Bitrix.');
+        }
+    }
 
     public function mount(BitrixRoutingConfig $config): void
     {

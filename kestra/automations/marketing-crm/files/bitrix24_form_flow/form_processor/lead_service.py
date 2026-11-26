@@ -5,6 +5,7 @@ from typing import Any
 from ..lead_test_markers import test_title
 
 from .attribution import lead_fields as attribution_lead_fields, source_from_lead
+from ._chat_ownership import WEB_ORIGIN
 from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .catalogs import ORIGENES_LEAD
@@ -56,6 +57,7 @@ def create_lead(
     logger: Logger,
     *,
     provisional_owner: bool = False,
+    web_request_id: str | None = None,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
     source_id = (
@@ -97,6 +99,8 @@ def create_lead(
         client, submission.attribution,
         source_label=submission.lead_source.label, source_id=source_id,
     ))
+    if web_request_id is not None:
+        fields.update(ORIGINATOR_ID=WEB_ORIGIN, ORIGIN_ID=web_request_id)
     if config.fields.lead_recibo_file and submission.recibo_url:
         logger.info("Adjuntando recibo al lead.")
         fields[config.fields.lead_recibo_file] = build_bitrix_file_data(

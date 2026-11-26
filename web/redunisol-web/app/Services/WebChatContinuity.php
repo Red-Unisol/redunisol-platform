@@ -325,7 +325,7 @@ class WebChatContinuity
     }
 
     /** Called in the route's lease transaction. Follow-ups must still prove this exact chat and session. */
-    public function holdForOpening(int $contextId, object $route, array $proof, CarbonImmutable $start, CarbonImmutable $open): void
+    public function holdForOpening(int $contextId, object $route, array $proof, CarbonImmutable $start, CarbonImmutable $open, ?CarbonImmutable $validUntil = null): void
     {
         $context = DB::table('web_chat_contexts')->where('id', $contextId)->lockForUpdate()->first();
         if (! $context || $context->submission_id !== $route->submission_id
@@ -339,8 +339,9 @@ class WebChatContinuity
             $start = $start->max(CarbonImmutable::parse($context->sales_opening_at));
         }
         if ($start->lt($deadline) && $start->lt($open)) {
+            $extended = $deadline->addSeconds($open->timestamp - $start->timestamp);
             DB::table('web_chat_contexts')->where('id', $contextId)->update(['sales_opening_at' => $open,
-                'sales_expires_at' => $deadline->addSeconds($open->timestamp - $start->timestamp), 'updated_at' => now()]);
+                'sales_expires_at' => $validUntil ? $extended->min($validUntil) : $extended, 'updated_at' => now()]);
         }
     }
 

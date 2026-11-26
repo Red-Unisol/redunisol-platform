@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class EdnaIntakeCutover extends Command
 {
-    protected $signature = 'edna:intake-cutover {action=status : status or activate} {--fresh-declaration : Enable the new declaration contract after Kestra is deployed}';
+    protected $signature = 'edna:intake-cutover {action=status : status or activate} {--fresh-declaration : Enable the new declaration contract after Kestra is deployed} {--ownership : Enable the commercial ownership contract for new requests}';
 
     protected $description = 'Activate native V3 binding once for new incoming messages, without recovering old work';
 
@@ -19,6 +19,21 @@ class EdnaIntakeCutover extends Command
             return self::INVALID;
         }
         $name = $this->option('fresh-declaration') ? EdnaFreshIntake::DECLARATION : 'native-v3-v1';
+        if ($this->option('ownership')) {
+            if ($this->option('fresh-declaration')) {
+                return self::INVALID;
+            }
+            $name = EdnaFreshIntake::OWNERSHIP;
+            if ($action === 'activate') {
+                $line = app(\App\Services\EdnaBitrix::class)->call('imopenlines.config.get', ['CONFIG_ID' => 1]);
+                if ((string) ($line['ID'] ?? '') !== '1' || ($line['CRM_TRANSFER_CHANGE'] ?? '') !== 'N'
+                    || ! DB::table('edna_intake_cutovers')->where('name', EdnaFreshIntake::DECLARATION)->exists()) {
+                    $this->error('Verificá la configuración de VENTAS y la activación del contrato de declaraciones.');
+
+                    return self::FAILURE;
+                }
+            }
+        }
         if ($action === 'activate') {
             DB::transaction(function () use ($name): void {
                 // Future deploys cannot move the boundary or make old entries eligible.

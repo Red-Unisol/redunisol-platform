@@ -51,9 +51,11 @@ class FreshDeclarationTests(unittest.TestCase):
         api.deals = [{"ID": "33", "LEAD_ID": "10", "ASSIGNED_BY_ID": "99"}]
         old = copy.deepcopy((api.leads["10"], api.contacts, api.deals))
         data = declaration()
+        data["chat_ownership_request_id"] = data["case_id"]
         first = process(data, env=CONFIG, client=api)
         self.assertEqual((first["action"], first["contact_id"]), ("queued", ""))
         lead = api.leads[first["lead_id"]]
+        self.assertEqual(lead["SOURCE_DESCRIPTION"], "redunisol.chat-owner-v1")
         self.assertEqual((lead["ORIGIN_ID"], lead["UF_CRM_WA_FLOW_ID"], lead["UF_CRM_WA_SUBFLOW_ID"]),
                          (data["case_id"], FLOW, FLOW))
         self.assertNotIn("CONTACT_ID", lead)

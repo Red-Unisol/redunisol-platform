@@ -13,6 +13,15 @@ class EdnaFreshIntake
 
     public const DECLARATION = 'fresh-v3-declaration-v1';
 
+    public const OWNERSHIP = 'commercial-chat-ownership-v1';
+
+    public function webOwnership(string $receivedAt): bool
+    {
+        $cut = DB::table('edna_intake_cutovers')->where('name', self::OWNERSHIP)->value('starts_at');
+
+        return $cut !== null && CarbonImmutable::parse($receivedAt)->gte(CarbonImmutable::parse($cut));
+    }
+
     public function declaration(object $send): bool
     {
         $event = DB::table('edna_incoming_events')->find($send->entry_event_id);

@@ -21,6 +21,18 @@ class WebFormChatGuard
         $this->crm = $crm ?? new EdnaBitrix;
     }
 
+    /** Exact VENTAS session for a read-only operator lookup; omit the connector's personal data. */
+    public function currentSession(int $chatId): array
+    {
+        $this->calls = 0;
+        $this->deadline = microtime(true) + 30;
+        $dialog = $this->call('imopenlines.dialog.get', ['CHAT_ID' => $chatId]);
+        [$owner, $sessionId, $epoch, $open] = $this->dialog($dialog, $chatId);
+
+        return ['owner' => $owner, 'open' => $open && $sessionId > 0,
+            'session' => $sessionId ? $this->session($chatId, $sessionId, $epoch) : null];
+    }
+
     /**
      * The returned dialog is for internal use: it contains the connector identity.
      * Bitrix has no expected-owner/session CAS; the caller must inspect again just

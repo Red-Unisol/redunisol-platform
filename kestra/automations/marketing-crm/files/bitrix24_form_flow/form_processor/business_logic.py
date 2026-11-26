@@ -153,7 +153,14 @@ def ingest_submission(
         )
         # During a rolling namespace update an older lead_service may still be loaded.
         # Its existing callers keep the original signature until the intake cutover.
-        if fresh_web_form:
+        if fresh_web_form and payload.get("chat_ownership_request_id") is not None:
+            from ._chat_ownership import request_id
+            token = request_id(payload["chat_ownership_request_id"])
+            if not token:
+                raise ValueError("Identificador de solicitud inválido.")
+            lead_id = create_lead(client, config, effective_submission, contact_id, active_logger,
+                                  provisional_owner=True, web_request_id=token)
+        elif fresh_web_form:
             lead_id = create_lead(client, config, effective_submission, contact_id, active_logger,
                                   provisional_owner=True)
         else:

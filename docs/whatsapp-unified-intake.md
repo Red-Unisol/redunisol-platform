@@ -19,6 +19,40 @@ En un pase independiente, una ficha histórica con otro responsable potencialmen
 afectada por `CRM_TRANSFER_CHANGE` conserva su responsable. El recibo distingue
 ese freno de una transferencia confirmada y de una toma humana.
 
+## Responsable de VENTAS en producción
+
+La web y el v3 identifican la solicitud nueva con un UUID. La precalificación,
+la creación del prospecto y la evaluación de la negociación pueden avanzar
+mientras se espera el mensaje de WhatsApp. Kestra elige el vendedor de la
+negociación cuando Laravel puede demostrar que hay una sesión atendible para
+esa solicitud. También admite una llamada saliente programada por Maru o Nico,
+pendiente y exigible en esa negociación, a cargo de la bandeja técnica. Esa
+llamada autoriza asignar trabajo comercial y no genera un pase de chat.
+
+Laravel comprueba el recibo, la ventana de WhatsApp, la sesión y la atención
+humana antes de pasar el chat al vendedor. Un formulario sin mensaje por sí solo
+no consume turno. El panel **Distribución Bitrix** permite consultar el vendedor
+elegido, los pases nativos y la atención iniciada. Un chat en la bandeja inicial
+de Nico puede seguir esperando atención.
+
+El corte operativo requiere desplegar los dos receptores, comprobar el endpoint
+de disponibilidad, fijar en VENTAS `CRM_TRANSFER_CHANGE=N` y registrar
+`edna:intake-cutover activate --fresh-declaration` seguido de
+`edna:intake-cutover activate --ownership`. Los dos cortes son idempotentes.
+El segundo verifica la configuración de VENTAS antes de habilitar entradas.
+La política de propagación de Bitrix afecta los pases futuros de todo el canal,
+incluidos los pases manuales en sesiones existentes. Cuando un pase manual
+también implique entregar la gestión comercial, se cambia explícitamente el
+responsable de la negociación correspondiente. El prospecto y el contacto
+conservan su historial. No hay barrido retroactivo.
+
+Para fijar la política, el operador carga el webhook canónico en
+`BITRIX_WEBHOOK_URL` y ejecuta `python tools/edna-pilot/sales_transfer_policy.py status`.
+Con el canal, la cola y la huella revisados, `apply --expected-config HUELLA`
+envía exclusivamente `CRM_TRANSFER_CHANGE=N` y relee la configuración.
+La herramienta compara los demás ajustes, la composición y el orden de la cola.
+Registra el resultado sin guardar el webhook ni las fichas del CRM.
+
 El contrato `fresh-v3-declaration-v1` tiene un corte independiente. Primero
 se instala el receptor de Kestra y después la aplicación y sus workers. El
 comando `php artisan edna:intake-cutover status --fresh-declaration` informa
@@ -894,13 +928,13 @@ sin efectuar una transferencia. Un caso cerrado, un propósito diferente o vínc
 incompatibles nunca autorizan una derivación de BENEFICIOS.
 
 El responsable del contacto puede ser de otro circuito y no define el destino.
-VENTAS tiene `CRM_TRANSFER_CHANGE=Y`; Bitrix documenta esa opción como cambio del
+Al desplegar originalmente Beneficios, VENTAS tenía `CRM_TRANSFER_CHANGE=Y`. Bitrix documenta esa opción como cambio del
 responsable CRM al transferir el diálogo
 ([referencia oficial](https://apidocs.bitrix24.com/api-reference/imopenlines/openlines/imopenlines-config-list-get.html)).
 La guarda bloquea responsables manuales incompatibles del prospecto nativo y sólo
 admite la alineación de un prospecto provisional comprobado. Toda otra variación
 CRM durante la conciliación queda señalada para revisión, sin repetir el POST.
-No se modifica la configuración global del canal.
+El posterior corte de responsable comercial de VENTAS se describe arriba.
 
 ### Corte, ejecución y evidencia
 

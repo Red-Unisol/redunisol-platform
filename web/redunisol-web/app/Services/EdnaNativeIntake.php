@@ -73,6 +73,9 @@ class EdnaNativeIntake
                     'schema' => 'whatsapp-intake-v3', 'v3_equivalent' => true,
                     'confirmed_at' => CarbonImmutable::parse($request->received_at)->toIso8601String()]];
             if ($fresh) {
+                if ($entry && app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::OWNERSHIP)) {
+                    $body['chat_ownership_request_id'] = $send->request_id;
+                }
                 $event = DB::table('edna_incoming_events')->find($request->response_event_id);
                 $payload = $event ? json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR) : null;
                 $transport = app(EdnaFlowTransport::class)->id($send);

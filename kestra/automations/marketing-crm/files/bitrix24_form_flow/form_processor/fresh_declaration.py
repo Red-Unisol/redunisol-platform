@@ -15,6 +15,7 @@ from .intake_bound import _revision, _unattended_initial_receiver
 from .intake_context import CHANNEL_CONTRACT, CHANNEL_SUBFLOW, validate_channel_context
 from .intake_crm_client import IntakeCrmClient
 from .lead_service import FRESH_V3_ORIGINATOR
+from ._chat_ownership import V3_DESCRIPTION
 from .logger import create_logger
 from .normalization import normalize_whatsapp
 from .organic_profile_reuse import Review, _date, _id, _native, _record
@@ -32,6 +33,8 @@ def _receipt(payload):
 
 def _validate(payload, env):
     case = str(UUID(payload["case_id"]))
+    if "chat_ownership_request_id" in payload and payload["chat_ownership_request_id"] != case:
+        raise ValueError("Request ownership binding mismatch.")
     response = payload["response"]
     flow = payload["flow_id"]
     allowed = {env.get("EDNA_INTAKE_FLOW_ID", ""), *env.get("EDNA_INTAKE_ACCEPTED_FLOW_IDS", "").split(",")}
@@ -130,6 +133,8 @@ def process(payload, *, env=None, client=None):
                               None, None, status, reason or "ready", reason,
                               {"contact_ids": [], "lead_ids": [], "deal_ids": []})
         fields.update(ORIGINATOR_ID=FRESH_V3_ORIGINATOR, ORIGIN_ID=case, ASSIGNED_BY_ID=config.deal.provisional_user_id)
+        if payload.get("chat_ownership_request_id") == case:
+            fields["SOURCE_DESCRIPTION"] = V3_DESCRIPTION
         fields["COMMENTS"] = (fields.get("COMMENTS", "") + "<br>" if fields.get("COMMENTS") else "") + _receipt(payload)
         _native(api, payload, binding, phone, independent=True)
         if target and _revision(_record(api, "lead", str(target["ID"])), config) != _revision(target, config):

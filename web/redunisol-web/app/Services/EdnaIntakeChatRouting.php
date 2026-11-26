@@ -82,6 +82,13 @@ class EdnaIntakeChatRouting
                 return;
             }
             $expires = $independent ? (new EdnaFreshCaseRoute)->expiresAt($send, $request, $proof, $crm) : null;
+            if ($expires && $expires->gt(CarbonImmutable::parse($request->received_at)->addDay())
+                && ($case['verified_window_until'] ?? null) !== $expires->toIso8601String()) {
+                // The probe can discover an extension proved by this worker without polling Bitrix.
+                $case['verified_window_until'] = $expires->toIso8601String();
+                DB::table('edna_intake_chat_routes')->where('request_id', $requestId)->where('state', 'pending')
+                    ->update(['assigned_case' => json_encode($case, JSON_THROW_ON_ERROR)]);
+            }
             if ($independent && $expires->lte(now())) {
                 $this->finish($requestId, 'expired', 'fresh_declaration_window_elapsed');
 

@@ -288,7 +288,12 @@ jobs:
       - name: Test Edna HTTP inbox and delivery worker
         run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaIntakeTest.php tests/Feature/EdnaUnifiedIntakeTest.php tests/Feature/EdnaIntakeBindingTest.php tests/Feature/EdnaFlowResendTest.php tests/Feature/EdnaFlowReconciliationTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
       - name: Test new-only native V3 binding and manual attention guards
-        run: php vendor/bin/pest tests/Feature/EdnaDealMessageBindingTest.php tests/Unit/EdnaMessageBindingTest.php tests/Unit/EdnaCurrentMessageBindingTest.php tests/Feature/EdnaFreshIntakeTest.php tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/WebFormContinuationTest.php tests/Feature/EdnaOrganicFlowTest.php tests/Feature/WebFormChatLinkerTest.php
+        run: >-
+          php vendor/bin/pest tests/Feature/EdnaDealMessageBindingTest.php tests/Unit/EdnaMessageBindingTest.php
+          tests/Unit/EdnaCurrentMessageBindingTest.php tests/Feature/EdnaFreshIntakeTest.php
+          tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/WebFormContinuationTest.php
+          tests/Feature/EdnaOrganicFlowTest.php tests/Feature/WebFormChatLinkerTest.php
+          tests/Feature/CommercialChatCandidatesTest.php tests/Feature/CommercialChatStatusTest.php
       - name: Test template buttons and sales chat handoff
         run: php vendor/bin/pest tests/Feature/EdnaCampaignTemplateTest.php tests/Feature/EdnaFormConsentTest.php tests/Feature/EdnaConsentCaseTest.php tests/Feature/EdnaOrganicMenuTest.php tests/Feature/EdnaBenefitsRoutingTest.php
       - name: Test private report downloads and regeneration
