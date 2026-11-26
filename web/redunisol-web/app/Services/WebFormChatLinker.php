@@ -221,6 +221,9 @@ class WebFormChatLinker
                 }
             }
 
+            if ($block = $this->webRevisionBlock($receipt)) {
+                return $this->finish(...$block);
+            }
             $target = $this->target($receipt, $route);
             if ($reentry && ! empty($previousProtection['protected_assignment'])) {
                 if (! $this->id($previousProtection['protected_owner_id'] ?? null)) {
@@ -323,7 +326,37 @@ class WebFormChatLinker
             $this->write(['proof' => json_encode($this->proof, JSON_THROW_ON_ERROR), 'transfer_state' => 'sending']);
             $this->assertLease();
             try {
-                $ack = $this->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->proof['chat_id'], 'USER_ID' => (int) $fresh['seller_id']]);
+                // Intake registers revisions under this same receipt lock. The previously
+                // committed intent survives a timeout or crash during the single POST.
+                $block = null;
+                $ack = DB::transaction(function () use ($receipt, $fresh, &$block) {
+                    // Never wait behind intake after checking live human attention.
+                    // PostgreSQL omits a contested receipt; the next attempt performs fresh CRM reads.
+                    $current = DB::table('web_form_receipts')->where('id', $receipt->id)->lock('for update skip locked')->first();
+                    if (! $current) {
+                        $block = ['waiting', 'web_receipt_lock_unavailable'];
+                    } elseif ($current->state !== 'synced' || $current->lead_id !== $receipt->lead_id
+                        || $current->contact_id !== $receipt->contact_id || $current->identity_hash !== $receipt->identity_hash
+                        || $current->phone_hash !== $receipt->phone_hash) {
+                        $block = ['preserved', 'web_identity_changed'];
+                    } else {
+                        $block = $this->webRevisionBlock($current);
+                    }
+                    if ($block) {
+                        return null;
+                    }
+
+                    return $this->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->proof['chat_id'], 'USER_ID' => (int) $fresh['seller_id']]);
+                });
+                if ($block) {
+                    // Definitively unsent. A pending revision can later qualify normally.
+                    unset($this->proof['transfer_intent']);
+
+                    return $this->finish($block[0], $block[1], [
+                        'transfer_state' => $block[0] === 'waiting' ? 'pending' : 'preserved',
+                        'proof' => json_encode($this->proof, JSON_THROW_ON_ERROR),
+                    ]);
+                }
                 if ($ack !== true) {
                     $this->decide('unknown', 'transfer_acknowledgement_uncertain');
                 }
@@ -350,6 +383,34 @@ class WebFormChatLinker
                 // Locks expire; a failed release cannot replay external effects.
             }
         }
+    }
+
+    /** Only the original answer time orders revisions. The stable Flow UUID breaks exact ties. */
+    private function webRevisionBlock(object $receipt): ?array
+    {
+        $latest = DB::table('edna_intake_requests as r')
+            ->leftJoin('edna_flow_sends as s', 's.id', '=', 'r.flow_send_id')
+            ->where('r.web_submission_id', $receipt->id)
+            ->orderByDesc('r.received_at')->orderByDesc('s.request_id')
+            ->first(['r.state', 'r.web_prequalification']);
+        if (! $latest) {
+            return null;
+        }
+        if ($latest->state !== 'synced' || ! $latest->web_prequalification) {
+            return ['waiting', 'web_revision_prequalification_pending'];
+        }
+        $decision = json_decode($latest->web_prequalification, true);
+        if (($decision['applies_to_web_request'] ?? null) !== true
+            || ($decision['scope'] ?? null) !== 'declared_data_prequalification') {
+            return ['preserved', 'web_revision_identity_unverified'];
+        }
+
+        return match ($decision['outcome'] ?? null) {
+            'qualified' => null,
+            'rejected' => ['preserved', 'web_revision_prequalification_rejected'],
+            'external_referral' => ['preserved', 'web_revision_external_referral'],
+            default => ['waiting', 'web_revision_prequalification_pending'],
+        };
     }
 
     private function assertContext(): void

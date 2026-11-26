@@ -15,6 +15,12 @@ class InvalidIntake(ValueError):
 
 
 def process(payload, *, env=None, client=None):
+    if isinstance(payload, dict) and payload.get("contract") == "web-v3-prequalification-v1":
+        from .fresh_prequalification import process as requalify_declaration
+        return requalify_declaration(payload, env=env)
+    if isinstance(payload, dict) and payload.get("contract") == "fresh-v3-declaration-v1":
+        from .fresh_declaration import process as process_declaration
+        return process_declaration(payload, env=env, client=client)
     if isinstance(payload, dict) and payload.get("contract") == "organic-profile-reuse-v1":
         from .organic_profile_reuse import process as process_reused_profile
         return process_reused_profile(payload, env=env, client=client)

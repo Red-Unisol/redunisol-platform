@@ -238,6 +238,53 @@ function webChatLinkerRow(object $fixture): object
     return DB::table('web_form_chat_routes')->where('entry_event_id', $fixture->event->id)->first();
 }
 
+function webChatRevision(string $submission, int $secondsAgo, ?string $outcome, ?string $uuid = null): int
+{
+    $response = 15000 + DB::table('edna_flow_sends')->count();
+    $received = now()->subSeconds($secondsAgo);
+    $send = DB::table('edna_flow_sends')->insertGetId(['request_id' => $uuid ?? (string) Str::uuid(), 'entry_event_id' => $response + 15000,
+        'scope' => 'web-revision', 'subject_id' => '2423', 'cascade_id' => '2557', 'flow_id' => '950118281197789',
+        'state' => 'completed', 'entry_received_at' => $received, 'response_event_id' => $response]);
+
+    return DB::table('edna_intake_requests')->insertGetId(['flow_send_id' => $send, 'response_event_id' => $response,
+        'received_at' => $received, 'state' => $outcome ? 'synced' : 'pending_requalification', 'web_submission_id' => $submission,
+        'web_prequalification' => $outcome ? json_encode(['scope' => 'declared_data_prequalification',
+            'applies_to_web_request' => true, 'outcome' => $outcome], JSON_THROW_ON_ERROR) : null]);
+}
+
+test('the newest declaration by source time overrides an older positive web decision even if the older callback is processed later', function () {
+    $f = webChatLinkerFixture();
+    webChatRevision($f->submission, 3, 'rejected', 'ffffffff-ffff-4fff-8fff-ffffffffffff');
+    webChatRevision($f->submission, 3, 'qualified', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    webChatRevision($f->submission, 60, 'qualified');
+    expect($f->linker->process($f->event->id))->toBe(['state' => 'preserved', 'reason' => 'web_revision_prequalification_rejected'])
+        ->and($f->crm->calls)->toBe([])
+        ->and($f->crm->transferCalls)->toBe(0);
+});
+
+test('a revision registered during commercial checks defers the unissued POST until a qualified decision is durable', function () {
+    $f = webChatLinkerFixture();
+    webChatRevision($f->submission, 60, 'qualified');
+    $pendingId = null;
+    $f->guard->beforeInspect = function ($call) use ($f, &$pendingId) {
+        if ($call === 2) {
+            $pendingId = webChatRevision($f->submission, 0, null);
+        }
+    };
+    expect($f->linker->process($f->event->id))->toBe(['state' => 'waiting', 'reason' => 'web_revision_prequalification_pending'])
+        ->and($f->crm->transferCalls)->toBe(0);
+    $route = webChatLinkerRow($f);
+    expect($route->transfer_state)->toBe('pending')
+        ->and(json_decode($route->proof, true))->not->toHaveKey('transfer_intent');
+    DB::table('edna_intake_requests')->where('id', $pendingId)->update(['state' => 'synced',
+        'web_prequalification' => json_encode(['scope' => 'declared_data_prequalification', 'applies_to_web_request' => true, 'outcome' => 'qualified'])]);
+    webChatRevision((string) Str::uuid(), 0, 'rejected');
+    $this->travelTo(now()->addMinutes(2));
+    $f->linker->process($f->event->id);
+    $f->linker->process($f->event->id);
+    expect($f->crm->transferCalls)->toBe(1)->and(webChatLinkerRow($f)->state)->toBe('routed');
+});
+
 class WebChatLinkerContinuityFake extends WebChatContinuity
 {
     public bool $eligible = true;

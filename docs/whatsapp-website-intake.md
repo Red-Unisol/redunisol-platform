@@ -1,5 +1,11 @@
 # Solicitud única dentro de WhatsApp
 
+La [revisión v3.1 para publicar](whatsapp-website-intake-v3.1.flow.json) omite
+el banco si se declaró jubilación o pensión de Caja Córdoba. El JSON v3 de octubre
+identifica el formulario que efectivamente se envió. Para activar v3.1 hace falta
+publicar un Flow con ID propio y habilitar ese ID en los receptores antes de
+cambiar el emisor. Los callbacks se interpretan según la versión que se envió.
+
 Definición acordada el 22/10 y ampliada el 27/10/2026: todos los segmentos del Router
 actual, exclusivamente para una entrada desde el botón de la web con referencia
 vigente y vinculada al teléfono/canal. CUIL obligatorio y email opcional.

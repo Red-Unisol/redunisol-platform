@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Jobs\RouteEdnaIntakeChat;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\DatabaseStore;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 use Throwable;
 
@@ -44,7 +46,7 @@ class EdnaIntakeChatRouting
                 throw new RuntimeException('Fresh route binding changed.');
             }
             $case = json_decode($row->assigned_case, true, 16, JSON_THROW_ON_ERROR);
-            $target = (int) $case['seller_id'];
+            $independent = isset($case['request_uuid']);
             $verifiedContact = isset($case['contact_deal_stage']) ? (string) $case['contact_id'] : null;
             $attention = app(EdnaOrganicAttention::class);
             $crm = app(EdnaBitrix::class);
@@ -58,10 +60,11 @@ class EdnaIntakeChatRouting
             }
             if (in_array($row->state, ['sending', 'unknown'], true)) {
                 $intent = json_decode($row->transfer_intent ?? '{}', true, 32, JSON_THROW_ON_ERROR);
+                $target = (int) ($intent['target_id'] ?? 0);
                 $snapshot = $attention->snapshot($proof);
                 $owner = $snapshot['dialog_tuple']['owner'];
                 if ($owner === (string) $target && isset($intent['snapshot'])
-                    && $attention->compatible($intent['snapshot'], $snapshot, $target, true, false, $verifiedContact)
+                    && $attention->compatible($intent['snapshot'], $snapshot, $target, true, false, $verifiedContact, $independent, $independent ? $case['lead_id'] : null)
                     && $this->caseSnapshot($case, $crm) === ($intent['commercial_case'] ?? null)) {
                     $this->finish($requestId, $row->transfer_acknowledged ? 'confirmed' : 'observed',
                         $row->transfer_acknowledged ? 'target_confirmed' : 'target_observed');
@@ -73,12 +76,38 @@ class EdnaIntakeChatRouting
 
                 return;
             }
+            if ($independent && ($case['request_uuid'] !== $send->request_id || (string) $request->lead_id !== $case['lead_id'])) {
+                $this->finish($requestId, 'preserved', 'fresh_request_binding_changed');
+
+                return;
+            }
+            $expires = $independent ? (new EdnaFreshCaseRoute)->expiresAt($send, $request, $proof, $crm) : null;
+            if ($independent && $expires->lte(now())) {
+                $this->finish($requestId, 'expired', 'fresh_declaration_window_elapsed');
+
+                return;
+            }
+            $beforeCase = $this->caseSnapshot($case, $crm);
+            if ($independent && $beforeCase['state'] !== 'assigned') {
+                if ($beforeCase['state'] === 'waiting') {
+                    // Only this request wakes up again. Bound the delay by the
+                    // authenticated customer's response, including over weekends.
+                    $age = max(0, CarbonImmutable::parse($request->received_at)->diffInSeconds(now()));
+                    $delay = min(random_int(15, max(15, min(1800, (int) $age))), max(1, (int) now()->diffInSeconds($expires, false)));
+                    $this->finish($requestId, 'pending', $beforeCase['reason']);
+                    Queue::connection('edna')->later($delay, new RouteEdnaIntakeChat($requestId), '', 'edna');
+                } else {
+                    $this->finish($requestId, 'preserved', $beforeCase['reason']);
+                }
+
+                return;
+            }
+            $target = (int) ($independent ? $beforeCase['seller_id'] : $case['seller_id']);
             if (! $attention->targetActive($target)) {
                 $this->finish($requestId, 'review', 'routing_target_unavailable');
 
                 return;
             }
-            $beforeCase = $this->caseSnapshot($case, $crm);
             if (! $beforeCase) {
                 $this->finish($requestId, 'preserved', 'commercial_assignment_changed');
 
@@ -90,7 +119,7 @@ class EdnaIntakeChatRouting
 
                 return;
             }
-            if (($before['status'] ?? '') !== 'ready' || ! $attention->canTransfer($before['native_snapshot'] ?? [], $target, false, $verifiedContact)) {
+            if (($before['status'] ?? '') !== 'ready' || ! $attention->canTransfer($before['native_snapshot'] ?? [], $target, false, $verifiedContact, $independent)) {
                 if (($before['status'] ?? '') === 'waiting') {
                     throw new RuntimeException('Native attention reads pending.');
                 }
@@ -106,11 +135,21 @@ class EdnaIntakeChatRouting
             }
             $fresh = $attention->inspect($proof, $target);
             if (($fresh['status'] ?? '') !== 'ready'
-                || ! $attention->compatible($before['native_snapshot'], $fresh['native_snapshot'] ?? [], $target, false, false, $verifiedContact)) {
+                || ! $attention->compatible($before['native_snapshot'], $fresh['native_snapshot'] ?? [], $target, false, false, $verifiedContact, $independent)) {
                 if (($fresh['status'] ?? '') === 'waiting') {
                     throw new RuntimeException('Final attention reads pending.');
                 }
                 $this->finish($requestId, 'preserved', $fresh['reason'] ?? 'attention_changed_before_transfer');
+
+                return;
+            }
+            if ($independent && $expires->lte(now()->addSeconds(6))) {
+                $this->finish($requestId, 'expired', 'whatsapp_window_expired');
+
+                return;
+            }
+            if ($independent && ! (new EdnaFreshCaseRoute)->protectsHistoricalOwners($fresh['native_snapshot'], $case, $target, $crm)) {
+                $this->finish($requestId, 'preserved', 'native_crm_transfer_would_change_owner');
 
                 return;
             }
@@ -151,6 +190,9 @@ class EdnaIntakeChatRouting
 
     private function caseSnapshot(array $case, EdnaBitrix $crm): ?array
     {
+        if (isset($case['request_uuid'])) {
+            return (new EdnaFreshCaseRoute)->target($case, $crm);
+        }
         $deal = $crm->call('crm.deal.get', ['id' => $case['deal_id']]);
         $lead = in_array($case['lead_id'] ?? null, ['', '0', 0, null], true) ? '' : (string) $case['lead_id'];
         $currentLead = in_array($deal['LEAD_ID'] ?? null, ['', '0', 0, null], true) ? '' : (string) $deal['LEAD_ID'];

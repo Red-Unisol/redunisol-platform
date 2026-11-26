@@ -61,7 +61,7 @@ class ProcessEdnaIntake implements ShouldQueue
                     $this->awaitBinding();
 
                     return;
-                } elseif (($binding['version'] ?? null) === 2) {
+                } elseif (($binding['version'] ?? null) === 2 || app(EdnaFreshIntake::class)->declaration($send)) {
                     app(EdnaNativeIntake::class)->process($request, $send, $binding);
 
                     return;
@@ -131,7 +131,7 @@ class ProcessEdnaIntake implements ShouldQueue
                     app(EdnaOrganicProfile::class)->record('edna_intake_request', (string) $request->id,
                         Crypt::decryptString($send->recipient), json_decode(Crypt::decryptString($request->answer), true, 16, JSON_THROW_ON_ERROR),
                         $request->received_at, isset($result['lead_id']) ? (string) $result['lead_id'] : null,
-                        isset($result['contact_id']) ? (string) $result['contact_id'] : null);
+                        isset($result['contact_id']) ? (string) $result['contact_id'] : null, (string) $send->flow_id);
                 } catch (Throwable) {
                     // Profile retention must not replay an acknowledged CRM request.
                 }

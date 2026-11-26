@@ -21,7 +21,7 @@ class NormalizedInput:
     cuil_formatted: str
     province: CatalogItem
     employment_status: CatalogItem
-    payment_bank: CatalogItem
+    payment_bank: CatalogItem | None
     lead_source: CatalogItem
     utm_source: str | None = None
     utm_medium: str | None = None
@@ -30,6 +30,7 @@ class NormalizedInput:
     utm_content: str | None = None
     attribution: dict[str, Any] | None = None
     recibo_url: str | None = None
+    paying_organization: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,11 +63,40 @@ def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
     return _parse_form_body(body)
 
 
+def is_cordoba_caja_benefit(province: str, employment: str, organization: Any) -> bool:
+    if province != "cordoba":
+        return False
+    if organization == "caja_cordoba":
+        return employment in {"jubilado_provincial", "pensionado"}
+    # The website's "Jubilado Provincial" identifies the provincial fund.
+    # "Pensionado" on its own does not identify who pays the pension.
+    return employment == "jubilado_provincial" and organization in (None, "", False)
+
+
+def _payment_bank(payload: dict[str, Any], *, optional: bool) -> CatalogItem | None:
+    try:
+        return BANCOS.resolve(_first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]), "payment_bank")
+    except ValueError:
+        if not optional:
+            raise
+        return None
+
+
+def bank_optional_for_prequalification(province: str, employment: str, organization: Any) -> bool:
+    return (is_cordoba_caja_benefit(province, employment, organization)
+            or (province == "buenos_aires" and employment in QUALIFICATION_RULES["buenos_aires"]["allowed_employment_statuses"]))
+
+
 def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
     if not isinstance(payload, dict):
         raise ValueError("El payload debe ser un objeto JSON o un body de formulario parseable.")
 
     cuil_digits, cuil_formatted = normalize_cuil(_first(payload, ["cuil"]))
+    province = PROVINCIAS.resolve(_first(payload, ["province", "provincia", "ProvinciaDeContacto"]), "province")
+    employment = SITUACIONES_LABORALES.resolve(
+        _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]), "employment_status",
+    )
+    organization = payload.get("organismo")
 
     return NormalizedInput(
         full_name=normalize_full_name(_first(payload, ["full_name", "nombre_completo", "name"])),
@@ -75,18 +105,10 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
         whatsapp=normalize_whatsapp(_first(payload, ["whatsapp", "telefono", "phone"])),
         cuil_digits=cuil_digits,
         cuil_formatted=cuil_formatted,
-        province=PROVINCIAS.resolve(
-            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]),
-            "province",
-        ),
-        employment_status=SITUACIONES_LABORALES.resolve(
-            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
-            "employment_status",
-        ),
-        payment_bank=BANCOS.resolve(
-            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]),
-            "payment_bank",
-        ),
+        province=province,
+        employment_status=employment,
+        payment_bank=_payment_bank(payload, optional=is_cordoba_caja_benefit(province.key, employment.key, organization)),
+        paying_organization=organization if organization in ("caja_cordoba", "anses", "caja_provincial", "ayuda") else None,
         lead_source=ORIGENES_LEAD.resolve(
             _first(payload, ["lead_source", "origen_lead", "origen_formulario", "origenFormulario"]),
             "lead_source",
@@ -126,15 +148,8 @@ def normalize_prequalification_input(payload: dict[str, Any]) -> Prequalificatio
     province = PROVINCIAS.resolve(
         _first(payload, ["province", "provincia", "ProvinciaDeContacto"]), "province",
     )
-    try:
-        payment_bank = BANCOS.resolve(
-            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]), "payment_bank",
-        )
-    except ValueError:
-        if (province.key != "buenos_aires"
-                or employment.key not in QUALIFICATION_RULES["buenos_aires"]["allowed_employment_statuses"]):
-            raise
-        payment_bank = None
+    optional_bank = bank_optional_for_prequalification(province.key, employment.key, payload.get("organismo"))
+    payment_bank = _payment_bank(payload, optional=optional_bank)
     return PrequalificationInput(province=province, employment_status=employment, payment_bank=payment_bank)
 
 

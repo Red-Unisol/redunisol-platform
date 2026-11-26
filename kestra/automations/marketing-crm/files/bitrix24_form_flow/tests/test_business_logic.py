@@ -1105,6 +1105,27 @@ class BusinessLogicTests(unittest.TestCase):
             "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
         )
 
+    def test_web_admission_and_lead_qualification_use_the_same_caja_bank_exception(self):
+        base = {"full_name": "Socio Prueba", "email": "socio@example.com", "whatsapp": "3511234567",
+                "cuil": "20-87654321-9", "province": "Cordoba", "lead_source": "Facebook"}
+        for employment, organization in [("Jubilado Provincial", None), ("Pensionado", "caja_cordoba")]:
+            with self.subTest(employment=employment):
+                client = FakeBitrixClient()
+                inputs = dict(base, employment_status=employment, organismo=organization)
+                self.assertTrue(prequalify_commercial_fields(inputs)["route_to_whatsapp"])
+                result = ingest_submission(inputs, env=self.env, bitrix_client=client, logger=SilentLogger())
+                self.assertTrue(result["ok"], result)
+                lead = client.leads[result["lead_id"]]
+                self.assertNotIn(load_config(self.env).fields.lead_payment_bank, lead)
+                self.assertTrue(classify_lead(result["lead_id"], env=self.env, bitrix_client=client,
+                                              logger=SilentLogger())["qualified"])
+        for employment, organization in [("Pensionado", None), ("Pensionado", "anses"), ("Jubilado Municipal", "caja_cordoba")]:
+            with self.subTest(employment=employment, organization=organization):
+                inputs = dict(base, employment_status=employment, organismo=organization)
+                self.assertFalse(prequalify_commercial_fields(inputs)["ok"])
+                with self.assertRaises(ValueError):
+                    normalize_business_input(inputs)
+
     def test_normalize_docente_payload(self) -> None:
         submission = normalize_business_input(
             {
@@ -4070,6 +4091,35 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertNotIn("UF_CRM_CRDX_STATUS", client.leads[809])
 
+    def test_isolated_fresh_v3_prefill_and_conversion_do_not_recover_an_old_contact(self):
+        for missing_contact in (False, "0"):
+            with self.subTest(missing_contact=missing_contact):
+                client = FakeBitrixClient()
+                client.contacts[101] = {"NAME": "Contacto histórico", "UF_CONTACT_CUIL": "20123456786"}
+                # Even a source that would normally upsert a registrant must respect this origin.
+                client.leads[810] = {
+                    "ID": "810", "ORIGINATOR_ID": "redunisol.edna.fresh-v3",
+                    "ORIGIN_ID": "ca0be21a-d5e9-48bc-9efa-e0a72b2cafc3", "CONTACT_ID": missing_contact,
+                    "STATUS_ID": "UC_5N2OEO", "UF_CRM_1693840106704": "20123456786", "UF_CRM_1722365051": "3729",
+                }
+                bcra = FakeBcraClient({"20123456786": self.make_bcra_result(
+                    identification="20123456786", status_field_value="OK", should_reject=False)})
+                prefill_lead(810, arca_output={"ok": True, "nombre": "Socio"},
+                             credixsa_output={"ok": True, "status": "none"}, env=self.env,
+                             bitrix_client=client, bcra_client=bcra, logger=SilentLogger())
+                self.assertEqual(client.leads[810]["NAME"], "Socio")
+                self.assertEqual(client.leads[810]["CONTACT_ID"], missing_contact)
+                client.leads[810].update(STATUS_ID="QUALIFIED", ASSIGNED_BY_ID="57")
+                for _ in range(2):
+                    client.leads[810]["STATUS_ID"] = "QUALIFIED"
+                    result = process_lead_update_event(self.make_lead_update_event(810), env=self.env,
+                        bitrix_client=client, expected_application_token="app-token", logger=SilentLogger())
+                    self.assertTrue(result["ok"], result)
+                self.assertEqual(len(client.deals), 1)
+                self.assertNotIn("contactId", client.deals[result["deal_id"]])
+                self.assertFalse(any(method.startswith("crm.contact.") or method == "crm.activity.binding.add"
+                                     for method, _ in client.calls))
+
     def test_prefill_links_finguru_contact_when_cuil_was_already_sanitized(self) -> None:
         client = FakeBitrixClient()
         client.leads[810] = {
@@ -5228,6 +5278,31 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.deals[931]["assignedById"], 10451)
 
+    def test_fresh_v3_distributes_deal_and_leaves_chat_to_receipt_even_after_seller_queue(self):
+        for queued in [False, True]:
+            with self.subTest(queued=queued):
+                client = FakeBitrixClient()
+                client.online_user_ids = {68579}
+                client.leads[920] = dict(self._catamarca_enriched_lead(920, bcra_entities=[]),
+                                         CONTACT_ID=False, ASSIGNED_BY_ID="57", ORIGINATOR_ID="redunisol.edna.fresh-v3")
+                instant = datetime.fromisoformat("2026-11-26T10:00:00-03:00")
+                client.deals[930] = self._pending_deal(930, 920)
+                if queued:
+                    client.deals[930] = self._queued_deal(930, 920, "catamarca_general", instant.isoformat())
+                client.deals[930]["contactId"] = "0"
+                client.open_line_chats[("lead", 920)] = [777]
+                if queued:
+                    process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(), now=instant)
+                else:
+                    result = qualify_catamarca_deal(930, env=self.env, bitrix_client=client,
+                                                    logger=SilentLogger(), now=instant)
+                    self.assertEqual(result["chat_transfer_status"], "delegated_to_v3_receipt", result)
+                self.assertEqual(client.deals[930]["assignedById"], 68579)
+                self.assertEqual(int(client.leads[920]["ASSIGNED_BY_ID"]), 68579)
+                self.assertEqual(client.chat_transfers, [])
+                self.assertFalse(any(method in {"crm.activity.binding.add", "imopenlines.crm.chat.get"}
+                                     for method, _ in client.calls))
+
     def test_catamarca_transfers_queued_contact_center_chat_to_assignee(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids = {68579}
@@ -5286,6 +5361,15 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertIn("[USER=68579]Daniel Carrera[/USER]", notification["MESSAGE"])
         self.assertIn("Bucket: Catamarca - General", notification["MESSAGE"])
         self.assertIn("Chat transferido: Sí", notification["MESSAGE"])
+
+    def test_caja_admission_with_unknown_bank_preserves_credit_line_checks(self):
+        client = FakeBitrixClient()
+        client.leads[922] = self._cordoba_enriched_lead(922, employment_id="2565", bcra_entities=[],
+                                                        payment_bank_id="unknown-bank")
+        client.deals[934] = self._pending_deal(934, 922)
+        result = qualify_catamarca_deal(934, env=self.env, bitrix_client=client, logger=SilentLogger())
+        self.assertEqual(result["commercial_action"], "manual_review")
+        self.assertEqual(result["commercial_reason"], "missing_prequalification_data")
 
     def test_cordoba_deal_with_missing_classification_data_is_distributed_for_review(self) -> None:
         client = FakeBitrixClient()

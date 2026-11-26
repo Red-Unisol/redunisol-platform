@@ -11,6 +11,15 @@ class EdnaFreshIntake
 {
     public const CONTACT_DEAL = 'contact-deal-activity-v1';
 
+    public const DECLARATION = 'fresh-v3-declaration-v1';
+
+    public function declaration(object $send): bool
+    {
+        $event = DB::table('edna_incoming_events')->find($send->entry_event_id);
+
+        return $event !== null && $this->entry($event, self::DECLARATION);
+    }
+
     public function applies(object $send): bool
     {
         $event = DB::table('edna_incoming_events')->find($send->entry_event_id);

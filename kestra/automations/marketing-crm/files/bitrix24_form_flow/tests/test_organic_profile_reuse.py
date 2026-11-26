@@ -1,7 +1,10 @@
 import copy
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
+
+import yaml
 
 from bitrix24_form_flow.form_processor import organic_profile_reuse as reuse
 from bitrix24_form_flow.form_processor.whatsapp_intake import process
@@ -69,6 +72,14 @@ class OrganicCrm(IntakeCrm):
 
 
 class OrganicProfileReuseTests(unittest.TestCase):
+    def test_webhook_forwards_the_confirmed_no_write_fallback_to_laravel(self):
+        domain = Path(__file__).resolve().parents[3]
+        flow = yaml.safe_load((domain / "flows/bitrix24_whatsapp_intake.yaml").read_text(encoding="utf-8"))
+        outputs = {item["id"]: item for item in flow["outputs"]}
+        for key in ("write_attempted", "request_fresh_profile"):
+            self.assertEqual(outputs[key]["type"], "BOOL")
+            self.assertEqual(outputs[key]["value"], "{{ outputs.procesar.vars." + key + " ?? false }}")
+
     def setUp(self):
         clock = patch.object(reuse, "now_utc", return_value=NOW)
         clock.start()
@@ -89,10 +100,11 @@ class OrganicProfileReuseTests(unittest.TestCase):
         self.assertIsNone(qualification.payment_bank)
         self.assertTrue(evaluate_prequalification(qualification).qualified)
         self.assertEqual(lead, original)
-        # The exemption does not make another organism or a generic subflow eligible.
-        for changes in [{"UF_CRM_WA_ORGANISMO": "otro"}, {"UF_CRM_WA_SUBFLOW": "unknown"}]:
-            with self.subTest(changes=changes), self.assertRaises(MissingLeadFieldError):
-                build_prequalification_input_from_lead({**lead, **changes}, api.config)
+        for channel in ("", "organic_profile_reuse", "website_single_intake", "another_channel"):
+            value = build_prequalification_input_from_lead({**lead, "UF_CRM_WA_SUBFLOW": channel}, api.config)
+            self.assertTrue(evaluate_prequalification(value).qualified)
+        with self.assertRaises(MissingLeadFieldError):
+            build_prequalification_input_from_lead({**lead, "UF_CRM_WA_ORGANISMO": "otro"}, api.config)
 
     def test_contact_proven_native_guest_enters_the_same_current_qualification_without_faking_a_flow(self):
         api = OrganicCrm()
@@ -158,23 +170,29 @@ class OrganicProfileReuseTests(unittest.TestCase):
             self.assertEqual(result["action"], expected)
 
     def test_invalid_provenance_or_incomplete_v3_data_never_accesses_crm_or_claims_a_write(self):
-        changes = [lambda p: p.update(flow_id="950118281197789"),
-                   lambda p: p["provenance"].update(source_kind="phone_guess"),
-                   lambda p: p["provenance"].update(v3_equivalent=False),
-                   lambda p: p["provenance"].update(schema="legacy-v2"),
-                   lambda p: p["provenance"].update(confirmed_at="2026-11-11 12:00:00"),
-                   lambda p: p["crm_binding"].update(verified=False),
-                   lambda p: p["crm_binding"].update(activity_id=None),
-                   lambda p: p["crm_binding"].update(native_lead_id=None, contact_id=None),
-                   lambda p: p["answer"].update(cuil="123"),
-                   lambda p: p["answer"].update(email="bad"),
-                   lambda p: p["answer"].update(banco_catamarca="ayuda"),
-                   lambda p: p["answer"].update(situacion_catamarca="jubilado_pensionado", organismo_catamarca="anses")]
-        for change in changes:
-            with self.subTest(change=changes.index(change)):
-                request = payload(); change(request); api = Mock()
+        # Only defects in the historical declaration justify contacting the customer.
+        cases = [
+            (None, {"flow_id": "950118281197789"}, False),
+            ("provenance", {"source_kind": "phone_guess"}, False),
+            ("provenance", {"v3_equivalent": False}, True),
+            ("provenance", {"schema": "legacy-v2"}, True),
+            ("provenance", {"confirmed_at": "2026-11-11 12:00:00"}, True),
+            ("crm_binding", {"verified": False}, False),
+            ("crm_binding", {"activity_id": None}, False),
+            ("crm_binding", {"native_lead_id": None, "contact_id": None}, False),
+            ("answer", {"cuil": "123"}, True),
+            ("answer", {"email": "bad"}, True),
+            ("answer", {"banco_catamarca": "ayuda"}, True),
+            ("answer", {"situacion_catamarca": "jubilado_pensionado", "organismo_catamarca": "anses"}, True),
+        ]
+        for key, fields, ask_fresh in cases:
+            with self.subTest(key=key, fields=fields):
+                request = payload()
+                (request if key is None else request[key]).update(fields)
+                api = Mock()
                 result = process(request, env=ENV, client=api)
                 self.assertEqual(result["action"], "reused_not_valid")
+                self.assertIs(result.get("request_fresh_profile", False), ask_fresh)
                 self.assertFalse(result["write_attempted"])
                 api.call.assert_not_called()
 
@@ -191,6 +209,14 @@ class OrganicProfileReuseTests(unittest.TestCase):
             self.assertEqual(process(request, env=ENV, client=api)["action"], "queued")
             self.assertNotIn("previous_bcra_result", api.leads["10"])
 
+    def test_an_invalid_profile_outside_the_active_recipients_does_not_authorize_a_new_form(self):
+        request = payload()
+        request["answer"]["cuil"] = "123"
+        for override in ({"EDNA_INTAKE_CRM_ENABLED": "false"}, {"EDNA_INTAKE_RECIPIENTS": "12345"}):
+            with self.subTest(override=override):
+                result = process(request, env={**ENV, **override}, client=Mock())
+                self.assertFalse(result["request_fresh_profile"])
+
     def test_false_native_messages_session_activity_and_connector_proofs_stop_before_writes(self):
         changes = [lambda a: a.history.update(hasNextPage=True),
                    lambda a: a.history["message"]["400"]["params"].update(connectorMid=["999"]),
@@ -205,6 +231,7 @@ class OrganicProfileReuseTests(unittest.TestCase):
                 api = OrganicCrm(); change(api)
                 result = process(payload(), env=ENV, client=api)
                 self.assertEqual(result["action"], "manual_review")
+                self.assertNotIn("request_fresh_profile", result)
                 self.assertFalse(result["write_attempted"])
                 self.assertFalse(api.writes)
 
@@ -212,7 +239,8 @@ class OrganicProfileReuseTests(unittest.TestCase):
         for change in [lambda a: a.contacts["1"].update(UF_CONTACT_CUIL="20999999999"),
                        lambda a: a.contacts.update({"2": {"ID": "2", "UF_CONTACT_CUIL": CUIL, "PHONE": [{"VALUE": PHONE}]}})]:
             api = OrganicCrm(); change(api)
-            self.assertEqual(process(payload(), env=ENV, client=api)["action"], "manual_review")
+            result = process(payload(), env=ENV, client=api)
+            self.assertEqual((result["action"], result["request_fresh_profile"]), ("manual_review", True))
             self.assertFalse(api.writes)
 
     def test_a_recent_profile_with_one_current_phone_contact_recognizes_the_unlinked_guest(self):

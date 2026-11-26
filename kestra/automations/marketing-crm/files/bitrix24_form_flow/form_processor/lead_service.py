@@ -13,6 +13,7 @@ from .input_parser import (
     NormalizedInput,
     PrequalificationInput,
     RoutingInput,
+    bank_optional_for_prequalification,
     normalize_business_input,
     normalize_prequalification_input,
     normalize_routing_input,
@@ -22,12 +23,29 @@ from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
+FRESH_V3_ORIGINATOR = "redunisol.edna.fresh-v3"
+
+
+def uses_fresh_v3_receipt(lead: dict[str, Any]) -> bool:
+    return lead.get("ORIGINATOR_ID") == FRESH_V3_ORIGINATOR
+
+
 class MissingLeadFieldError(ValueError):
     """A required lead value is absent; a later CRM update may supply it."""
 
     def __init__(self, field_name: str) -> None:
         self.field_name = field_name
         super().__init__(f'El lead no contiene el campo requerido "{field_name}".')
+
+
+def linked_contact_id(record: dict[str, Any]) -> int | None:
+    value = record.get("contactId") or record.get("CONTACT_ID")
+    if not value or str(value).strip() in {"", "0"}:
+        return None
+    contact_id = int(str(value))
+    if contact_id < 1:
+        raise ValueError("Invalid Bitrix contact ID")
+    return contact_id
 
 
 def create_lead(
@@ -64,11 +82,14 @@ def create_lead(
         ),
         config.fields.lead_cuil: submission.cuil_digits,
         config.fields.lead_employment_status: submission.employment_status.bitrix_id,
-        config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
         config.fields.lead_province: submission.province.bitrix_id,
         config.fields.lead_source: source_id,
     }
 
+    if submission.payment_bank is not None:
+        fields[config.fields.lead_payment_bank] = [submission.payment_bank.bitrix_id]
+    if submission.paying_organization:
+        fields["UF_CRM_WA_ORGANISMO"] = submission.paying_organization
     if provisional_owner:
         fields["ASSIGNED_BY_ID"] = config.deal.provisional_user_id
     fields.update(_build_optional_tracking_fields(config, submission))
@@ -206,7 +227,6 @@ def build_prequalification_input_from_lead(
     config: AppConfig,
 ) -> PrequalificationInput:
     from .catalogs import PROVINCIAS, SITUACIONES_LABORALES
-    from .qualification import QUALIFICATION_RULES
     employment_value = _required_lead_value(lead, config.fields.lead_employment_status)
     employment = SITUACIONES_LABORALES.resolve(employment_value, "employment_status")
     if employment.key == "jubilado_nacional":
@@ -218,30 +238,13 @@ def build_prequalification_input_from_lead(
 
     province_value = _required_lead_value(lead, config.fields.lead_province)
     province = PROVINCIAS.resolve(province_value, "province")
-    if (province.key == "buenos_aires"
-            and employment.key in QUALIFICATION_RULES["buenos_aires"]["allowed_employment_statuses"]):
-        return normalize_prequalification_input({
-            "employment_status": employment_value,
-            "province": province_value,
-            "payment_bank": _optional_lead_value(lead, config.fields.lead_payment_bank),
-        })
-
-    # Outside ANSES and the eligible Buenos Aires profiles, only the explicit
-    # assisted Caja route allows an absent payment bank.
-    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake", "whatsapp_single_intake", "organic_profile_reuse"}
-            and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
-            and not lead.get(config.fields.lead_payment_bank)):
-        if employment.key == "jubilado_provincial" and province.key == "cordoba":
-            return PrequalificationInput(province=province, employment_status=employment, payment_bank=None)
-    payload = {
-        "province": _required_lead_value(lead, config.fields.lead_province),
-        "employment_status": _required_lead_value(
-            lead,
-            config.fields.lead_employment_status,
-        ),
-        "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
-    }
-    return normalize_prequalification_input(payload)
+    organization = lead.get("UF_CRM_WA_ORGANISMO")
+    optional_bank = bank_optional_for_prequalification(province.key, employment.key, organization)
+    read_bank = _optional_lead_value if optional_bank else _required_lead_value
+    return normalize_prequalification_input({
+        "province": province_value, "employment_status": employment_value, "organismo": organization,
+        "payment_bank": read_bank(lead, config.fields.lead_payment_bank),
+    })
 
 
 def build_routing_input_from_lead(

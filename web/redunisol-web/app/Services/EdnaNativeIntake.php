@@ -12,14 +12,17 @@ use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 use Throwable;
 
-/** A real completed V3 response for an existing native identity, using the existing profile contract. */
+/** Processes an authenticated completed Flow and retains its exact native session. */
 class EdnaNativeIntake
 {
     public function process(object $request, object $send, array $proof): void
     {
         $deadline = microtime(true) + 105;
-        if ($request->state !== 'pending' || ! app(EdnaFreshIntake::class)->applies($send) || ($proof['version'] ?? null) !== 2
+        $fresh = app(EdnaFreshIntake::class)->declaration($send);
+        if ($request->state !== 'pending' || ! app(EdnaFreshIntake::class)->applies($send)
+            || ! in_array($proof['version'] ?? null, $fresh ? [1, 2] : [2], true)
             || $send->state !== 'completed' || (int) $send->response_event_id !== (int) $request->response_event_id
+            || (int) $send->id !== (int) $request->flow_send_id
             || ! config('edna.enabled') || ! config('edna.intake_crm_enabled')) {
             return;
         }
@@ -47,7 +50,7 @@ class EdnaNativeIntake
             if ($checkBenefits && $this->interceptBenefits($request, $entry, $proof, $benefits)) {
                 return;
             }
-            if (! $checkBenefits && $this->preserveNativeAttention($request, $proof)) {
+            if (! $fresh && ! $checkBenefits && $this->preserveNativeAttention($request, $proof)) {
                 return;
             }
             $service = new EdnaIntake;
@@ -56,16 +59,70 @@ class EdnaNativeIntake
             if (! $attribution || ! $context) {
                 throw new RuntimeException('Fresh intake context unavailable.');
             }
-            unset($attribution['wa']['WA_FLOW_ID']);
-            $attribution['wa']['WA_FLOW'] = 'organic_profile_reuse';
+            $contract = $fresh ? EdnaFreshIntake::DECLARATION : EdnaOrganicLoan::CONTRACT;
+            if (! $fresh) {
+                unset($attribution['wa']['WA_FLOW_ID']);
+                $attribution['wa']['WA_FLOW'] = 'organic_profile_reuse';
+            }
             $answer = json_decode(Crypt::decryptString($request->answer), true, 16, JSON_THROW_ON_ERROR);
-            $body = ['contract' => EdnaOrganicLoan::CONTRACT, 'case_id' => $send->request_id,
+            $body = ['contract' => $contract, 'case_id' => $send->request_id,
                 'phone' => Crypt::decryptString($send->recipient), 'dry_run' => false,
                 'received_at' => CarbonImmutable::parse($request->received_at)->toIso8601String(), 'answer' => $answer,
                 'entry_context' => $context, 'crm_binding' => array_replace($proof, ['version' => 1]), 'attribution' => $attribution,
                 'provenance' => ['source_kind' => 'edna_intake_request', 'source_id' => (string) $request->id,
                     'schema' => 'whatsapp-intake-v3', 'v3_equivalent' => true,
                     'confirmed_at' => CarbonImmutable::parse($request->received_at)->toIso8601String()]];
+            if ($fresh) {
+                $event = DB::table('edna_incoming_events')->find($request->response_event_id);
+                $payload = $event ? json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR) : null;
+                $transport = app(EdnaFlowTransport::class)->id($send);
+                $original = json_decode((string) ($payload['messageContent']['text'] ?? ''), true, 16, JSON_THROW_ON_ERROR);
+                if (! $event || $event->subject_id !== $send->subject_id || ($payload['id'] ?? null) !== $event->message_id
+                    || ($payload['subjectId'] ?? null) !== $send->subject_id || ($payload['subscriber']['identifier'] ?? null) !== $body['phone']
+                    || ($payload['messageContent']['type'] ?? null) !== 'FLOW' || ($payload['replyOutMessageExternalRequestId'] ?? null) !== $transport
+                    || ! $send->outgoing_message_id || (string) ($payload['replyOutMessageId'] ?? '') !== $send->outgoing_message_id
+                    || $original !== $answer || empty($payload['receivedAt'])
+                    || CarbonImmutable::parse($payload['receivedAt'])->timestamp !== CarbonImmutable::parse($request->received_at)->timestamp
+                    || app(EdnaIntakeBinding::class)->verified($send) !== $proof) {
+                    throw new RuntimeException('Completed Flow evidence does not match this application.');
+                }
+                unset($body['provenance']);
+                $body['flow_id'] = $send->flow_id;
+                $body['response'] = ['request_id' => (string) $request->id, 'case_id' => $send->request_id,
+                    'transport_id' => $transport, 'outgoing_message_id' => $send->outgoing_message_id,
+                    'event_id' => (int) $event->id, 'message_id' => $event->message_id];
+                try {
+                    $receipt = app(WebChatContinuity::class)->declarationReceipt($send, $request, $proof, $answer);
+                } catch (Throwable) {
+                    $this->deferBenefits($request, $entry, 'web_reference_confirmation_pending', 'declaration_wait:');
+
+                    return;
+                }
+                if ($receipt) {
+                    DB::transaction(function () use ($request, $receipt): void {
+                        $current = DB::table('web_form_receipts')->where('id', $receipt->id)->lockForUpdate()->first();
+                        if (! $current || $current->state !== 'synced' || $current->source !== 'web_server'
+                            || $current->identity_hash !== $receipt->identity_hash || $current->phone_hash !== $receipt->phone_hash
+                            || $current->lead_id !== $receipt->lead_id || $current->contact_id !== $receipt->contact_id
+                            || $current->reference_hash !== $receipt->reference_hash) {
+                            throw new RuntimeException('Referenced commercial request changed.');
+                        }
+                        $claimed = DB::table('edna_intake_requests')->where('id', $request->id)->where('state', 'pending')->update([
+                            'state' => 'pending_requalification', 'reason' => 'fresh_web_revision',
+                            'web_submission_id' => $receipt->id, 'lead_id' => $receipt->lead_id,
+                            'contact_id' => $receipt->contact_id, 'updated_at' => now(),
+                        ]);
+                        if ($claimed) {
+                            \App\Jobs\RequalifyEdnaWebDeclaration::dispatch((int) $request->id)->onConnection('edna')->onQueue('edna')->afterCommit();
+                        }
+                    });
+
+                    return;
+                }
+                if (! $checkBenefits && $this->preserveNativeAttention($request, $proof)) {
+                    return;
+                }
+            }
             $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
             if ($entry && app(WebChatContinuity::class)->eligibleEntry($entry)) {
                 $body['routing_policy'] = WebChatContinuity::NAME;
@@ -74,8 +131,6 @@ class EdnaNativeIntake
                     $body['contact_deal_activity'] = true;
                 }
             }
-            // This contract revalidates native message, CUIL and existing management in Kestra.
-            // The actual Flow transport remains in edna_flow_sends and is never invented/replayed.
             if ($checkBenefits && ($this->interceptBenefits($request, $entry, $proof, $benefits)
                 || $this->preserveNativeAttention($request, $proof))) {
                 return;
@@ -95,11 +150,22 @@ class EdnaNativeIntake
             $response = Http::asJson()->acceptJson()->connectTimeout(3)->timeout(60)->withoutRedirecting()->post($url, $body);
             $result = $response->json();
             if (! $response->successful() || ! is_array($result) || ($result['ok'] ?? null) !== true
-                || ($result['contract'] ?? '') !== EdnaOrganicLoan::CONTRACT || ($result['case_id'] ?? '') !== $send->request_id
+                || ($result['contract'] ?? '') !== $contract || ($result['case_id'] ?? '') !== $send->request_id
                 || ! is_bool($result['write_attempted'] ?? null)) {
                 throw new RuntimeException('Fresh intake acknowledgement uncertain.');
             }
             $action = $result['action'] ?? '';
+            if ($fresh && $action === 'manual_review' && $result['write_attempted'] === false
+                && in_array($result['reason'] ?? '', ['original_guest_ownership_unverified', 'attention_inspection_unavailable', 'native_history_incomplete'], true)) {
+                DB::transaction(function () use ($request, $entry, $result): void {
+                    if (DB::table('edna_intake_requests')->where('id', $request->id)->where('state', 'processing')
+                        ->update(['state' => 'pending', 'reason' => null, 'updated_at' => now()])) {
+                        $this->deferBenefits($request, $entry, $result['reason'], 'declaration_wait:');
+                    }
+                });
+
+                return;
+            }
             $assigned = $action === 'assigned_case' && $result['write_attempted'] === false;
             if ($assigned) {
                 foreach (['deal_id', 'seller_id', 'contact_id'] as $key) {
@@ -112,11 +178,12 @@ class EdnaNativeIntake
             if ($synced && ! $assigned && ! preg_match('/^[1-9][0-9]{0,18}$/D', (string) ($result['lead_id'] ?? ''))) {
                 throw new RuntimeException('Fresh intake CRM acknowledgement invalid.');
             }
-            DB::transaction(function () use ($request, $proof, $answer, $result, $assigned, $synced): void {
+            DB::transaction(function () use ($request, $proof, $answer, $result, $assigned, $synced, $fresh, $send): void {
                 DB::table('edna_intake_requests')->where('id', $request->id)->where('state', 'processing')->update([
                     'state' => $synced ? 'synced' : 'review', 'reason' => $result['reason'] ?? 'native_intake_review',
                     'lead_id' => ($result['lead_id'] ?? null) ?: null, 'contact_id' => ($result['contact_id'] ?? null) ?: null, 'updated_at' => now(),
                 ]);
+                $case = null;
                 if ($assigned) {
                     $case = array_intersect_key($result, array_flip(['lead_id', 'contact_id', 'deal_id', 'seller_id']));
                     if (($result['reason'] ?? '') === 'existing_contact_deal') {
@@ -129,19 +196,22 @@ class EdnaNativeIntake
                     if (! $case['identity_hash']) {
                         throw new RuntimeException('Assigned case identity unavailable.');
                     }
-                    if (DB::table('edna_intake_chat_routes')->insertOrIgnore([
-                        'request_id' => $request->id, 'proof' => json_encode($proof, JSON_THROW_ON_ERROR),
-                        'assigned_case' => json_encode($case, JSON_THROW_ON_ERROR), 'state' => 'pending',
-                        'created_at' => now(), 'updated_at' => now(),
-                    ])) {
-                        Queue::connection('edna')->push(new RouteEdnaIntakeChat((int) $request->id), '', 'edna');
-                    }
+                } elseif ($fresh && in_array($result['action'], ['queued', 'already_processed'], true)) {
+                    $case = ['request_uuid' => $send->request_id, 'lead_id' => (string) $result['lead_id'],
+                        'identity_hash' => (new WebFormReceipt)->identityHash($answer['cuil'] ?? '')];
+                }
+                if ($case !== null && DB::table('edna_intake_chat_routes')->insertOrIgnore([
+                    'request_id' => $request->id, 'proof' => json_encode($proof, JSON_THROW_ON_ERROR),
+                    'assigned_case' => json_encode($case, JSON_THROW_ON_ERROR), 'state' => 'pending',
+                    'created_at' => now(), 'updated_at' => now(),
+                ])) {
+                    Queue::connection('edna')->push(new RouteEdnaIntakeChat((int) $request->id), '', 'edna');
                 }
             });
             if ($synced) {
                 try {
                     app(EdnaOrganicProfile::class)->record('edna_intake_request', (string) $request->id, $body['phone'],
-                        $answer, $request->received_at, ($result['lead_id'] ?? null) ?: null, ($result['contact_id'] ?? null) ?: null);
+                        $answer, $request->received_at, ($result['lead_id'] ?? null) ?: null, ($result['contact_id'] ?? null) ?: null, (string) $send->flow_id);
                 } catch (Throwable) {
                     // Profile retention never replays an acknowledged application request.
                 }
@@ -199,9 +269,9 @@ class EdnaNativeIntake
         }
     }
 
-    private function deferBenefits(object $request, object $entry, string $reason): void
+    private function deferBenefits(object $request, object $entry, string $reason, string $prefix = 'benefits_wait:'): void
     {
-        DB::transaction(function () use ($request, $entry, $reason): void {
+        DB::transaction(function () use ($request, $entry, $reason, $prefix): void {
             $current = DB::table('edna_intake_requests')->where('id', $request->id)->lockForUpdate()->first();
             if (! $current || $current->state !== 'pending') {
                 return;
@@ -209,23 +279,25 @@ class EdnaNativeIntake
             $expires = $this->benefitsDeadline($entry);
             if ($expires->lte(now())) {
                 DB::table('edna_intake_requests')->where('id', $current->id)->where('state', 'pending')->update([
-                    'state' => 'review', 'reason' => 'benefits_preflight_expired', 'updated_at' => now(),
+                    'state' => 'review', 'reason' => $prefix === 'benefits_wait:' ? 'benefits_preflight_expired' : 'web_reference_confirmation_expired',
+                    'updated_at' => now(),
                 ]);
 
                 return;
             }
             // One pre-POST retry per 30-second window. Another active worker
             // cannot turn processing/unknown into pending or enqueue a second copy.
-            if (str_starts_with((string) $current->reason, 'benefits_wait:')
+            if (str_starts_with((string) $current->reason, $prefix)
                 && CarbonImmutable::parse($current->updated_at)->gt(now()->subSeconds(30))) {
                 return;
             }
             $changed = DB::table('edna_intake_requests')->where('id', $current->id)->where('state', 'pending')
                 ->where('updated_at', $current->updated_at)->update([
-                    'reason' => substr('benefits_wait:'.$reason, 0, 80), 'updated_at' => now(),
+                    'reason' => substr($prefix.$reason, 0, 80), 'updated_at' => now(),
                 ]);
             if ($changed) {
-                $delay = min(random_int(30, 60), max(1, (int) now()->diffInSeconds($expires, false)));
+                $maxDelay = $prefix === 'declaration_wait:' ? max(60, min(1800, (int) CarbonImmutable::parse($request->received_at)->diffInSeconds(now()))) : 60;
+                $delay = min(random_int(30, $maxDelay), max(1, (int) now()->diffInSeconds($expires, false)));
                 Queue::connection('edna')->later($delay, new ProcessEdnaIntake((int) $current->id), '', 'edna');
             }
         });

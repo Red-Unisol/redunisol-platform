@@ -21,6 +21,50 @@ class WebChatContinuity
         return $this->authenticated($event, salesCredit: $salesCredit) !== null;
     }
 
+    /** Associate a real new declaration only with an explicit reference in its exact session. */
+    public function declarationReceipt(object $send, object $request, array $proof, array $answer): ?object
+    {
+        $cut = $this->cutover();
+        $phoneHash = (new AttributionJourney)->phoneHash(Crypt::decryptString($send->recipient));
+        $cuil = is_string($answer['cuil'] ?? null) ? preg_replace('/[\s.-]/', '', $answer['cuil']) : '';
+        $identityHash = app(EdnaOrganicProfile::class)->validCuil($cuil) ? (new WebFormReceipt)->identityHash($cuil) : null;
+        if (! $cut || ! $phoneHash || ! $identityHash) {
+            return null;
+        }
+        $matches = [];
+        foreach ($this->contexts($send->subject_id, $phoneHash, $cut)->get() as $context) {
+            $receipt = DB::table('web_form_receipts')->find($context->submission_id);
+            if (! $receipt || $receipt->source !== 'web_server' || ! hash_equals((string) $receipt->identity_hash, $identityHash)
+                || $context->chat_id && (string) $context->chat_id !== (string) $proof['chat_id']
+                || $context->session_id && (string) $context->session_id !== (string) $proof['session_id']) {
+                continue;
+            }
+            $anchor = DB::table('edna_incoming_events')->find($context->anchor_entry_event_id);
+            $payload = $anchor ? $this->authenticated($anchor) : null;
+            if (! $payload || ! $this->validAnchor($context, $payload, $cut)
+                || CarbonImmutable::parse($payload['receivedAt'])->gt(CarbonImmutable::parse($request->received_at))) {
+                continue;
+            }
+            $anchorProof = $this->decode($context->proof);
+            if (! $this->validProof($anchorProof, $anchor)) {
+                $anchorProof = (int) $anchor->id === (int) $send->entry_event_id ? $proof
+                    : app(EdnaMessageBinding::class)->resolve($anchor, $payload, (int) $proof['chat_id']);
+            }
+            if (! $anchorProof || ! $this->validProof($anchorProof, $anchor)) {
+                throw new \RuntimeException('Explicit web reference awaiting native confirmation.');
+            }
+            if ((string) $proof['session_id'] === (string) $anchorProof['session_id']
+                && (string) $proof['chat_id'] === (string) $anchorProof['chat_id']) {
+                $matches[] = $receipt;
+            }
+        }
+        if (count($matches) > 1 || $matches && ($matches[0]->state !== 'synced' || ! $this->id($matches[0]->lead_id))) {
+            throw new \RuntimeException('Explicit web reference awaiting unique receipt.');
+        }
+
+        return $matches[0] ?? null;
+    }
+
     public function captureReference(object $event, object $receipt): ?int
     {
         $payload = $this->authenticated($event);

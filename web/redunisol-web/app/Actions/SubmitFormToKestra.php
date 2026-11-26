@@ -35,6 +35,7 @@ class SubmitFormToKestra
             'cuil' => $this->normalizeString($input['cuil'] ?? null),
             'province' => $this->normalizeString($input['provincia'] ?? null),
             'employment_status' => $this->normalizeString($input['situacion_laboral'] ?? null),
+            'organismo' => $input['organismo'] ?? null,
             'payment_bank' => $this->normalizeString($input['banco'] ?? null),
             'lead_source' => $leadSource,
             'attribution' => $input['attribution'] ?? null,

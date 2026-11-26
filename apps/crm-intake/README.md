@@ -30,6 +30,11 @@ Se eligió Python para este borrador aislado porque ya es el lenguaje del proces
 
 ## Precalificación comercial en observación
 
+La versión `intake-4` interpreta el organismo declarado junto con la pensión
+en la web. Para el Flow `whatsapp-intake-v3.1` omite el banco oculto de Caja
+Córdoba. La familia v3 publicada en octubre conserva el banco que declaró el
+pensionado. Cada interpretación conserva su versión.
+
 El evaluador recibe una interpretación versionada, su referencia estable y un instante con zona horaria. El resultado identifica la versión exacta del normalizador, el adaptador y el SHA-256 de las reglas. Usa el código de Kestra incluido desde el mismo commit, con sus vigencias en hora argentina. Distingue calificación comercial, medición web y autorización para ofrecer WhatsApp.
 
 La evaluación de alcance web aplica la política del webhook. Para prospectos CRM hace falta evidencia separada de Haberes CUAD. Una coincidencia tiene prioridad. Una consulta sin evidencia o no disponible queda pendiente. El evaluador recibe la referencia técnica y deja la consulta y el CUIL fuera de su contrato. Una vez comprobado el requisito de CUAD en el alcance CRM, la regla cordoba_caja_benefit_any_bank habilita la precalificación de jubilados y pensionados de Caja Córdoba por cualquier canal. Requiere provincia, organismo y prestación acreditados por el perfil normalizado. Admite la pregunta histórica agrupada si sus dos alternativas son jubilación y pensión de la misma Caja. La decisión registra la regla aplicada y conserva el dato bancario tal como fue interpretado. La evaluación posterior de líneas y mora mantiene su propio uso del banco. Los valores que el normalizador todavía no interpreta requieren completar el contrato antes de la activación.

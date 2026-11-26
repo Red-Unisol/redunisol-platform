@@ -31,6 +31,17 @@ SUBFLOW = "organic_profile_reuse"
 SOURCE_KINDS = {"edna_intake_request", "web_form", "crm_verified_profile"}
 CONTINUITY_POLICY = "web-chat-continuity-v1"
 
+PROFILE_CONFLICTS = {
+    "current_person_unproven", "native_identity_conflict", "native_contact_conflict",
+    "phone_identity_ambiguous", "phone_profile_identity_conflict", "ambiguous_cuil_contact",
+    "ambiguous_cuil_lead", "contact_lead_conflict", "source_profile_identity_conflict",
+    "source_profile_benefit_requires_confirmation", "native_profile_conflict",
+}
+
+
+class UnusableProfile(ValueError):
+    pass
+
 
 def now_utc():
     return datetime.now(timezone.utc)
@@ -65,6 +76,12 @@ def _result(case_id="", action="reused_not_valid", reason="reused_profile_invali
             "lead_id": "", "contact_id": "", "deal_id": "", "seller_id": "", "write_attempted": False, **fields}
 
 
+def _crm_enabled(source, phone):
+    recipients = [value.strip() for value in source.get("EDNA_INTAKE_RECIPIENTS", "").split(",") if value.strip()]
+    return (source.get("EDNA_INTAKE_CRM_ENABLED", "").lower() in {"true", "1"}
+            and (not recipients or phone.lstrip("+") in recipients))
+
+
 def _validate(payload, env):
     case_id = str(UUID(str(payload.get("case_id", ""))))
     if payload.get("contract") != CONTRACT or "flow_id" in payload or payload.get("test_reference") is not None:
@@ -73,16 +90,13 @@ def _validate(payload, env):
     provenance = payload.get("provenance")
     if (not isinstance(provenance, dict) or provenance.get("source_kind") not in SOURCE_KINDS
             or not isinstance(provenance.get("source_id"), str)
-            or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", provenance["source_id"])
-            or provenance.get("schema") != SCHEMA or provenance.get("v3_equivalent") is not True):
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", provenance["source_id"])):
         raise ValueError("A complete and sourced profile is required.")
     months = env.get("EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS", "6")
     if isinstance(months, bool) or not re.fullmatch(r"[1-9][0-9]?", str(months)) or int(months) > 24:
         raise ValueError("Invalid profile freshness configuration.")
     now = now_utc()
-    confirmed, received = _date(provenance.get("confirmed_at")), _date(payload.get("received_at"))
-    if not _cutoff(now, int(months)) < confirmed <= now + timedelta(minutes=5) or confirmed > received + timedelta(minutes=5):
-        raise ValueError("The original profile confirmation has expired or is in the future.")
+    received = _date(payload.get("received_at"))
     if received > now + timedelta(minutes=5):
         raise ValueError("The new inquiry cannot come from the future.")
     attribution = normalize_attribution(payload.get("attribution"))
@@ -105,9 +119,17 @@ def _validate(payload, env):
     channel_binding = dict(binding, lead_id=str(native or contact))
     validate_channel_context({**payload, "crm_binding": channel_binding}, env, attribution)
     binding.update(native_lead_id=str(native) if native else None, contact_id=str(contact) if contact else None)
-    answer = normalize_answer(payload.get("answer"), retain_invalid_identity=False, flow_id=SCHEMA)
+    if provenance.get("schema") != SCHEMA or provenance.get("v3_equivalent") is not True:
+        raise UnusableProfile("The historical declaration does not cover the current V3 schema.")
+    try:
+        confirmed = _date(provenance.get("confirmed_at"))
+        answer = normalize_answer(payload.get("answer"), retain_invalid_identity=False, flow_id=SCHEMA)
+    except (ValueError, TypeError, AttributeError, OverflowError) as error:
+        raise UnusableProfile("The saved declaration is incomplete.") from error
+    if not _cutoff(now, int(months)) < confirmed <= now + timedelta(minutes=5) or confirmed > received + timedelta(minutes=5):
+        raise UnusableProfile("The saved declaration has no current confirmation.")
     if answer["action"] == "review" or not answer["cuil"] or answer["email_status"] == "invalid":
-        raise ValueError("The saved profile is not complete under the current V3 schema.")
+        raise UnusableProfile("The saved profile is not complete under the current V3 schema.")
     return case_id, phone, binding, answer
 
 
@@ -128,7 +150,7 @@ def _links(dialog):
     return result
 
 
-def _native(api, payload, binding, phone, management=None):
+def _native(api, payload, binding, phone, management=None, *, independent=False):
     dialog = api.call("imopenlines.dialog.get", {"CHAT_ID": int(binding["chat_id"])})
     if not isinstance(dialog, dict) or str(dialog.get("id")) != binding["chat_id"] or dialog.get("entity_type") != "LINES":
         raise Review("native_dialog_unverified")
@@ -157,6 +179,10 @@ def _native(api, payload, binding, phone, management=None):
                  and str(management.get("LEAD_ID")) == binding["native_lead_id"])
     contact_deal = bool(deal_activity and not binding["native_lead_id"]
                         and payload.get("contact_deal_activity") is True)
+    # A session activity on a historical deal can prove the channel for a new
+    # declaration. It cannot authorize linking, editing, or routing to that deal.
+    source_deal = (independent and isinstance(activity, dict) and str(activity.get("OWNER_TYPE_ID")) == "2"
+                   and _id(links.get("DEAL")) and str(activity.get("OWNER_ID")) == links["DEAL"])
     for key, expected in (("LEAD", binding["native_lead_id"]), ("CONTACT", binding["contact_id"])):
         # Bitrix can clear the converted lead from the dialog tracker. Only its
         # exact original lead/contact and the unique verified deal corroborate
@@ -174,7 +200,7 @@ def _native(api, payload, binding, phone, management=None):
             or not isinstance(params, dict) or params.get("USER_CODE") != code
             or not ((str(activity.get("OWNER_TYPE_ID")) == "1" and str(activity.get("OWNER_ID")) == binding["native_lead_id"])
                     or (str(activity.get("OWNER_TYPE_ID")) == "3" and str(activity.get("OWNER_ID")) == binding["contact_id"])
-                    or converted or contact_deal)):
+                    or converted or contact_deal or source_deal)):
         raise Review("native_activity_unverified")
     history = api.call("imopenlines.session.history.get", {"SESSION_ID": int(binding["session_id"])})
     if (not isinstance(history, dict) or str(history.get("sessionId")) != binding["session_id"]
@@ -213,7 +239,9 @@ def _identity(api, config, binding, phone, answer):
     native = _record(api, "lead", binding["native_lead_id"]) if binding["native_lead_id"] else None
     contact = _record(api, "contact", binding["contact_id"]) if binding["contact_id"] else None
     if native:
-        if not _same_phone(native, phone) or _test_record(native):
+        if _test_record(native):
+            raise Review("native_test_record")
+        if not _same_phone(native, phone):
             raise Review("native_identity_conflict")
         cuil = _cuil(native, config.fields.lead_cuil)
         if cuil and cuil != answer["cuil"]:
@@ -350,7 +378,7 @@ def _target(api, config, native, answer):
         return None
     if native.get("STATUS_ID") not in {GUEST_STATUS, config.lead_statuses.new, config.lead_statuses.preclassification}:
         raise Review("native_management_preserved")
-    if not _unset(native.get("UF_CRM_WA_ASSISTANCE_ID")) or _profile_conflict(native, answer, config):
+    if not _unset(native.get("UF_CRM_WA_ASSISTANCE_ID")):
         raise Review("native_management_preserved")
     owner = native.get(config.fields.lead_commercial_owner)
     if not _unset(owner):
@@ -358,6 +386,8 @@ def _target(api, config, native, answer):
             raise Review("native_management_preserved")
     if not _unset(native.get(config.fields.lead_processing_policy)):
         raise Review("native_processing_policy_preserved")
+    if _profile_conflict(native, answer, config):
+        raise Review("native_profile_conflict")
     return native
 
 
@@ -366,6 +396,10 @@ def process(payload, *, env=None, client=None):
     case_id = ""
     try:
         case_id, phone, binding, answer = _validate(payload, source)
+    except UnusableProfile:
+        # The transport and native proof envelope have already passed validation.
+        eligible = payload.get("dry_run") is False and _crm_enabled(source, normalize_whatsapp(payload["phone"]))
+        return _result(str(UUID(str(payload["case_id"]))), reason="source_profile_unusable", request_fresh_profile=eligible)
     except (ValueError, TypeError, AttributeError, OverflowError):
         try:
             case_id = str(UUID(str(payload.get("case_id", ""))))
@@ -376,8 +410,7 @@ def process(payload, *, env=None, client=None):
     payload = {**payload, "case_id": case_id}
     if payload.get("dry_run") is not False:
         return {**result, "action": "dry_run", "reason": "validated_reused_profile"}
-    recipients = [value.strip() for value in source.get("EDNA_INTAKE_RECIPIENTS", "").split(",") if value.strip()]
-    if source.get("EDNA_INTAKE_CRM_ENABLED", "").lower() not in {"true", "1"} or recipients and phone.lstrip("+") not in recipients:
+    if not _crm_enabled(source, phone):
         return {**result, "action": "disabled", "reason": "disabled_or_outside_pilot"}
     config = load_config(source)
     api = IntakeCrmClient(client or BitrixClient(config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0))
@@ -474,4 +507,7 @@ def process(payload, *, env=None, client=None):
                 "lead_id": lead_id, "contact_id": str(written.get("CONTACT_ID") or ""), "write_attempted": True}
     except Review as error:
         action = "reused_not_valid" if error.reason == "current_person_unproven" and not api.write_attempted else "manual_review"
-        return {**result, "action": action, "reason": error.reason, "write_attempted": api.write_attempted}
+        response = {**result, "action": action, "reason": error.reason, "write_attempted": api.write_attempted}
+        if not api.write_attempted and error.reason in PROFILE_CONFLICTS:
+            response["request_fresh_profile"] = True
+        return response

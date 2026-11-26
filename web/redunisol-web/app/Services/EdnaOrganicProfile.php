@@ -40,7 +40,7 @@ class EdnaOrganicProfile
         $this->crm = $crm ?? new EdnaBitrix;
     }
 
-    public function completeAnswer(array $input): ?array
+    public function completeAnswer(array $input, ?string $flowId = null): ?array
     {
         $province = $input['provincia'] ?? null;
         if (! is_string($province) || ! isset(self::SITUATIONS[$province])) {
@@ -62,10 +62,15 @@ class EdnaOrganicProfile
             $answer[$organismKey] = $organism;
         }
         $bankKey = $province === 'cordoba' && $retired ? 'banco_jubilado' : 'banco_'.$province;
-        if (! ($retired && $organism === 'caja_cordoba' && $situation !== 'pensionado')) {
+        $cajaCordoba = $retired && $province === 'cordoba' && $organism === 'caja_cordoba';
+        if (! $cajaCordoba) {
             if (! in_array($input[$bankKey] ?? null, self::BANKS, true)) {
                 return null;
             }
+            $answer[$bankKey] = $input[$bankKey];
+        } elseif ($situation === 'pensionado' && ($flowId === null || $flowId === '950118281197789')
+            && in_array($input[$bankKey] ?? null, self::BANKS, true)) {
+            // The published v3 asked pensioners for a bank. Newer raw Flows can return a hidden selection.
             $answer[$bankKey] = $input[$bankKey];
         }
         $email = is_string($input['email'] ?? null) ? trim($input['email']) : '';
@@ -79,9 +84,9 @@ class EdnaOrganicProfile
         return $answer;
     }
 
-    public function record(string $sourceKind, string $sourceId, string $phone, array $input, mixed $confirmedAt, ?string $leadId = null, ?string $contactId = null): bool
+    public function record(string $sourceKind, string $sourceId, string $phone, array $input, mixed $confirmedAt, ?string $leadId = null, ?string $contactId = null, ?string $flowId = null): bool
     {
-        $answer = $this->completeAnswer($input);
+        $answer = $this->completeAnswer($input, $flowId);
         $hash = (new AttributionJourney)->phoneHash($phone);
         if (! $answer || ! $hash || ! in_array($sourceKind, ['edna_intake_request', 'web_form'], true)
             || $sourceId === '' || strlen($sourceId) > 64) {
@@ -123,7 +128,10 @@ class EdnaOrganicProfile
             'empleado de la unc' => 'unc', 'daspu' => 'daspu', 'policia federal' => 'pfa',
             'policia' => $province === 'cordoba' ? 'policia_cordoba' : 'policia',
             'jubilado nacional' => 'jubilado', 'jubilado provincial' => 'jubilado', 'otra' => 'otra'][$employment] ?? null;
-        // "Pensionado" alone does not prove ANSES vs. a provincial source.
+        $organism = $input['organismo'] ?? null;
+        if ($employment === 'pensionado' && in_array($organism, ['anses', $province === 'cordoba' ? 'caja_cordoba' : 'caja_provincial'], true)) {
+            $situation = 'pensionado';
+        }
         if (! $situation) {
             return null;
         }
@@ -131,19 +139,24 @@ class EdnaOrganicProfile
         if ($situation === 'jubilado') {
             $answer[$province === 'cordoba' ? 'organismo' : 'organismo_'.$province] = $employment === 'jubilado nacional'
                 ? 'anses' : ($province === 'cordoba' ? 'caja_cordoba' : 'caja_provincial');
+            if ($organism !== null && $organism !== $answer[$province === 'cordoba' ? 'organismo' : 'organismo_'.$province]) {
+                return null;
+            }
+        } elseif ($situation === 'pensionado') {
+            $answer[$province === 'cordoba' ? 'organismo' : 'organismo_'.$province] = $organism;
         }
         $bank = ['banco de la provincia de cordoba s.a.' => 'bancor', 'bancor' => 'bancor',
             'banco de la nacion argentina' => 'nacion', 'banco nacion' => 'nacion',
             'banco de la provincia de buenos aires' => 'provincia_bsas',
             'nuevo banco de santa fe sociedad anonima' => 'santa_fe', 'banco provincia del neuquen sociedad anonima' => 'bpn',
             'otros' => 'otro', 'otro' => 'otro'][$ascii($input['banco'] ?? '')] ?? null;
-        $answer[$province === 'cordoba' && $situation === 'jubilado' ? 'banco_jubilado' : 'banco_'.$province] = $bank;
+        $answer[$province === 'cordoba' && in_array($situation, ['jubilado', 'pensionado'], true) ? 'banco_jubilado' : 'banco_'.$province] = $bank;
 
         return $this->completeAnswer($answer);
     }
 
     /** The native message is already proven by the menu worker; CRM reads only identify its saved profile. */
-    public function resolve(object $menu, array $proof): array
+    public function resolve(object $menu, array $proof, bool $preferFresh = false): array
     {
         $this->deadline = microtime(true) + 40;
         $this->calls = 0;
@@ -153,7 +166,7 @@ class EdnaOrganicProfile
             $hash = (new AttributionJourney)->phoneHash($phone);
             if (! $hash || $hash !== $menu->phone_hash || (string) $menu->subject_id !== (string) config('edna.subject_id')
                 || ($proof['verified'] ?? false) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session') {
-                return ['status' => 'ambiguous', 'reason' => 'profile_entry_identity_invalid'];
+                return ['status' => $preferFresh ? 'preserved' : 'ambiguous', 'reason' => 'profile_entry_identity_invalid'];
             }
             $months = (int) config('edna.organic_profile_max_age_months', 6);
             if ($months < 1 || $months > 24) {
@@ -173,10 +186,10 @@ class EdnaOrganicProfile
                 ->join('edna_intake_admissions as a', 'a.id', '=', 's.intake_admission_id')->where('a.recipient_hash', $hash)
                 ->where('s.subject_id', $menu->subject_id)->where('r.state', 'synced')->whereNotNull('r.answer')
                 ->where('r.received_at', '>=', $cutoff)->orderByDesc('r.received_at')->limit(101)
-                ->get(['r.id', 'r.answer', 'r.received_at', 'r.lead_id', 'r.contact_id']);
+                ->get(['r.id', 'r.answer', 'r.received_at', 'r.lead_id', 'r.contact_id', 's.flow_id']);
             foreach ($previous as $row) {
                 $this->candidate($candidates, 'edna_intake_request', (string) $row->id, json_decode(Crypt::decryptString($row->answer), true, 32, JSON_THROW_ON_ERROR),
-                    $row->received_at, $row->lead_id, $row->contact_id, $cutoff);
+                    $row->received_at, $row->lead_id, $row->contact_id, $cutoff, (string) $row->flow_id);
             }
             if ($previous->count() > 100) {
                 return ['status' => 'ambiguous', 'reason' => 'profile_declaration_window_incomplete'];
@@ -209,7 +222,10 @@ class EdnaOrganicProfile
             foreach (['LEAD' => 'lead', 'CONTACT' => 'contact'] as $kind => $entity) {
                 $duplicates = $this->call('crm.duplicate.findbycomm', ['entity_type' => $kind, 'type' => 'PHONE', 'values' => [$phone]]);
                 $ids = $duplicates[$kind] ?? [];
-                if (! is_array($duplicates) || ! is_array($ids) || count($ids) > 100 || collect($ids)->contains(fn ($id) => ! preg_match('/^[1-9][0-9]*$/D', (string) $id))) {
+                if (! is_array($duplicates) || ! is_array($ids) || collect($ids)->contains(fn ($id) => ! preg_match('/^[1-9][0-9]*$/D', (string) $id))) {
+                    throw new RuntimeException('Invalid CRM profile candidate list.');
+                }
+                if (count($ids) > 100) {
                     return ['status' => 'ambiguous', 'reason' => 'profile_phone_candidates_ambiguous'];
                 }
                 foreach (array_chunk($ids, 50) as $batch) {
@@ -223,8 +239,10 @@ class EdnaOrganicProfile
                         throw new RuntimeException('Profile response incomplete.');
                     }
                     foreach ($rows as $record) {
-                        if (! in_array((string) ($record['ID'] ?? ''), array_map('strval', $batch), true)
-                            || ! collect($record['PHONE'] ?? [])->contains(fn ($p) => (new AttributionJourney)->phoneHash((string) ($p['VALUE'] ?? '')) === $hash)) {
+                        if (! in_array((string) ($record['ID'] ?? ''), array_map('strval', $batch), true)) {
+                            throw new RuntimeException('Unexpected CRM profile candidate.');
+                        }
+                        if (! collect($record['PHONE'] ?? [])->contains(fn ($p) => (new AttributionJourney)->phoneHash((string) ($p['VALUE'] ?? '')) === $hash)) {
                             return ['status' => 'ambiguous', 'reason' => 'profile_crm_phone_changed'];
                         }
                         $cuil = (string) ($record[$entity === 'lead' ? 'UF_CRM_1693840106704' : 'UF_CRM_65B7E48033FCD'] ?? '');
@@ -255,7 +273,10 @@ class EdnaOrganicProfile
             foreach ($candidates as $candidate) {
                 $allIdentities[$candidate['identity_hash']] = true;
             }
-            if (! $nativeIdentity && count($allIdentities) > 1) {
+            if ($preferFresh && $nativeIdentity) {
+                $allIdentities[$nativeIdentity] = true;
+            }
+            if (($preferFresh || ! $nativeIdentity) && count($allIdentities) > 1) {
                 return ['status' => 'ambiguous', 'reason' => 'profile_phone_has_multiple_identities'];
             }
             if ($nativeIdentity) {
@@ -307,7 +328,7 @@ class EdnaOrganicProfile
         return $this->completeAnswer($answer);
     }
 
-    public function stillCurrent(object $menu, array $answer, array $provenance, array $nativeSnapshot): bool
+    public function stillCurrent(object $menu, array $answer, array $provenance, array $nativeSnapshot, bool $preferFresh = false): bool
     {
         $this->deadline = microtime(true) + 10;
         $this->calls = 0;
@@ -320,6 +341,10 @@ class EdnaOrganicProfile
             return false;
         }
         $identity = (new WebFormReceipt)->identityHash($complete['cuil']);
+        if ($preferFresh && DB::table('edna_customer_profiles')->where('phone_hash', $menu->phone_hash)
+            ->where('confirmed_at', '>', $cutoff)->where('identity_hash', '<>', $identity)->exists()) {
+            return false;
+        }
         foreach ($nativeSnapshot['records'] ?? [] as $record) {
             if (! empty($record['identity_hash']) && $record['identity_hash'] !== $identity) {
                 return false;
@@ -349,12 +374,12 @@ class EdnaOrganicProfile
         if ($provenance['source_kind'] === 'edna_intake_request') {
             $request = DB::table('edna_intake_requests as r')->join('edna_flow_sends as s', 's.id', '=', 'r.flow_send_id')
                 ->where('r.id', $provenance['source_id'])->where('r.state', 'synced')->whereNotNull('r.answer')
-                ->get(['r.answer', 'r.received_at', 's.recipient', 's.subject_id'])->first();
+                ->get(['r.answer', 'r.received_at', 's.recipient', 's.subject_id', 's.flow_id'])->first();
 
             return $request && $request->subject_id === $menu->subject_id
                 && (new AttributionJourney)->phoneHash(Crypt::decryptString($request->recipient)) === $menu->phone_hash
                 && CarbonImmutable::parse($request->received_at)->equalTo($date)
-                && $this->completeAnswer(json_decode(Crypt::decryptString($request->answer), true, 32, JSON_THROW_ON_ERROR)) === $complete;
+                && $this->completeAnswer(json_decode(Crypt::decryptString($request->answer), true, 32, JSON_THROW_ON_ERROR), (string) $request->flow_id) === $complete;
         }
 
         if ($provenance['source_kind'] === 'web_form') {
@@ -431,7 +456,11 @@ class EdnaOrganicProfile
 
     private function webCrmProfile(array $record): ?array
     {
-        foreach (self::WEB_FIELDS as $field) {
+        $available = self::WEB_FIELDS;
+        if (in_array($record[$available['banco']] ?? null, [null, false, '', []], true)) {
+            unset($available['banco']); // websiteAnswer decides whether this declaration requires a bank.
+        }
+        foreach ($available as $field) {
             if ((! is_string($record[$field] ?? null) && ! is_int($record[$field] ?? null))
                 || ! preg_match('/^[1-9][0-9]*$/D', (string) $record[$field])) {
                 return null;
@@ -459,7 +488,7 @@ class EdnaOrganicProfile
         }
         $labels = [];
         $fields = [];
-        foreach (self::WEB_FIELDS as $name => $field) {
+        foreach ($available as $name => $field) {
             $id = (string) $record[$field];
             if (! isset($this->webEnums[$field][$id])) {
                 return null;
@@ -467,14 +496,17 @@ class EdnaOrganicProfile
             $labels[$name] = $this->webEnums[$field][$id];
             $fields[$field] = ['id' => $id, 'label' => $labels[$name]];
         }
+        if (is_string($record['UF_CRM_WA_ORGANISMO'] ?? null) && $record['UF_CRM_WA_ORGANISMO'] !== '') {
+            $fields['UF_CRM_WA_ORGANISMO'] = $labels['organismo'] = $record['UF_CRM_WA_ORGANISMO'];
+        }
         $answer = $this->websiteAnswer($labels + ['cuil' => $record['UF_CRM_1693840106704'] ?? '', 'email' => $record['EMAIL'][0]['VALUE'] ?? '']);
 
         return $answer === null ? null : ['answer' => $answer, 'fields_hash' => hash('sha256', json_encode($fields, JSON_THROW_ON_ERROR))];
     }
 
-    private function candidate(array &$rows, string $kind, string $id, mixed $input, mixed $confirmedAt, ?string $leadId, ?string $contactId, CarbonImmutable $cutoff): void
+    private function candidate(array &$rows, string $kind, string $id, mixed $input, mixed $confirmedAt, ?string $leadId, ?string $contactId, CarbonImmutable $cutoff, ?string $flowId = null): void
     {
-        $answer = is_array($input) ? $this->completeAnswer($input) : null;
+        $answer = is_array($input) ? $this->completeAnswer($input, $flowId) : null;
         if (! $answer) {
             return;
         }
@@ -488,7 +520,7 @@ class EdnaOrganicProfile
                 'schema' => 'whatsapp-intake-v3', 'v3_equivalent' => true]];
     }
 
-    private function validCuil(string $cuil): bool
+    public function validCuil(string $cuil): bool
     {
         if (! preg_match('/^[0-9]{11}$/D', $cuil) || count(array_unique(str_split($cuil))) === 1) {
             return false;

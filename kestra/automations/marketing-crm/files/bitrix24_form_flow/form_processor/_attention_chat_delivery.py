@@ -5,6 +5,7 @@ import json
 
 from ._attention_retry import HORIZON
 from .deal_service import ChatTransferResult, inspect_attention_retry_sessions
+from .lead_service import uses_fresh_v3_receipt
 
 
 PENDING = "attention_chat_pending"
@@ -118,7 +119,8 @@ def _business_matches(client, config, marker, deal):
             or str(deal.get("contactId") or 0) != str(marker.contact)):
         return False
     lead = client.call("crm.lead.get", {"id": marker.lead})
-    return (str(lead.get("ID")) == str(marker.lead)
+    return (not uses_fresh_v3_receipt(lead)
+            and str(lead.get("ID")) == str(marker.lead)
             and str(lead.get("ASSIGNED_BY_ID")) == str(marker.target)
             and str(lead.get("CONTACT_ID") or 0) == str(marker.contact))
 

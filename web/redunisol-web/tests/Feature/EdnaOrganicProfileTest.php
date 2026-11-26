@@ -57,6 +57,17 @@ function organicSavedAnswer(array $changes = []): array
         'banco_cordoba' => 'bancor', 'cuil' => '20301234563', 'email' => 'Client@Example.test'], $changes);
 }
 
+test('Caja Córdoba retirement and pension can reuse a declaration without a bank', function (string $benefit) {
+    $profile = new EdnaOrganicProfile;
+    $answer = ['provincia' => 'cordoba', 'situacion_cordoba' => $benefit,
+        'organismo' => 'caja_cordoba', 'cuil' => '20301234563'];
+    expect($profile->completeAnswer($answer))->toEqual($answer)
+        ->and($profile->completeAnswer(array_replace($answer, ['organismo' => 'anses'])))->toBeNull()
+        ->and($profile->completeAnswer($answer + ['banco_jubilado' => 'otro'], 'future-flow'))->toEqual($answer);
+    $published = $profile->completeAnswer($answer + ['banco_jubilado' => 'otro'], '950118281197789');
+    expect($published['banco_jubilado'] ?? null)->toBe($benefit === 'pensionado' ? 'otro' : null);
+})->with(['jubilado', 'pensionado']);
+
 function organicProfileMenu(): object
 {
     return (object) ['recipient' => Crypt::encryptString('5493510000000'),
@@ -111,20 +122,19 @@ test('a new CRM modification date never refreshes an old or undated declaration'
     expect($select)->not->toContain('DATE_MODIFY');
 })->with([null, '2025-12-01T15:00:00Z']);
 
-test('one shared phone with two saved CUIL identities is ambiguous unless native CRM proves one identity', function (bool $nativeKnown) {
+test('after cutover a shared phone requires a fresh declaration even when Bitrix selected one identity', function (bool $nativeKnown) {
     organicSaveProfile();
     organicSaveProfile(['cuil' => '20987654326'], now()->subDays(2)->toIso8601String());
     $crm = new OrganicProfileCrmFake;
     if ($nativeKnown) {
         $crm->lead['UF_CRM_1693840106704'] = '20301234563';
     }
-    $result = (new EdnaOrganicProfile($crm))->resolve(organicProfileMenu(), organicProfileProof());
-    expect($result['status'])->toBe($nativeKnown ? 'reusable' : 'ambiguous');
-    if ($nativeKnown) {
-        expect($result['answer']['cuil'])->toBe('20301234563');
-    } else {
-        expect($result['reason'])->toBe('profile_phone_has_multiple_identities')->and($result)->not->toHaveKey('answer');
-    }
+    $profile = new EdnaOrganicProfile($crm);
+    $legacy = $profile->resolve(organicProfileMenu(), organicProfileProof());
+    expect($legacy['status'])->toBe($nativeKnown ? 'reusable' : 'ambiguous');
+    $result = $profile->resolve(organicProfileMenu(), organicProfileProof(), true);
+    expect($result)->toMatchArray(['status' => 'ambiguous', 'reason' => 'profile_phone_has_multiple_identities'])
+        ->and($result)->not->toHaveKey('answer');
 })->with([false, true]);
 
 test('an attached contact cannot contradict the identity on the native lead', function () {
@@ -195,6 +205,8 @@ test('website input becomes complete V3 data only through supported unambiguous 
     expect($profile->websiteAnswer($base))->toMatchArray(['provincia' => 'cordoba', 'situacion_cordoba' => 'empleado_publico',
         'banco_cordoba' => 'bancor', 'cuil' => '20301234563', 'email' => 'client@example.test'])
         ->and($profile->websiteAnswer(array_replace($base, ['situacion_laboral' => 'Pensionado'])))->toBeNull()
+        ->and($profile->websiteAnswer(array_replace($base, ['situacion_laboral' => 'Pensionado',
+            'organismo' => 'caja_cordoba', 'banco' => null])))->toMatchArray(['situacion_cordoba' => 'pensionado', 'organismo' => 'caja_cordoba'])
         ->and($profile->websiteAnswer(array_replace($base, ['banco' => 'Unknown bank'])))->toBeNull()
         ->and($profile->completeAnswer(organicSavedAnswer(['cuil' => '20301234564'])))->toBeNull();
 });
@@ -251,6 +263,18 @@ test('a historical synced web receipt reuses complete CRM declarations without W
         ->and($service->stillCurrent(organicProfileMenu(), $result['answer'], $result['provenance'], ['records' => []]))->toBeTrue();
     expect(collect($crm->calls)->where(fn ($call) => $call[0] === 'crm.lead.fields'))->toHaveCount(2);
     Http::assertNothingSent();
+});
+
+test('a verified web pension from Caja Córdoba can be reconstructed without the bank field', function () {
+    organicHistoricalWebReceipt();
+    $crm = organicHistoricalWebCrm(['UF_CRM_LEAD_1711458190312' => false, 'UF_CRM_WA_ORGANISMO' => 'caja_cordoba']);
+    $crm->schema['UF_CRM_1714071903']['items'][0]['VALUE'] = 'Pensionado';
+    $service = new EdnaOrganicProfile($crm);
+    $result = $service->resolve(organicProfileMenu(), organicProfileProof());
+    expect($result['status'])->toBe('reusable')
+        ->and($result['answer'])->toMatchArray(['situacion_cordoba' => 'pensionado', 'organismo' => 'caja_cordoba'])
+        ->and($result['answer'])->not->toHaveKey('banco_jubilado')
+        ->and($service->stillCurrent(organicProfileMenu(), $result['answer'], $result['provenance'], ['records' => []]))->toBeTrue();
 });
 
 test('historical web freshness never comes from CRM dates without a valid matching recent receipt', function (string $change) {

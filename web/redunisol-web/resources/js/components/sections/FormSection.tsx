@@ -102,6 +102,21 @@ const situacionesLaborales = [
     'Beneficiario de Plan Social',
 ];
 
+const pensionCajaCordoba = 'Pensionado de Caja Córdoba';
+
+function declaredEmployment(data: LeadFormData, cfg: FormSectionConfig) {
+    const province = cfg.provincia.enabled ? data.provincia : cfg.provincia.defaultValue;
+    const selected = cfg.situacionLaboral.enabled ? data.situacionLaboral : cfg.situacionLaboral.defaultValue;
+    const cordoba = province?.trim().toLocaleLowerCase('es').normalize('NFD').replace(/\p{M}/gu, '') === 'cordoba';
+    const pensionCaja = cordoba && selected === pensionCajaCordoba;
+    return {
+        cordoba,
+        pensionCaja,
+        employment: selected === pensionCajaCordoba ? 'Pensionado' : selected,
+        bankOptional: pensionCaja || (cordoba && selected === 'Jubilado Provincial'),
+    };
+}
+
 const bancos = [
     'BANCO DE LA PROVINCIA DE CORDOBA S.A.',
     'BANCO DE LA NACION ARGENTINA',
@@ -715,6 +730,7 @@ function Step4({
     cfg: FormSectionConfig;
     errors: FormErrors;
 }) {
+    const benefit = declaredEmployment(formData, cfg);
     return (
         <motion.div {...stepAnim} key="s4">
             <div className="space-y-6">
@@ -725,7 +741,7 @@ function Step4({
                         </label>
                         <div className="relative">
                             <select
-                                value={formData.situacionLaboral}
+                                value={benefit.pensionCaja ? pensionCajaCordoba : benefit.employment}
                                 onChange={(e) =>
                                     setFormData((p) => ({
                                         ...p,
@@ -742,6 +758,7 @@ function Step4({
                                         {s}
                                     </option>
                                 ))}
+                                {benefit.cordoba && <option value={pensionCajaCordoba}>{pensionCajaCordoba}</option>}
                             </select>
                             <ChevronDown />
                         </div>
@@ -753,7 +770,7 @@ function Step4({
                     </div>
                 )}
 
-                {cfg.banco.enabled && (
+                {cfg.banco.enabled && !benefit.bankOptional && (
                     <div>
                         <label className="mb-2 block text-base font-semibold text-[#1e2d3d]">
                             {cfg.banco.label}
@@ -1103,7 +1120,7 @@ export default function FormSection({
         if (cfg.situacionLaboral.enabled && !formData.situacionLaboral) {
             errors.situacion_laboral = 'Seleccioná tu situación laboral.';
         }
-        if (cfg.banco.enabled && !formData.banco) {
+        if (cfg.banco.enabled && !declaredEmployment(formData, cfg).bankOptional && !formData.banco) {
             errors.banco = 'Seleccioná tu banco de cobro.';
         }
 
@@ -1151,17 +1168,13 @@ export default function FormSection({
             payload.provincia = cfg.provincia.defaultValue;
         }
 
-        if (cfg.situacionLaboral.enabled) {
-            if (formData.situacionLaboral)
-                payload.situacion_laboral = formData.situacionLaboral;
-        } else if (cfg.situacionLaboral.defaultValue) {
-            payload.situacion_laboral = cfg.situacionLaboral.defaultValue;
-        }
+        const benefit = declaredEmployment(formData, cfg);
+        if (benefit.employment) payload.situacion_laboral = benefit.employment;
+        if (benefit.pensionCaja) payload.organismo = 'caja_cordoba';
 
-        if (cfg.banco.enabled) {
-            if (formData.banco) payload.banco = formData.banco;
-        } else if (cfg.banco.defaultValue) {
-            payload.banco = cfg.banco.defaultValue;
+        if (!benefit.bankOptional) {
+            const bank = cfg.banco.enabled ? formData.banco : cfg.banco.defaultValue;
+            if (bank) payload.banco = bank;
         }
         if (reciboUrl) payload.recibo_url = reciboUrl;
 

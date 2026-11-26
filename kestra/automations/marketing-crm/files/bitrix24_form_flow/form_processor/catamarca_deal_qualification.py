@@ -54,6 +54,8 @@ from .lead_service import (
     build_submission_from_lead,
     get_lead,
     lead_enum_label,
+    linked_contact_id,
+    uses_fresh_v3_receipt,
 )
 from .logger import Logger, create_logger
 from .routing_bucket import resolve_routing_bucket, routing_bucket_by_key
@@ -300,7 +302,7 @@ def qualify_catamarca_deal(
     deal_id_int = int(str(deal_id))
     deal = _get_deal(client, deal_id_int)
     lead_id = _required_int(deal.get("leadId") or deal.get("LEAD_ID"), "leadId")
-    contact_id = _optional_int(deal.get("contactId") or deal.get("CONTACT_ID"))
+    contact_id = linked_contact_id(deal)
     deal_title = str(deal.get("title") or deal.get("TITLE") or "").strip()
     current_stage = str(deal.get("stageId") or deal.get("STAGE_ID") or "").strip()
     previous_assignee_id = _optional_int(
@@ -343,15 +345,16 @@ def qualify_catamarca_deal(
 
     lead = get_lead(client, lead_id, active_logger)
     new_intake = _new_owner_policy(deal, lead)
-    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
+    deal["_fresh_v3_receipt"] = uses_fresh_v3_receipt(lead)
+    contact_id = contact_id or linked_contact_id(lead)
     deal["_routing_lead_snapshot"] = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
     try:
-        retry = read_marker(deal.get(config.deal.queue_reason_field))
+        retry = None if deal["_fresh_v3_receipt"] else read_marker(deal.get(config.deal.queue_reason_field))
     except ValueError:
         return _routing_preserved(client, config, deal, processed_at, "invalid_attention_retry_marker", active_logger)
     if retry:
         new_intake = True  # Retrying must also respect the current sales calendar and ownership policy.
-        if (retry.lead, retry.contact) != (lead_id, _optional_int(deal.get("contactId")) or 0):
+        if (retry.lead, retry.contact) != (lead_id, linked_contact_id(deal) or 0):
             return _routing_preserved(client, config, deal, processed_at, "crm_identity_changed_before_assignment", active_logger)
         if processed_at >= retry.first + HORIZON:
             return _routing_preserved(client, config, deal, processed_at, "attention_retry_expired", active_logger)
@@ -360,7 +363,7 @@ def qualify_catamarca_deal(
         deal["_attention_retry"] = retry
         deal["_inspection_now"] = now  # An absent override reads the real clock on each check.
     guarded_sessions, guard_reason = _routing_preflight(client, config, deal, active_logger)
-    if guard_reason == "manual_owner_preserved" and not retry:
+    if guard_reason == "manual_owner_preserved" and not retry and not deal["_fresh_v3_receipt"]:
         guarded_sessions, guard_reason = _adopt_seller_chat_owner(
             client, config, deal, active_logger, guarded_sessions, guard_reason)
     if guard_reason:
@@ -801,14 +804,16 @@ def qualify_catamarca_deal(
                                       guarded_sessions, active_logger, processed_at)
     if preserved:
         return preserved
-    linked_activity_count = bind_open_line_activities_to_deal(
+    linked_activity_count = 0 if deal["_fresh_v3_receipt"] else bind_open_line_activities_to_deal(
         client,
         lead_id=lead_id,
         contact_id=contact_id,
         deal_id=deal_id_int,
         logger=active_logger,
     )
-    if retry or seller_chat_owner:
+    if deal["_fresh_v3_receipt"]:
+        chat_transfer = ChatTransferResult((), (), ())
+    elif retry or seller_chat_owner:
         transfer_reason = "attention_chat_pending" if retry else "already_with_seller"
         chat_transfer = ChatTransferResult(tuple(guarded_sessions), (),
                                           tuple((chat, transfer_reason) for chat in guarded_sessions))
@@ -865,7 +870,7 @@ def qualify_catamarca_deal(
         distribution_reason=distribution.reason,
         linked_activity_count=linked_activity_count,
         transferred_chat_count=chat_transfer.transferred_count,
-        chat_transfer_status=chat_transfer.status,
+        chat_transfer_status="delegated_to_v3_receipt" if deal["_fresh_v3_receipt"] else chat_transfer.status,
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
@@ -1073,7 +1078,8 @@ def _split_legacy_queue_bucket(client: Any, config: AppConfig, deal: dict[str, A
 
 
 def _new_owner_policy(deal, lead):
-    return new_routing_enabled(deal.get("createdTime")) and new_routing_enabled(lead.get("DATE_CREATE"))
+    return (uses_fresh_v3_receipt(lead)
+            or (new_routing_enabled(deal.get("createdTime")) and new_routing_enabled(lead.get("DATE_CREATE"))))
 
 
 def _unverified_initial_owner(owners):
@@ -1093,6 +1099,8 @@ def _routing_preflight(client, config, deal, logger):
             return {}, "deal_changed_before_assignment"
         lead_id = _required_int(fresh.get("leadId"), "leadId")
         lead = get_lead(client, lead_id, logger)
+        if uses_fresh_v3_receipt(lead) != deal.get("_fresh_v3_receipt", False):
+            return {}, "crm_identity_changed_before_assignment"
         snapshot = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
         expected = deal.setdefault("_routing_lead_snapshot", snapshot)
         deal["_new_owner_policy"] = bool(deal.get("_attention_retry")) or _new_owner_policy(fresh, lead)
@@ -1105,7 +1113,7 @@ def _routing_preflight(client, config, deal, logger):
                 if initial:
                     return {}, initial
             return {}, "manual_owner_preserved"
-        if lead.get("CONTACT_ID") and str(lead["CONTACT_ID"]) != str(fresh.get("contactId")):
+        if linked_contact_id(lead) is not None and linked_contact_id(lead) != linked_contact_id(fresh):
             return {}, "crm_identity_changed_before_assignment"
         return _inspect_routing_chat(client, config, deal, logger)
     except Exception:
@@ -1113,7 +1121,11 @@ def _routing_preflight(client, config, deal, logger):
 
 
 def _inspect_routing_chat(client, config, deal, logger):
-    ids = dict(lead_id=int(deal["leadId"]), contact_id=_optional_int(deal.get("contactId")),
+    # Only the receipt knows which inbound session authorized this new request.
+    # Its Laravel worker owns the human-attention check and the transfer.
+    if deal.get("_fresh_v3_receipt"):
+        return {}, None
+    ids = dict(lead_id=int(deal["leadId"]), contact_id=linked_contact_id(deal),
                deal_id=int(deal["id"]), distributable_open_line_ids=config.deal.distributable_open_line_ids)
     retry = deal.get("_attention_retry")
     if retry:
@@ -1139,7 +1151,7 @@ def _inspect_routing_chat(client, config, deal, logger):
 def _sales_chat_ownership(client, config, deal):
     return active_sales_chat_owners(
         client, lead_id=_required_int(deal.get("leadId"), "leadId"),
-        contact_id=_optional_int(deal.get("contactId")), deal_id=_required_int(deal.get("id"), "id"),
+        contact_id=linked_contact_id(deal), deal_id=_required_int(deal.get("id"), "id"),
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
     )
 
@@ -1242,7 +1254,7 @@ def _routing_preserved(client, config, deal, processed_at, reason, logger, *, op
                    for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID"))
         coherent = (str(lead.get("ID")) == str(current.get("leadId"))
                     and str(current.get("categoryId")) == str(config.deal.category_id)
-                    and (not lead.get("CONTACT_ID") or str(lead["CONTACT_ID"]) == str(current.get("contactId"))))
+                    and (linked_contact_id(lead) is None or linked_contact_id(lead) == linked_contact_id(current)))
         if (same and same_lead and coherent and current.get("stageId") in
                 {config.deal.pending_qualification_stage_id, config.deal.assignment_queue_stage_id}):
             provisional = (None, 0, config.deal.provisional_user_id)
@@ -1252,7 +1264,7 @@ def _routing_preserved(client, config, deal, processed_at, reason, logger, *, op
                     and _optional_int(current.get("assignedById")) in provisional
                     and _optional_int(lead.get("ASSIGNED_BY_ID")) in provisional):
                 retry = deal.get("_attention_retry") or AttentionRetry(
-                    int(current["leadId"]), _optional_int(current.get("contactId")) or 0, processed_at, processed_at)
+                    int(current["leadId"]), linked_contact_id(current) or 0, processed_at, processed_at)
                 if processed_at < retry.first + HORIZON:
                     retry = retry.next(processed_at, deal.get("_attention_sessions"), opening)
                     fields = {config.deal.queue_reason_field: retry.encode()}
@@ -1280,7 +1292,7 @@ def _routing_preserved(client, config, deal, processed_at, reason, logger, *, op
         pass
     return _result(action=action, has_pending=False, reason=reason, processed_at=processed_at,
         deal_id=_optional_int(current.get("id")), lead_id=_optional_int(current.get("leadId")),
-        contact_id=_optional_int(current.get("contactId")), stage_id=current.get("stageId"),
+        contact_id=linked_contact_id(current), stage_id=current.get("stageId"),
         assigned_by_id=_optional_int(current.get("assignedById")),
         assignment_strategy="manual_assignment_preserved", distribution_action="preserved",
         distribution_reason=reason, chat_transfer_status="manual_owner_preserved",
@@ -1300,11 +1312,9 @@ def _guard_queued_ownership(client, config, deal, logger, processed_at):
         )
     lead_id = _required_int(fresh.get("leadId"), "leadId")
     lead = get_lead(client, lead_id, logger)
+    fresh["_fresh_v3_receipt"] = uses_fresh_v3_receipt(lead)
     fresh["_routing_lead_snapshot"] = {key: lead.get(key) for key in ("ID", "CONTACT_ID", "ASSIGNED_BY_ID")}
-    observed, attention_reason = inspect_open_line_assignments(
-        client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
-        deal_id=_required_int(fresh.get("id"), "id"),
-        distributable_open_line_ids=config.deal.distributable_open_line_ids, logger=logger)
+    observed, attention_reason = _inspect_routing_chat(client, config, fresh, logger)
     fresh["_attention_sessions"] = {chat: sid for chat, sid in observed.items() if sid}
     new_policy = _new_owner_policy(fresh, lead)
     if attention_reason and (new_policy or attention_reason != "manual_owner_preserved"):
@@ -1320,7 +1330,7 @@ def _guard_queued_ownership(client, config, deal, logger, processed_at):
             return fresh, _routing_preserved(client, config, fresh, processed_at, reason, logger)
     else:
         owners.update(active_open_line_owners(
-            client, lead_id=lead_id, contact_id=_optional_int(fresh.get("contactId")),
+            client, lead_id=lead_id, contact_id=linked_contact_id(fresh),
             deal_id=_required_int(fresh.get("id"), "id"),
             distributable_open_line_ids=config.deal.distributable_open_line_ids,
         ))
@@ -1365,7 +1375,7 @@ def _retry_queued_deal(
         return preserved
     deal_id = _required_int(deal.get("id"), "id")
     lead_id = _required_int(deal.get("leadId"), "leadId")
-    contact_id = _optional_int(deal.get("contactId"))
+    contact_id = linked_contact_id(deal)
     bucket_key = str(deal.get(config.deal.routing_bucket_field) or "").strip()
     bucket = routing_bucket_by_key(config, bucket_key)
     if bucket is None:
@@ -1439,11 +1449,11 @@ def _retry_queued_deal(
     }, guarded_sessions, logger, processed_at)
     if preserved:
         return preserved
-    linked = bind_open_line_activities_to_deal(
+    linked = 0 if deal["_fresh_v3_receipt"] else bind_open_line_activities_to_deal(
         client, lead_id=lead_id, contact_id=contact_id,
         deal_id=deal_id, logger=logger,
     )
-    chat_transfer = assign_open_line_chats_to_user(
+    chat_transfer = ChatTransferResult((), (), ()) if deal["_fresh_v3_receipt"] else assign_open_line_chats_to_user(
         client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
         assigned_by_id=assigned_by_id,
         distributable_open_line_ids=config.deal.distributable_open_line_ids,
@@ -1473,7 +1483,7 @@ def _retry_queued_deal(
         online_pool=assignment.online_pool,
         linked_activity_count=linked,
         transferred_chat_count=chat_transfer.transferred_count,
-        chat_transfer_status=chat_transfer.status,
+        chat_transfer_status="delegated_to_v3_receipt" if deal["_fresh_v3_receipt"] else chat_transfer.status,
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
@@ -1536,9 +1546,7 @@ def _queue_context_result(
         _lead_trace_context(client, config, lead_id, logger)
         if lead_id is not None else {}
     )
-    contact_id = _optional_int(context.pop("contact_id", None)) or _optional_int(
-        deal.get("contactId")
-    )
+    contact_id = _optional_int(context.pop("contact_id", None)) or linked_contact_id(deal)
     legacy_action = str(overrides.get("action") or "")
     distribution_action = {
         "queue_waiting": "queued",
@@ -1908,6 +1916,10 @@ def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> Comm
     try:
         submission = build_submission_from_lead(lead, config)
     except ValueError:
+        return _manual(config, "missing_prequalification_data")
+    # The web intake may accept a Caja benefit without a usable bank. Final
+    # credit-line rules that check the bank's BCRA situation still need it.
+    if submission.payment_bank is None:
         return _manual(config, "missing_prequalification_data")
 
     if is_policia_federal_caba(submission):
@@ -2298,7 +2310,7 @@ def _lead_trace_context(
     try:
         lead = get_lead(client, lead_id, logger)
         context.update(
-            contact_id=_optional_int(lead.get("CONTACT_ID")),
+            contact_id=linked_contact_id(lead),
             province=lead_enum_label(
                 client, lead, config.fields.lead_province
             ) or "",
@@ -2342,9 +2354,7 @@ def technical_deal_trace(
             client = bitrix_client or BitrixClient(config, active_logger)
             deal = _get_deal(client, deal_id_int)
             lead_id = _optional_int(deal.get("leadId") or deal.get("LEAD_ID"))
-            contact_id = _optional_int(
-                deal.get("contactId") or deal.get("CONTACT_ID")
-            )
+            contact_id = linked_contact_id(deal)
             context = {
                 "lead_id": lead_id,
                 "contact_id": contact_id,
@@ -2361,9 +2371,7 @@ def technical_deal_trace(
             context["stage_before"] = context["stage_id"]
             if lead_id is not None:
                 lead = get_lead(client, lead_id, active_logger)
-                context["contact_id"] = contact_id or _optional_int(
-                    lead.get("CONTACT_ID")
-                )
+                context["contact_id"] = contact_id or linked_contact_id(lead)
                 context["province"] = lead_enum_label(
                     client, lead, config.fields.lead_province
                 ) or ""

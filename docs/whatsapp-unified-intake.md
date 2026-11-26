@@ -1,5 +1,31 @@
 # Intake unificado de WhatsApp Ventas
 
+## Declaraciones nuevas y reutilización de perfiles
+
+El ingreso conserva el formulario enviado, el mensaje recibido y el UUID de la
+solicitud. Una declaración v3 nueva tiene precedencia para ese trámite. Ante
+un teléfono compartido o una identidad contradictoria, el historial queda
+fuera de la evaluación. El sistema pide el v3 completo si todavía carece
+de una declaración vigente. La entrega repetida del mismo callback conserva
+el mismo trámite. Una toma humana protege la sesión.
+
+Un recibo web con referencia explícita, identidad y sesión coincidentes asocia
+el v3 nuevo a esa solicitud. La precalificación de los nuevos datos se guarda con
+su versión de regla. El pase pendiente consulta ese resultado y vuelve a comprobar
+la atención antes de transferir. Un CUIL inválido queda en la etapa de corrección,
+con el resto de la declaración y su recibo originales.
+
+En un pase independiente, una ficha histórica con otro responsable potencialmente
+afectada por `CRM_TRANSFER_CHANGE` conserva su responsable. El recibo distingue
+ese freno de una transferencia confirmada y de una toma humana.
+
+El contrato `fresh-v3-declaration-v1` tiene un corte independiente. Primero
+se instala el receptor de Kestra y después la aplicación y sus workers. El
+comando `php artisan edna:intake-cutover status --fresh-declaration` informa
+la frontera registrada. Una activación explícita con `activate` registra el
+último ID del inbox y la hora de inicio. Repetirla conserva la frontera. La
+publicación del Flow v3.1 en Meta tiene su propio ID y puede realizarse después.
+
 ## Corrección de vinculación para ingresos nuevos (16/11/2026)
 
 El deploy productivo ejecuta `edna:intake-cutover activate` después de verificar

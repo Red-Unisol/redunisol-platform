@@ -74,6 +74,13 @@ class AttentionChatDeliveryTests(unittest.TestCase):
         self.deliver()
         self.assertEqual(self.client.post_count(), 1)
 
+    def test_late_delivery_marker_never_transfers_a_chat_managed_by_fresh_v3(self):
+        self.client.lead["ORIGINATOR_ID"] = "redunisol.edna.fresh-v3"
+        result = self.deliver()
+        self.assertEqual(result.transferred_count, 0)
+        self.assertEqual(self.client.post_count(), 0)
+        self.assertEqual(self.deal["action"], "attention_chat_preserved")
+
     def test_temporary_final_read_failure_retries_only_chat(self):
         result = self.deliver([({819: 820}, None), ({}, "attention_inspection_unavailable")])
         self.assertEqual(result.transferred_count, 0)
