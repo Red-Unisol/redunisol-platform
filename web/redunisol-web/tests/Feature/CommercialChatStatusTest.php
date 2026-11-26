@@ -76,6 +76,26 @@ test('native transfer identity and completeness determine confirmed delivery ind
     expect($read->lookup(601)['transfers'])->toBeNull();
 });
 
+test('a reopening shows its selected seller once even if another menu holds the native session columns', function (bool $duplicate) {
+    $menu = ['subject_id' => '2423', 'cascade_id' => '1', 'phone_hash' => str_repeat('a', 64), 'recipient' => 'test',
+        'entry_received_at' => now(), 'expires_at' => now()->addDay()];
+    $session = ['chat_id' => 601, 'session_id' => 501];
+    $canonical = $duplicate ? DB::table('edna_organic_menus')->insertGetId(
+        $menu + $session + ['request_id' => (string) Str::uuid(), 'entry_event_id' => 30]
+    ) : null;
+    DB::table('edna_organic_menus')->insert($menu + ['request_id' => (string) Str::uuid(), 'entry_event_id' => 32,
+        'canonical_menu_id' => $canonical, 'seller_id' => '29', 'deal_id' => '901'] + ($duplicate ? [] : $session));
+    DB::table('edna_sales_chat_handoffs')->insert($session + ['entry_event_id' => 32, 'native_message_id' => 6012,
+        'target_id' => 29, 'family' => 'reopening', 'created_at' => now()]);
+    DB::table('edna_sales_chat_handoffs')->insert(['chat_id' => 601, 'session_id' => 499, 'entry_event_id' => 20,
+        'native_message_id' => 6003, 'target_id' => 51, 'family' => 'reopening', 'created_at' => now()]);
+    $result = app(CommercialChatStatus::class)->lookup(601);
+    expect($result['selections'])->toHaveCount(1)
+        ->and($result['selections'][0]['source'])->toContain('Reapertura', '32')
+        ->and($result['selections'][0]['seller'])->toContain('(#29)')->and($result['selections'][0]['deal'])->toBe(901)
+        ->and($result['transfers'])->toBe([])->and($result['attention'])->toBe('Sin toma de operador registrada.');
+})->with(['new receipt' => [false], 'second receipt in the same session' => [true]]);
+
 test('outbound activity and missing operator identity leave human attention unconfirmed', function () {
     $this->crm->session['dateFirstAnswer'] = '2026-11-26T15:18:00Z';
     $read = app(CommercialChatStatus::class);

@@ -24,6 +24,8 @@ class EdnaBenefitsRouting
 
     private float $deadline = 0;
 
+    private bool $unified = false;
+
     public function __construct(private ?EdnaBitrix $crm = null, private ?EdnaBenefitsCase $cases = null, private ?WebFormChatGuard $guard = null)
     {
         $this->crm ??= new EdnaBitrix;
@@ -81,7 +83,8 @@ class EdnaBenefitsRouting
             }
         }
         try {
-            $decision = $this->cases->resolve($proof);
+            $decision = $this->usesUnifiedPolicy($event, $existing->entry_event_id ?? null)
+                ? $this->cases->resolveUnified($proof) : $this->cases->resolve($proof);
         } catch (Throwable) {
             $decision = ['status' => 'waiting', 'reason' => 'benefits_case_reads_pending'];
         }
@@ -260,6 +263,7 @@ class EdnaBenefitsRouting
     public function process(int $entryId): array
     {
         $this->row = null;
+        $this->unified = false;
         if (! $this->enabled()) {
             return ['state' => 'disabled'];
         }
@@ -294,6 +298,7 @@ class EdnaBenefitsRouting
                 || (string) $this->row->chat_id !== $proof['chat_id'] || (string) $this->row->session_id !== $proof['session_id']) {
                 $this->decide('review', 'benefits_entry_no_longer_eligible');
             }
+            $this->unified = $this->usesUnifiedPolicy($event, $entryId);
             $store = Cache::getStore();
             if (! $store instanceof LockProvider || (! app()->runningUnitTests() && ! $store instanceof DatabaseStore && ! $store instanceof RedisStore)) {
                 $this->decide('waiting', 'shared_chat_lock_unavailable');
@@ -308,14 +313,19 @@ class EdnaBenefitsRouting
             if (in_array($this->row->state, ['sending', 'unknown'], true)) {
                 $this->decide('review', 'benefits_transfer_receipt_incomplete');
             }
-            $catalogued = isset($campaign['action']);
+            $catalogued = isset($campaign['action']) || ($this->unified && $campaign !== null);
             $before = $campaign === null || $catalogued ? $this->currentCase($proof, $catalogued) : null;
             $target = (string) ($before['case']['responsible_id'] ?? EdnaMemberBenefitsButton::OPERATOR);
+            if ($this->unified && ! app(SalesChatRoutingPolicy::class)->commercialTarget($target)) {
+                $this->decide('waiting', 'benefits_commercial_owner_pending');
+            }
             $this->activeTarget($target);
             if ($before !== null) {
                 $this->write(['case_snapshot' => json_encode($before, JSON_THROW_ON_ERROR), 'deal_id' => $before['case']['deal_id'] ?? null, 'target_id' => $target]);
             }
-            $attention = $this->guard->inspect($proof, $target);
+            $attention = $this->unified
+                ? app(SalesChatRoutingPolicy::class)->inspectBeforeHandoff($this->guard, $proof, $target)
+                : $this->guard->inspect($proof, $target);
             if (($attention['status'] ?? '') === 'already_assigned') {
                 return $this->observedOwner($proof, $before);
             }
@@ -325,7 +335,12 @@ class EdnaBenefitsRouting
                 $this->decide($catalogued ? 'waiting' : 'preserved', 'benefits_case_changed');
             }
             $this->activeTarget($target);
-            $attention = $this->guard->inspect($proof, $target);
+            if ($this->unified && ($campaign['action'] ?? '') === 'benefits') {
+                $this->guardLatestReply($campaign, $payload);
+            }
+            $attention = $this->unified
+                ? app(SalesChatRoutingPolicy::class)->inspectBeforeHandoff($this->guard, $proof, $target)
+                : $this->guard->inspect($proof, $target);
             if (($attention['status'] ?? '') === 'already_assigned') {
                 return $this->observedOwner($proof, $fresh);
             }
@@ -333,19 +348,30 @@ class EdnaBenefitsRouting
             if ($fresh !== null && ! $this->matchesDialog($fresh['snapshot']['dialog_tuple'] ?? [], $attention['dialog'] ?? null)) {
                 $this->decide('preserved', 'benefits_native_dialog_changed');
             }
-            if (($campaign['action'] ?? '') === 'benefits') {
+            if (! $this->unified && ($campaign['action'] ?? '') === 'benefits') {
                 $this->guardLatestReply($campaign, $payload);
             }
             $intent = ['entry_event_id' => (int) $event->id, 'entry_message_id' => $proof['entry_message_id'],
                 'chat_id' => (int) $this->row->chat_id, 'session_id' => (int) $this->row->session_id,
                 'deal_id' => $this->row->deal_id === null ? null : (string) $this->row->deal_id, 'target_id' => $target,
                 'owner_before' => (int) $attention['owner_id'], 'actor_id' => $this->actor(), 'created_at' => now()->utc()->toIso8601String()];
-            $this->write(['case_snapshot' => $fresh === null ? null : json_encode($fresh, JSON_THROW_ON_ERROR),
+            $fields = ['case_snapshot' => $fresh === null ? null : json_encode($fresh, JSON_THROW_ON_ERROR),
                 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
-                'state' => 'sending', 'transfer_state' => 'sending']);
+                'state' => 'sending', 'transfer_state' => 'sending'];
+            if ($this->unified) {
+                DB::transaction(function () use ($proof, $target, $fields): void {
+                    if (! app(SalesChatRoutingPolicy::class)->reserveHandoff($proof, 'benefits', (int) $target)) {
+                        $this->decide('preserved', 'session_handoff_already_reserved');
+                    }
+                    $this->write($fields);
+                });
+            } else {
+                $this->write($fields);
+            }
             $this->assertLease();
             try {
-                $ack = $this->crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->row->chat_id, 'USER_ID' => (int) $target]);
+                $ack = $this->unified ? app(SalesChatRoutingPolicy::class)->postReserved($this->crm, $proof, 'benefits', (int) $target)
+                    : $this->crm->call('imopenlines.operator.transfer', ['CHAT_ID' => (int) $this->row->chat_id, 'USER_ID' => (int) $target]);
                 if ($ack === true) {
                     if (DB::table('edna_benefit_chat_routes')->where('entry_event_id', $entryId)->where('lease_token', $this->row->lease_token)
                         ->where('lease_until', '>', now())->update(['transfer_acknowledged' => true, 'updated_at' => now()]) === 1) {
@@ -401,13 +427,21 @@ class EdnaBenefitsRouting
     private function reconcile(array $proof): array
     {
         $intent = json_decode($this->row->transfer_intent, true, 16, JSON_THROW_ON_ERROR);
+        if ((string) ($intent['session_id'] ?? '') !== (string) $this->row->session_id
+            || (string) ($intent['chat_id'] ?? '') !== (string) $this->row->chat_id) {
+            return $this->finish('review', 'benefits_transfer_receipt_incomplete', ['transfer_state' => 'unknown']);
+        }
         $dialog = $this->read('imopenlines.dialog.get', ['CHAT_ID' => (int) $this->row->chat_id]);
         $parts = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
         if ((string) ($dialog['id'] ?? '') !== (string) $this->row->chat_id || ($dialog['entity_type'] ?? '') !== 'LINES'
             || (string) ($parts[5] ?? '') !== (string) $this->row->session_id) {
             return $this->finish('preserved', 'benefits_session_changed_after_post', ['transfer_state' => 'unknown']);
         }
-        $native = $this->nativeTransfer($intent);
+        try {
+            $native = SalesChatNativeTransfer::find($intent, $this->read(...));
+        } catch (SalesChatTransferEvidenceException $error) {
+            $this->decide($error->state, 'benefits_'.$error->reason);
+        }
         $confirmed = $this->row->transfer_acknowledged && $native !== null;
         $fields = ['transfer_state' => $confirmed ? 'confirmed' : 'unknown', 'native_transfer' => $native ? json_encode($native, JSON_THROW_ON_ERROR) : null];
         $owner = (string) ($dialog['owner'] ?? '');
@@ -432,54 +466,6 @@ class EdnaBenefitsRouting
         return $this->finish($confirmed ? 'routed' : 'unknown', $confirmed ? 'benefits_transfer_confirmed' : 'benefits_native_confirmation_pending', $fields);
     }
 
-    private function nativeTransfer(array $intent): ?array
-    {
-        $stats = $this->read('imopenlines.v2.Session.Stat.get', ['sessionId' => [(int) $this->row->session_id]]);
-        $sessions = $stats['sessions'] ?? null;
-        if (! is_array($sessions) || ! array_is_list($sessions) || count($sessions) !== 1
-            || (string) ($sessions[0]['sessionId'] ?? '') !== (string) $this->row->session_id
-            || is_bool($sessions[0]['transfersCount'] ?? null)
-            || filter_var($sessions[0]['transfersCount'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
-            $this->decide('unknown', 'benefits_transfer_history_incomplete');
-        }
-        $data = $this->read('imopenlines.v2.Session.Transfer.list', ['sessionId' => [(int) $this->row->session_id]]);
-        $rows = $data['transfers'] ?? null;
-        if (! is_array($rows) || ! array_is_list($rows) || count($rows) < (int) $sessions[0]['transfersCount']
-            || count($rows) >= 1000 || ($data['hasNextPage'] ?? false) !== false) {
-            $this->decide('unknown', 'benefits_transfer_history_incomplete');
-        }
-        $matches = [];
-        $created = CarbonImmutable::parse($intent['created_at']);
-        foreach ($rows as $transfer) {
-            if (! is_array($transfer) || (string) ($transfer['sessionId'] ?? '') !== (string) $intent['session_id']) {
-                $this->decide('unknown', 'benefits_transfer_history_inconsistent');
-            }
-            if (! is_string($transfer['date'] ?? null) || ! preg_match('/(?:Z|[+-][0-9]{2}:[0-9]{2})$/D', $transfer['date'])) {
-                $this->decide('unknown', 'benefits_transfer_date_unverified');
-            }
-            $at = CarbonImmutable::parse($transfer['date']);
-            if ((string) ($transfer['toOperatorId'] ?? '') !== (string) $intent['target_id']
-                || ! array_key_exists('fromOperatorId', $transfer) || (string) $transfer['fromOperatorId'] !== (string) $intent['actor_id']
-                || (string) ($transfer['fromConfigId'] ?? '') !== '1' || ! in_array($transfer['toConfigId'] ?? null, [null, 1, '1'], true)
-                || ($transfer['type'] ?? '') !== 'USER' || ($transfer['mode'] ?? '') !== 'MANUAL'
-                || (string) ($transfer['initiatorId'] ?? '') !== (string) $intent['actor_id']
-                || (isset($transfer['chatId']) && (string) $transfer['chatId'] !== (string) $intent['chat_id'])
-                || $at->lt($created) || $at->gt($created->addMinutes(2)) || $at->gt(now()->addSeconds(5))) {
-                continue;
-            }
-            $tuple = ['chat_id' => (int) $intent['chat_id'], 'session_id' => (int) $intent['session_id'],
-                'from_operator_id' => (int) ($transfer['fromOperatorId'] ?? 0), 'target_id' => (int) $transfer['toOperatorId'],
-                'from_config_id' => 1, 'date' => $at->utc()->toIso8601String(), 'initiator_id' => $transfer['initiatorId'] ?? null];
-            $tuple['sha256'] = hash('sha256', json_encode($tuple, JSON_THROW_ON_ERROR));
-            $matches[$tuple['sha256']] = $tuple;
-        }
-        if (count($matches) > 1) {
-            $this->decide('review', 'benefits_transfer_evidence_ambiguous');
-        }
-
-        return $matches ? array_values($matches)[0] : null;
-    }
-
     private function sameCase(array $before, array $after, bool $afterTransfer = false): bool
     {
         // For a contact-only campaign fallback, both native snapshots must still
@@ -494,7 +480,7 @@ class EdnaBenefitsRouting
     private function currentCase(array $proof, bool $allowCampaignFallback = false): array
     {
         $this->assertLease();
-        $result = $this->cases->resolve($proof);
+        $result = $this->unified ? $this->cases->resolveUnified($proof) : $this->cases->resolve($proof);
         $this->assertLease();
         if (($result['status'] ?? '') !== 'benefits') {
             $status = $result['status'] ?? '';
@@ -536,6 +522,22 @@ class EdnaBenefitsRouting
             || in_array($user['EXTERNAL_AUTH_ID'] ?? '', ['bot', 'imconnector', 'email', 'replica', 'crm'], true)) {
             $this->decide('review', 'benefits_responsible_unavailable');
         }
+    }
+
+    private function usesUnifiedPolicy(object $event, int|string|null $firstEntryId): bool
+    {
+        $policy = app(SalesChatRoutingPolicy::class);
+        if (! $policy->eligible($event)) {
+            return false;
+        }
+        // A later campaign click can update an existing session receipt. The
+        // original receipt and the click must both belong to the new cohort.
+        if ($firstEntryId === null || (string) $firstEntryId === (string) $event->id) {
+            return true;
+        }
+        $first = DB::table('edna_incoming_events')->find($firstEntryId);
+
+        return $first !== null && $policy->eligible($first);
     }
 
     private function matchesDialog(array $tuple, mixed $dialog): bool

@@ -60,6 +60,16 @@ la frontera registrada. Una activación explícita con `activate` registra el
 último ID del inbox y la hora de inicio. Repetirla conserva la frontera. La
 publicación del Flow v3.1 en Meta tiene su propio ID y puede realizarse después.
 
+## Pases de Beneficios y reaperturas de préstamos
+
+El despliegue registra el corte con `php artisan edna:intake-cutover activate --sales-chat-routing`. Consultar `status --sales-chat-routing` para ver el último ID de ingreso anterior a la activación y la hora UTC. El ID y la fecha autenticada de Edna deben corresponder a un ingreso nuevo. Para reaperturas, la sesión actual también debe haber abierto desde el corte.
+
+Beneficios usa el responsable vigente de la negociación de beneficios vinculada al chat. Una respuesta de campaña verificada puede ir a Victoria por el motivo de consulta cuando no hay una negociación de beneficios vigente. En préstamos, una consulta identificada sobre el estado de una gestión previa puede volver al vendedor actual al verificar la sesión anterior atendida, la identidad y el destino. Un rechazo breve inmediatamente posterior al cierre conserva la conversación sin abrir un menú. Antes del pase se comprueban la atención humana y la configuración `CRM_TRANSFER_CHANGE=N` de VENTAS.
+
+Para investigar, buscar el chat y la sesión en `edna_sales_chat_handoffs`. Su fila reserva un único destino. En Beneficios, buscar esa misma sesión en `edna_benefit_chat_routes`. El ingreso que disparó el pase figura en `transfer_intent.entry_event_id` y el evento de Bitrix en `native_transfer`. En reaperturas, el `entry_event_id` de la reserva identifica la fila de `edna_organic_menus`. El evento de Bitrix queda en `transfer_intent.native_transfer`.
+
+Si Bitrix tarda o se pierde la respuesta, el worker consulta los pases de esa sesión por actor, destino y hora. El estado `confirmed` exige el acuse del POST y un pase nativo coincidente. Los reintentos de conciliación son de lectura. En el panel **Distribución Bitrix** se consultan por separado el vendedor seleccionado, los pases nativos y la toma de atención registrada.
+
 ## Corrección de vinculación para ingresos nuevos (16/11/2026)
 
 El deploy productivo ejecuta `edna:intake-cutover activate` después de verificar

@@ -5,6 +5,7 @@ use App\Services\EdnaBenefitsCase;
 use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaCampaignTemplate;
+use App\Services\SalesChatRoutingPolicy;
 use App\Services\WebFormChatGuard;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -38,6 +39,8 @@ class BenefitsRouteCrmFake extends EdnaBitrix
     public bool $userActive = true;
 
     public bool $incomplete = false;
+
+    public string $crmTransferChange = 'N';
 
     public array $userOverrides = [];
 
@@ -74,6 +77,7 @@ class BenefitsRouteCrmFake extends EdnaBitrix
 
         return match ($method) {
             'user.get' => [array_replace(['ID' => (string) $payload['ID'], 'ACTIVE' => $this->userActive, 'UF_DEPARTMENT' => [1]], $this->userOverrides)],
+            'imopenlines.config.get' => ['ID' => '1', 'CRM_TRANSFER_CHANGE' => $this->crmTransferChange],
             'imopenlines.dialog.get' => $this->dialog,
             'imopenlines.v2.Session.Stat.get' => ['sessions' => [['sessionId' => 501, 'transfersCount' => count($this->transfers)]]],
             'imopenlines.v2.Session.Transfer.list' => ['hasNextPage' => $this->incomplete, 'transfers' => $this->transfers],
@@ -86,6 +90,8 @@ class BenefitsRouteCaseFake extends EdnaBenefitsCase
 {
     public int $calls = 0;
 
+    public int $unifiedCalls = 0;
+
     public string $status = 'benefits';
 
     public string $reason = 'native_benefits_case';
@@ -96,6 +102,13 @@ class BenefitsRouteCaseFake extends EdnaBenefitsCase
         'responsible_id' => '117941', 'stage' => 'C15:NEW', 'closed' => 'N'];
 
     public function __construct(public BenefitsRouteCrmFake $fake) {}
+
+    public function resolveUnified(array $proof): array
+    {
+        $this->unifiedCalls++;
+
+        return $this->resolve($proof);
+    }
 
     public function resolve(array $proof): array
     {
@@ -187,6 +200,46 @@ function benefitsRouteRow(object $f): object
 {
     return DB::table('edna_benefit_chat_routes')->where('entry_event_id', $f->event->id)->first();
 }
+
+test('a fresh benefits handoff rechecks isolation and attention and reserves exactly one session transfer', function (string $scenario, string $expected) {
+    $f = benefitsRouteFixture(false);
+    app()->instance(EdnaBitrix::class, $f->crm);
+    DB::table('edna_intake_cutovers')->insert(['name' => SalesChatRoutingPolicy::CUTOVER, 'starts_at' => now()->subMinute(),
+        'entry_id_after' => $scenario === 'preexisting' ? $f->event->id : 0]);
+    if ($scenario === 'queue as deal owner') {
+        $f->cases->case['responsible_id'] = '74827';
+    }
+    $f->service->check($f->event, $f->proof);
+    $configReads = 0;
+    $f->crm->beforeCall = function ($method) use ($f, $scenario, &$configReads) {
+        if ($method !== 'imopenlines.config.get' || ++$configReads !== 2) {
+            return;
+        }
+        match ($scenario) {
+            'propagation enabled during work' => $f->crm->crmTransferChange = 'Y',
+            'operator takes chat during work' => $f->crm->attended = true,
+            default => null,
+        };
+    };
+    if ($scenario === 'other route already claimed') {
+        expect(DB::transaction(fn () => app(SalesChatRoutingPolicy::class)->reserveHandoff($f->proof, 'reopening', 90233)))->toBeTrue();
+    }
+    $result = $f->service->process($f->event->id);
+    expect($result['state'])->toBe($expected)
+        ->and($f->crm->posts)->toBe($expected === 'routed' ? 1 : 0)
+        ->and($f->cases->unifiedCalls > 0)->toBe($scenario !== 'preexisting');
+    if ($expected === 'routed') {
+        expect(benefitsRouteRow($f)->transfer_state)->toBe('confirmed');
+        $f->service->process($f->event->id);
+        expect($f->crm->posts)->toBe(1);
+    } else {
+        expect(benefitsRouteRow($f)->transfer_intent)->toBeNull();
+    }
+})->with([
+    ['new intake', 'routed'], ['preexisting', 'routed'], ['queue as deal owner', 'waiting'],
+    ['propagation enabled during work', 'waiting'], ['operator takes chat during work', 'preserved'],
+    ['other route already claimed', 'preserved'],
+]);
 
 function benefitsCampaignReply(string $matcher, string $name, string $label, string $type = 'BUTTON', string $action = 'benefits'): array
 {

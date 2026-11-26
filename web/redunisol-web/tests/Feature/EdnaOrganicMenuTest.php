@@ -14,6 +14,9 @@ use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaOrganicLoan;
 use App\Services\EdnaOrganicMenu;
 use App\Services\EdnaOrganicTransport;
+use App\Services\SalesChatReopening;
+use App\Services\SalesChatRoutingPolicy;
+use App\Services\WebFormChatGuard;
 use App\Services\WebChatContinuity;
 use App\Services\WebFormChatRouting;
 use App\Services\WebFormReceipt;
@@ -126,6 +129,99 @@ function organicMenuConfirmed(array $harness): object
 
     return DB::table('edna_organic_menus')->find($menu->id);
 }
+
+test('a reopened loan has one handoff after a later explicit question and protects last-minute attention', function (bool $taken) {
+    $h = organicMenuHarness();
+    app()->instance(EdnaBitrix::class, $h['crm']);
+    config()->set('edna.bitrix_url', 'https://redunisol.bitrix24.es/rest/71283/fixture/');
+    DB::table('edna_intake_cutovers')->insert(['name' => SalesChatRoutingPolicy::CUTOVER,
+        'entry_id_after' => 0, 'starts_at' => now()->subHour()]);
+    $detector = Mockery::mock(SalesChatReopening::class);
+    $detector->shouldReceive('matchesDestinationDialog')->andReturnTrue();
+    app()->instance(SalesChatReopening::class, $detector);
+    $detector->shouldReceive('decide')->andReturnUsing(fn ($entry, $payload) => [
+        'action' => $payload['messageContent']['text'] === 'No' ? 'hold' : 'route',
+        'reason' => $payload['messageContent']['text'] === 'No' ? 'reopening_acknowledgement' : 'reopening_active_loan',
+        'seller_id' => '127337', 'deal_id' => '1256649', 'current_session_started_at' => now()->subMinute()->toIso8601String(),
+    ]);
+    $guard = Mockery::mock(WebFormChatGuard::class);
+    app()->instance(WebFormChatGuard::class, $guard);
+    $ready = ['status' => 'ready', 'owner_id' => 74827, 'session_id' => 501];
+    $guard->shouldReceive('inspect')->twice()->andReturn($ready,
+        $taken ? array_replace($ready, ['status' => 'preserved', 'reason' => 'operator_attention_preserved']) : $ready);
+    $h['crm']->shouldReceive('call')->with('imopenlines.config.get', ['CONFIG_ID' => 1])->once()
+        ->andReturn(['ID' => '1', 'CRM_TRANSFER_CHANGE' => 'N']);
+    $h['transport']->shouldNotReceive('schedule');
+    $negative = organicMenuCapture($h['service'], organicMenuEvent(['messageContent' => ['text' => 'No']]));
+    expect($h['service']->process($negative->id)['reason'])->toBe('reopening_acknowledgement');
+    $followup = organicMenuCapture($h['service'], organicMenuEvent(['messageContent' => ['text' => '¿Cómo va mi solicitud?']]));
+    if ($taken) {
+        $h['crm']->shouldNotReceive('call')->with('imopenlines.operator.transfer', Mockery::any());
+        expect($h['service']->process($followup->id)['reason'])->toBe('operator_attention_preserved')
+            ->and(DB::table('edna_sales_chat_handoffs')->count())->toBe(0);
+    } else {
+        $h['crm']->shouldReceive('call')->with('imopenlines.operator.transfer', ['CHAT_ID' => 601, 'USER_ID' => 127337])
+            ->once()->andReturnTrue();
+        $h['crm']->shouldReceive('call')->with('imopenlines.v2.Session.Stat.get', ['sessionId' => [501]])
+            ->twice()->andReturn(['sessions' => [['sessionId' => 501, 'transfersCount' => 0]]],
+                ['sessions' => [['sessionId' => 501, 'transfersCount' => 1]]]);
+        $h['crm']->shouldReceive('call')->with('imopenlines.v2.Session.Transfer.list', ['sessionId' => [501]])
+            ->twice()->andReturn(['transfers' => []], ['transfers' => [['chatId' => 601, 'sessionId' => 501,
+                'fromConfigId' => 1, 'type' => 'USER', 'mode' => 'MANUAL', 'fromOperatorId' => 71283, 'initiatorId' => 71283,
+                'toOperatorId' => 127337, 'date' => now()->toIso8601String()]]]);
+        expect($h['service']->process($followup->id)['state'])->toBe('unknown');
+        organicMenuDue($followup->id);
+        expect($h['service']->process($followup->id)['reason'])->toBe('reopening_transfer_confirmed')
+            ->and($h['service']->process($followup->id)['state'])->toBe('not_claimed')
+            ->and(DB::table('edna_sales_chat_handoffs')->where('target_id', 127337)->count())->toBe(1);
+    }
+})->with([true, false]);
+
+test('a proved current web request supersedes a reopening before transfer', function (bool $late) {
+    $h = organicMenuHarness();
+    app()->instance(EdnaBitrix::class, $h['crm']);
+    config()->set('edna.bitrix_url', 'https://redunisol.bitrix24.es/rest/71283/fixture/');
+    DB::table('edna_intake_cutovers')->insert(['name' => SalesChatRoutingPolicy::CUTOVER, 'entry_id_after' => 0, 'starts_at' => now()->subHour()]);
+    $menu = organicMenuCapture($h['service']);
+    $web = Mockery::mock(WebChatContinuity::class);
+    app()->instance(WebChatContinuity::class, $web);
+    $web->shouldReceive('blocksOutbound')->andReturn(...($late ? [false, false, true] : [false, true]));
+    $detector = Mockery::mock(SalesChatReopening::class);
+    app()->instance(SalesChatReopening::class, $detector);
+    $detector->shouldReceive('decide')->andReturn(['action' => 'route', 'reason' => 'reopening_current_deal_seller',
+        'seller_id' => '127337', 'deal_id' => '1256649', 'current_session_started_at' => now()->subMinute()->toIso8601String()]);
+    $guard = Mockery::mock(WebFormChatGuard::class);
+    app()->instance(WebFormChatGuard::class, $guard);
+    $guard->shouldReceive('inspect')->times($late ? 1 : 0)->andReturn(['status' => 'ready', 'owner_id' => 74827]);
+    $h['transport']->shouldNotReceive('schedule');
+    expect($h['service']->process($menu->id)['reason'])->toBe('web_continuity_priority')
+        ->and(DB::table('edna_sales_chat_handoffs')->count())->toBe(0);
+})->with([false, true]);
+
+test('benefits and a reopening cannot both reserve the same native session', function () {
+    $event = organicMenuEvent();
+    $proof = organicMenuProof($event);
+    $policy = app(SalesChatRoutingPolicy::class);
+    DB::transaction(function () use ($proof, $policy) {
+        expect($policy->reserveHandoff($proof, 'benefits', 117941))->toBeTrue()
+            ->and($policy->reserveHandoff($proof, 'reopening', 127337))->toBeFalse();
+    });
+});
+
+test('the unified handoff cut excludes older inbox rows and old callbacks delivered late', function () {
+    $early = organicMenuEvent();
+    $h = organicMenuHarness();
+    app()->instance(EdnaBitrix::class, $h['crm']);
+    $h['crm']->shouldReceive('call')->once()->with('imopenlines.config.get', ['CONFIG_ID' => 1])
+        ->andReturn(['ID' => 1, 'CRM_TRANSFER_CHANGE' => 'N']);
+    $this->artisan('edna:intake-cutover activate --sales-chat-routing')->assertSuccessful();
+    $late = organicMenuEvent(['receivedAt' => now()->subMinute()->toIso8601String()]);
+    $new = organicMenuEvent();
+    $this->artisan('edna:intake-cutover activate --sales-chat-routing')->assertSuccessful();
+    $policy = app(SalesChatRoutingPolicy::class);
+    expect($policy->eligible($early))->toBeFalse()->and($policy->eligible($late))->toBeFalse()
+        ->and($policy->eligible($new))->toBeTrue()->and($policy->newSession(now()->subHour()->toIso8601String()))->toBeFalse();
+});
 
 function organicMenuAssignedCase(array $harness, string $leadId = '310'): object
 {

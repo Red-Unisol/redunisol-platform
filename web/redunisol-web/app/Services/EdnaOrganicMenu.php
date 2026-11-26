@@ -289,6 +289,10 @@ class EdnaOrganicMenu
             if (! $this->lockChat((string) $proof['chat_id'])) {
                 return $this->wait('chat_routing_in_progress');
             }
+            if ($uncertainTransfer && $menu->transfer_intent
+                && (json_decode($menu->transfer_intent, true)['routing_policy'] ?? '') === 'reopening') {
+                return $this->reconcileReopening($menu, $proof);
+            }
             if (isset($consent['action']) && ! isset($consent['native_proof'])) {
                 $consent['native_proof'] = $proof;
                 $this->write(['form_consent' => json_encode($consent, JSON_THROW_ON_ERROR)]);
@@ -310,6 +314,23 @@ class EdnaOrganicMenu
             }
             $other = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)
                 ->where('chat_id', $proof['chat_id'])->where('session_id', $proof['session_id'])->where('id', '!=', $menu->id)->first();
+            // Every new free-text callback has its own proof, including one arriving after
+            // an acknowledgement or a greeting in this same session.
+            if ($consent === null && $menu->send_state === 'pending' && ! $menu->choice_event_id && ! $menu->transfer_intent
+                && ($payload['messageContent']['type'] ?? '') === 'TEXT' && ! $other?->transfer_intent
+                && ! $other?->flow_send_id && ! $other?->choice_event_id
+                && app(SalesChatRoutingPolicy::class)->eligible($event)) {
+                if (! $menu->proof) {
+                    $this->write(['proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+                }
+                $decision = app(SalesChatReopening::class)->decide($event, $payload, $proof);
+                if ($decision !== null) {
+                    $outcome = $this->reopening($menu, $event, $payload, $proof, $decision, $other);
+                    if ($outcome !== null) {
+                        return $outcome;
+                    }
+                }
+            }
             if ($other) {
                 if ($consent !== null && ! $uncertainTransfer) {
                     $context = $other->form_consent ?? $other->campaign_prompt;
@@ -677,6 +698,142 @@ class EdnaOrganicMenu
 
         return $this->finish(($decision['state'] ?? '') === 'review' ? 'review' : 'preserved', $reason,
             ['transfer_state' => 'preserved']);
+    }
+
+    private function reopening(object $menu, object $event, array $payload, array $proof, array $decision, ?object $canonical): ?array
+    {
+        $policy = app(SalesChatRoutingPolicy::class);
+        $reason = $decision['reason'];
+        if (CarbonImmutable::parse($menu->expires_at)->lte(now())) {
+            return $this->finish('expired', 'conversation_window_elapsed');
+        }
+        if ($decision['action'] === 'hold' && $reason === 'reopening_session_replaced_or_closed') {
+            return $this->finish('preserved', $reason, ['send_state' => 'not_needed', 'transfer_state' => 'not_needed']);
+        }
+        if ($decision['action'] === 'retry') {
+            return $this->wait($reason);
+        }
+        if (empty($decision['current_session_started_at'])) {
+            return $this->wait('reopening_session_start_unverified');
+        }
+        if (! $policy->newSession($decision['current_session_started_at'])) {
+            return null;
+        }
+        if ($priority = $this->reopeningPriority($menu, $event, $proof)) {
+            return $priority;
+        }
+        if ($benefits = $this->benefitsDecision($menu, $proof)) {
+            return $benefits;
+        }
+        $fields = ['proof' => json_encode($proof, JSON_THROW_ON_ERROR)];
+        if ($canonical === null && $decision['action'] === 'route') {
+            $fields += ['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id']];
+        } elseif ($canonical !== null) {
+            $fields['canonical_menu_id'] = $canonical->id;
+        }
+        $this->write($fields);
+        if ($decision['action'] !== 'route') {
+            return $this->finish($decision['action'] === 'clarify' ? 'review' : 'preserved', $reason,
+                ['send_state' => 'not_needed', 'transfer_state' => 'not_needed']);
+        }
+        $target = (string) $decision['seller_id'];
+        if (! $policy->commercialTarget($target) || ! $this->attention->targetActive((int) $target)) {
+            return $this->wait('reopening_seller_unavailable');
+        }
+        $guard = app(WebFormChatGuard::class);
+        $attention = $guard->inspect($proof, $target);
+        if ($attention['status'] === 'already_assigned') {
+            return $this->finish('routed', 'reopening_already_with_seller', ['seller_id' => $target, 'transfer_state' => 'not_needed']);
+        }
+        if ($attention['status'] !== 'ready') {
+            return $this->attentionDecision($attention);
+        }
+        $fresh = app(SalesChatReopening::class)->decide($event, $payload, $proof);
+        if ($fresh !== $decision) {
+            return $this->wait('reopening_case_changed');
+        }
+        $actorPath = (string) parse_url((string) config('edna.bitrix_url'), PHP_URL_PATH);
+        if (! preg_match('#^/rest/([1-9][0-9]*)/[A-Za-z0-9]+/?$#D', $actorPath, $actor)) {
+            return $this->wait('reopening_actor_unavailable');
+        }
+        if ($priority = $this->reopeningPriority($menu, $event, $proof)) {
+            return $priority;
+        }
+        $last = $policy->inspectBeforeHandoff($guard, $proof, $target);
+        if ($last['status'] !== 'ready' || (string) $last['owner_id'] !== (string) $attention['owner_id']) {
+            return $last['status'] === 'ready' ? $this->finish('preserved', 'reopening_attention_changed') : $this->attentionDecision($last);
+        }
+        if (! app(SalesChatReopening::class)->matchesDestinationDialog($decision, $last['dialog'] ?? [], $proof)) {
+            return $this->wait('reopening_case_binding_changed');
+        }
+        if (CarbonImmutable::parse($menu->expires_at)->lte(now())) {
+            return $this->finish('expired', 'conversation_window_elapsed');
+        }
+        $intent = ['routing_policy' => 'reopening', 'actor_id' => (int) $actor[1], 'target_id' => $target,
+            'owner_before' => $last['owner_id'], 'chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+            'entry_event_id' => $event->id, 'native_message_id' => $proof['message_id'],
+            'decision' => $decision, 'created_at' => now()->utc()->toIso8601String()];
+        $this->assertBudget(6);
+        $reserved = DB::transaction(function () use ($policy, $proof, $target, $decision, $intent): bool {
+            if (! $policy->reserveHandoff($proof, 'reopening', (int) $target)) {
+                return false;
+            }
+            $this->write(['transfer_state' => 'sending', 'transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR),
+                'deal_id' => $decision['deal_id'] ?? null, 'seller_id' => $target, 'send_state' => 'not_needed']);
+
+            return true;
+        });
+        if (! $reserved) {
+            return $this->finish('preserved', 'sales_chat_handoff_already_reserved', ['send_state' => 'not_needed', 'transfer_state' => 'not_needed']);
+        }
+        $this->assertLease();
+        try {
+            $ack = $policy->postReserved($this->crm, $proof, 'reopening', (int) $target);
+            $this->write(['transfer_state' => 'unknown', 'transfer_acknowledged' => $ack === true]);
+        } catch (Throwable) {
+            $this->write(['transfer_state' => 'unknown']);
+        }
+
+        return $this->reconcileReopening($this->current(), $proof);
+    }
+
+    private function reopeningPriority(object $menu, object $event, array $proof): ?array
+    {
+        if (app(WebChatContinuity::class)->blocksOutbound($event, $proof)) {
+            return $this->finish('preserved', 'web_continuity_priority');
+        }
+        if ($this->pendingTemplateReply($menu)
+            || app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash)) {
+            return $this->wait('reopening_explicit_entry_pending');
+        }
+        if (app(EdnaPaidFlowGuard::class)->continuesSession($proof, $menu->subject_id)) {
+            return $this->finish('preserved', 'paid_intake_session_preserved');
+        }
+
+        return null;
+    }
+
+    private function reconcileReopening(object $menu, array $proof): array
+    {
+        $intent = json_decode($menu->transfer_intent, true, 32, JSON_THROW_ON_ERROR);
+        foreach (['chat_id' => 'chat_id', 'session_id' => 'session_id', 'entry_event_id' => 'entry_event_id',
+            'native_message_id' => 'message_id'] as $field => $source) {
+            if ((string) ($intent[$field] ?? '') !== (string) $proof[$source]) {
+                return $this->finish('review', 'reopening_intent_proof_changed');
+            }
+        }
+        try {
+            $native = SalesChatNativeTransfer::find($intent, fn ($method, $params) => $this->crm->call($method, $params));
+        } catch (SalesChatTransferEvidenceException $error) {
+            return $error->state === 'review' ? $this->finish('review', $error->reason) : $this->wait($error->reason, [], true);
+        }
+        if (! $native) {
+            return $this->wait('reopening_native_confirmation_pending', [], true);
+        }
+        $intent['native_transfer'] = $native;
+
+        return $this->finish('routed', $menu->transfer_acknowledged ? 'reopening_transfer_confirmed' : 'reopening_transfer_observed',
+            ['transfer_intent' => json_encode($intent, JSON_THROW_ON_ERROR), 'transfer_state' => $menu->transfer_acknowledged ? 'confirmed' : 'observed']);
     }
 
     private function transfer(object $menu, array $proof, int $target, ?array $consentCase = null): array
@@ -1130,11 +1287,13 @@ class EdnaOrganicMenu
         }
         try {
             $row = $this->current();
+            $nativeProof = $row->proof ? json_decode($row->proof, true, 32, JSON_THROW_ON_ERROR) : [];
             $context = $row->form_consent ?? $row->campaign_prompt;
             $consent = $context ? json_decode($context, true, 32, JSON_THROW_ON_ERROR) : null;
             app(JourneyLedger::class)->record('whatsapp.organic_menu', [
                 'menu_id' => $row->id, 'request_id' => $row->request_id, 'entry_event_id' => $row->entry_event_id,
-                'choice_event_id' => $row->choice_event_id, 'chat_id' => $row->chat_id, 'native_session_id' => $row->session_id,
+                'choice_event_id' => $row->choice_event_id, 'chat_id' => $row->chat_id ?? $nativeProof['chat_id'] ?? null,
+                'native_session_id' => $row->session_id ?? $nativeProof['session_id'] ?? null,
                 'state' => $state, 'reason' => $reason, 'choice' => $row->choice, 'send_state' => $row->send_state,
                 'outgoing_message_id' => $row->outgoing_message_id, 'flow_send_id' => $row->flow_send_id,
                 'seller_id' => $row->seller_id, 'transfer_state' => $row->transfer_state,

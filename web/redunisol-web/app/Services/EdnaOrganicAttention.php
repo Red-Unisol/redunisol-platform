@@ -240,7 +240,7 @@ class EdnaOrganicAttention
         return true;
     }
 
-    private function dialogTuple(mixed $dialog, array $proof): array
+    public function dialogTuple(mixed $dialog, array $proof): array
     {
         if (($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
             || ($proof['evidence'] ?? '') !== 'external_message_id' || ! is_array($dialog)
