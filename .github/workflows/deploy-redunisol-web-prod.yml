@@ -250,6 +250,7 @@ jobs:
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:deal-message-binding activate < /dev/null
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:web-chat-continuity activate < /dev/null
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:benefits-chats activate < /dev/null
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan edna:rejected-chats activate-deals < /dev/null
           EOF
 
       - name: Finalize deploy on VPS

@@ -535,6 +535,20 @@ del generador canónico del BP889; se regenera desde la raíz con:
 php web/redunisol-web/tools/build-rejection-notices.php
 ```
 
+Al verificar la salud del despliegue, `edna:rejected-chats activate-deals`
+registra una sola vez la hora UTC y el último ID de ingreso en el corte
+`rejected-deal-chat-close-v1`. El mensaje
+original de Edna, la sesión, el prospecto y la negociación deben ser nuevos.
+La negociación debe ser la única del prospecto convertido. La actividad de esa
+sesión debe pertenecer a esa negociación o a su prospecto. Se verifica de nuevo
+el estado de la negociación y quién atiende la sesión antes del cierre.
+
+La etapa habilitada es `C1:5` (situación negativa en BCRA), con negociación
+cerrada y semántica de pérdida. Se reconoce el aviso BCRA completo, incluida
+la variante de Bitrix con saludo y despedida. Agregar otra etapa requiere
+identificar su aviso real en el canal. El recibo del cierre guarda el ID de
+negociación, la etapa y el mensaje exacto que justificó el cierre.
+
 Ese mensaje nativo prueba que el aviso quedó registrado como salida, no su
 entrega o lectura en el dispositivo. El remitente puede ser Nico porque el BP
 usa el responsable del prospecto. Sólo se exceptúa ese ID exacto, con hash,

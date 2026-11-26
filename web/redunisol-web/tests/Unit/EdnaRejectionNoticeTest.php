@@ -66,6 +66,32 @@ test('identical jubilado notices still require a cataloged matching reason', fun
         ->and($service->match($notice['text'], 'PENSIONADO'))->toBeNull();
 });
 
+test('the rejected BCRA deal matches the complete native notice with its observed Bitrix greeting', function () {
+    $notice = collect(rejectionNoticeCatalog()['notices'])->firstWhere('reason_label', 'SIT NEG BCRA');
+    $service = new EdnaRejectionNotice;
+    $body = $notice['text'];
+    $native = '¡Hola! '.$body.'  ¡Gracias por tu consulta!';
+    $receipt = ['template_sha256' => $notice['template_sha256']];
+
+    expect(hash('sha256', $native))->toBe('43c21a7ff2c485ea1ccdf498d89a6463f12b42718d3be44e8d473a12ec3eb19a')
+        ->and($service->matchDeal($native, 'C1:5'))->toBe($receipt)
+        ->and($service->matchDeal(str_replace("\n", "\r\n", $native), 'C1:5'))->toBe($receipt)
+        ->and($service->matchDeal($body, 'C1:5'))->toBe($receipt)
+        ->and($service->matchDeal('¡Hola! '.$body.' ¡Gracias por tu consulta!', 'C1:5'))->toBeNull()
+        ->and($service->matchDeal('¡Hola! '.$body, 'C1:5'))->toBeNull()
+        ->and($service->matchDeal($native.' Otro mensaje.', 'C1:5'))->toBeNull()
+        ->and($service->matchDeal(str_replace('*BCRA supera los parámetros*', 'BCRA', $native), 'C1:5'))->toBeNull()
+        ->and($service->matchDeal($native, 'C1:LOSE'))->toBeNull()
+        ->and($service->match($native, 'SIT NEG BCRA'))->toBeNull();
+});
+
+test('a different public rejection template cannot confirm a BCRA deal rejection', function () {
+    $other = collect(rejectionNoticeCatalog()['notices'])->firstWhere('source_template_id', 407);
+    $service = new EdnaRejectionNotice;
+    expect($service->matchDeal($other['text'], 'C1:5'))->toBeNull()
+        ->and($service->matchDeal('¡Hola! '.$other['text'].'  ¡Gracias por tu consulta!', 'C1:5'))->toBeNull();
+});
+
 test('invalid or uncataloged input cannot prove a notice', function (string $text, string $reason) {
     expect((new EdnaRejectionNotice)->match($text, $reason))->toBeNull();
 })->with([['', 'AUTONOMO'], [" \n ", 'AUTONOMO'], ['rechazado', 'AUTONOMO'],

@@ -61,12 +61,22 @@ class EdnaRejectedChatClosure
                 $start += 50;
             } while (false);
         }
-        foreach ($candidates as $candidate) {
-            if (! isset($rejected[(string) $candidate['lead_id']])) {
+        $rejectedDeals = [];
+        try {
+            $otherCandidates = array_filter($candidates, fn ($c) => ! isset($rejected[(string) $c['lead_id']]));
+            $rejectedDeals = app(EdnaRejectedDealDiscovery::class)->discover($this->crm, $otherCandidates);
+        } catch (Throwable) {
+            // Keep dispatching proven prospect closures and already queued receipts.
+            // A subsequent poll retries this read-only discovery.
+            report(new RuntimeException('Rejected deal discovery unavailable; retrying on next poll.'));
+        }
+        foreach ($candidates as $index => $candidate) {
+            $dealId = $rejectedDeals[$index] ?? null;
+            if (! isset($rejected[(string) $candidate['lead_id']]) && ! $dealId) {
                 continue;
             }
             $proof = $candidate['proof'];
-            DB::table('edna_rejected_chat_closures')->insertOrIgnore([
+            DB::table('edna_rejected_chat_closures')->insertOrIgnore(($dealId ? ['deal_id' => $dealId] : []) + [
                 'chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'], 'lead_id' => $candidate['lead_id'],
                 'source_type' => $candidate['source_type'], 'source_id' => $candidate['source_id'],
                 'source_created_at' => CarbonImmutable::parse($candidate['source_created_at']),
@@ -140,29 +150,34 @@ class EdnaRejectedChatClosure
                 $this->decide('review', 'closure_receipt_incomplete');
             }
             $proof = json_decode($this->row->proof, true, 32, JSON_THROW_ON_ERROR);
-            $lead = $this->rejection();
-            $this->activity($proof, $lead);
-            $notice = $this->notice($proof, $lead);
-            $this->write(['notice' => json_encode($notice, JSON_THROW_ON_ERROR)]);
-            $first = $this->guard->inspect($proof, $notice);
-            $this->attention($first, $lead);
-            // Revalidate the decision as well as attention; reopening a lead cancels closure.
-            $fresh = $this->rejection();
-            foreach (['ID', 'STATUS_ID', 'CONTACT_ID', 'UF_CRM_REJECTION_REASON', 'UF_CRM_REJ_NOTICE', 'MOVED_TIME', 'ASSIGNED_BY_ID'] as $key) {
-                if (($lead[$key] ?? null) !== ($fresh[$key] ?? null)) {
-                    $this->decide('preserved', 'rejection_changed_during_inspection');
+            $cutover = null;
+            if (isset($this->row->deal_id)) {
+                $cutover = EdnaRejectedDealDiscovery::cutover();
+                if (! $cutover) {
+                    $this->decide('waiting', 'deal_cutover_unavailable');
                 }
             }
-            $this->activity($proof, $fresh);
-            $last = $this->guard->inspect($proof, $notice);
-            $this->attention($last, $fresh);
-            // The human guard can perform several reads. A lead reopened during
-            // that interval must be observed before reserving a closing POST.
-            $finalLead = $this->rejection();
-            foreach (['ID', 'STATUS_ID', 'CONTACT_ID', 'UF_CRM_REJECTION_REASON', 'UF_CRM_REJ_NOTICE', 'MOVED_TIME', 'ASSIGNED_BY_ID'] as $key) {
-                if (($fresh[$key] ?? null) !== ($finalLead[$key] ?? null)) {
-                    $this->decide('preserved', 'rejection_changed_during_inspection');
-                }
+            $case = $this->rejection($cutover);
+            $this->activity($proof, $case);
+            $notice = $this->notice($case);
+            $this->write(['notice' => json_encode($notice, JSON_THROW_ON_ERROR)]);
+            $first = $this->guard->inspect($proof, $notice);
+            $this->attention($first, $case, $cutover);
+            if ($case !== $this->rejection($cutover)) {
+                $this->decide('preserved', 'rejection_changed_during_inspection');
+            }
+            $this->activity($proof, $case);
+            $last = $cutover ? $this->guard->refresh($proof, $notice) : $this->guard->inspect($proof, $notice);
+            $this->attention($last, $case, $cutover);
+            // The native attention reads can span a concurrent CRM reopening.
+            if ($case !== $this->rejection($cutover)) {
+                $this->decide('preserved', 'rejection_changed_during_inspection');
+            }
+            if ($cutover) {
+                // Checking the conversion and the rejected deal takes several remote reads.
+                // Check the native session again before reserving the only closing POST.
+                $last = $this->guard->refresh($proof, $notice);
+                $this->attention($last, $case, $cutover);
             }
             if (! is_string($last['session_created_at'] ?? null)) {
                 $this->decide('waiting', 'session_creation_unavailable');
@@ -171,6 +186,10 @@ class EdnaRejectedChatClosure
                 'lead_id' => (int) $this->row->lead_id, 'owner_before' => (int) $last['owner_id'],
                 'session_created_at' => $last['session_created_at'], 'notice_message_id' => $notice['message_id'],
                 'template_sha256' => $notice['template_sha256'], 'created_at' => now()->toIso8601String()];
+            if ($cutover) {
+                $intent['deal_id'] = (int) $this->row->deal_id;
+                $intent['rejection_stage'] = $case['stage'];
+            }
             $this->write(['close_intent' => json_encode($intent, JSON_THROW_ON_ERROR), 'state' => 'sending']);
             // Bitrix accepts CHAT_ID only. The final read reduces but cannot eliminate
             // a provider-side race; no expected-session/owner CAS exists in this API.
@@ -204,11 +223,17 @@ class EdnaRejectedChatClosure
         }
     }
 
-    private function rejection(): array
+    private function rejection(?object $cutover): array
     {
         $lead = $this->call('crm.lead.get', ['id' => (int) $this->row->lead_id]);
         if (! is_array($lead) || (string) ($lead['ID'] ?? '') !== (string) $this->row->lead_id) {
             $this->decide('waiting', 'rejected_lead_unavailable');
+        }
+        if (! $this->provisionalOwner($lead)) {
+            $this->decide('preserved', 'crm_responsible_preserved');
+        }
+        if ($cutover) {
+            return $this->dealRejection($lead, $cutover);
         }
         if (($lead['STATUS_ID'] ?? '') !== 'UC_1P8I07') {
             $this->decide('preserved', 'lead_not_rejected');
@@ -219,14 +244,50 @@ class EdnaRejectedChatClosure
         if (! is_string($lead['MOVED_TIME'] ?? null) || ! $lead['MOVED_TIME']) {
             $this->decide('review', 'rejection_time_unavailable');
         }
-        if (! in_array((string) ($lead['ASSIGNED_BY_ID'] ?? ''), ['0', '57', '74827', '71283'], true)) {
-            $this->decide('preserved', 'crm_responsible_preserved');
-        }
-
-        return $lead;
+        return ['lead' => (string) $lead['ID'], 'deal' => null, 'contact' => (string) ($lead['CONTACT_ID'] ?? ''),
+            'moved' => $lead['MOVED_TIME'], 'reason' => $lead['UF_CRM_REJECTION_REASON'] ?? null, 'owner' => $lead['ASSIGNED_BY_ID']];
     }
 
-    private function activity(array $proof, array $lead): void
+    private function dealRejection(array $lead, object $cutover): array
+    {
+        if (($lead['STATUS_ID'] ?? null) !== 'CONVERTED' || ! EdnaRejectedDealDiscovery::afterCutover($lead['DATE_CREATE'] ?? null, $cutover)) {
+            $this->decide('preserved', 'lead_not_new_and_converted');
+        }
+        // Include every stage: another open or won deal for this lead makes the case ambiguous.
+        $siblings = $this->call('crm.deal.list', ['filter' => ['=LEAD_ID' => $lead['ID']], 'select' => ['ID', 'LEAD_ID']]);
+        if (! is_array($siblings) || ! array_is_list($siblings)) {
+            $this->decide('waiting', 'deal_relationship_unavailable');
+        }
+        if (count($siblings) !== 1 || (string) ($siblings[0]['ID'] ?? '') !== (string) $this->row->deal_id
+            || (string) ($siblings[0]['LEAD_ID'] ?? '') !== (string) $lead['ID']) {
+            $this->decide('preserved', 'deal_relationship_changed');
+        }
+        $deal = $this->call('crm.deal.get', ['id' => (int) $this->row->deal_id]);
+        if (! is_array($deal) || (string) ($deal['ID'] ?? '') !== (string) $this->row->deal_id) {
+            $this->decide('waiting', 'rejected_deal_unavailable');
+        }
+        if ((string) ($deal['LEAD_ID'] ?? '') !== (string) $lead['ID'] || ! EdnaRejectedDealDiscovery::eligibleDeal($deal, $cutover)) {
+            $this->decide('preserved', 'deal_not_new_and_rejected');
+        }
+        if (! $this->provisionalOwner($deal)) {
+            $this->decide('preserved', 'crm_responsible_preserved');
+        }
+        $contact = (string) ($lead['CONTACT_ID'] ?? '');
+        if ($contact !== (string) ($deal['CONTACT_ID'] ?? '')) {
+            $this->decide('preserved', 'deal_contact_changed');
+        }
+
+        return ['lead' => (string) $lead['ID'], 'deal' => (string) $deal['ID'], 'contact' => $contact,
+            'moved' => $deal['MOVED_TIME'], 'stage' => $deal['STAGE_ID'], 'owner' => $deal['ASSIGNED_BY_ID'],
+            'lead_owner' => $lead['ASSIGNED_BY_ID'], 'lead_moved' => $lead['MOVED_TIME'] ?? null];
+    }
+
+    private function provisionalOwner(array $entity): bool
+    {
+        return in_array((string) ($entity['ASSIGNED_BY_ID'] ?? ''), ['0', '57', '74827', '71283'], true);
+    }
+
+    private function activity(array $proof, array $case): void
     {
         $activityId = $proof['activity_id'] ?? null;
         if (! $this->id($activityId)) {
@@ -239,22 +300,33 @@ class EdnaRejectedChatClosure
             $this->decide('preserved', 'native_activity_changed');
         }
         $owner = [(string) ($a['OWNER_TYPE_ID'] ?? ''), (string) ($a['OWNER_ID'] ?? '')];
-        if ($owner !== ['1', (string) $lead['ID']] && (! $this->id($lead['CONTACT_ID'] ?? null) || $owner !== ['3', (string) $lead['CONTACT_ID']])) {
+        if ($case['deal'] !== null) {
+            // A contact may have unrelated deals. Require the exact application on this activity.
+            if ($owner !== ['2', $case['deal']] && $owner !== ['1', $case['lead']]) {
+                $this->decide('preserved', 'native_case_changed');
+            }
+        } elseif ($owner !== ['1', $case['lead']] && (! $this->id($case['contact']) || $owner !== ['3', $case['contact']])) {
             $this->decide('preserved', 'native_case_changed');
         }
     }
 
-    private function notice(array $proof, array $lead): array
+    private function leadReason(mixed $reasonId): string
     {
         $fields = $this->call('crm.lead.fields');
         $labels = [];
         foreach ($fields['UF_CRM_REJECTION_REASON']['items'] ?? [] as $item) {
             $labels[(string) ($item['ID'] ?? '')] = $item['VALUE'] ?? null;
         }
-        $reason = $labels[(string) ($lead['UF_CRM_REJECTION_REASON'] ?? '')] ?? null;
+        $reason = $labels[(string) $reasonId] ?? null;
         if (! is_string($reason) || $reason === '') {
             $this->decide('review', 'rejection_reason_unverified');
         }
+        return $reason;
+    }
+
+    private function notice(array $case): array
+    {
+        $leadReason = $case['deal'] === null ? $this->leadReason($case['reason']) : null;
         $history = $this->call('imopenlines.session.history.get', ['SESSION_ID' => (int) $this->row->session_id]);
         if (! is_array($history) || ($history['hasNextPage'] ?? null) !== false
             || (string) ($history['chatId'] ?? '') !== (string) $this->row->chat_id
@@ -282,10 +354,11 @@ class EdnaRejectedChatClosure
                 continue;
             }
             $date = CarbonImmutable::parse($m['date']);
-            if ($date->lessThan(CarbonImmutable::parse($lead['MOVED_TIME'])) || $date->lessThan(CarbonImmutable::parse($this->row->source_created_at))) {
+            if ($date->lessThan(CarbonImmutable::parse($case['moved'])) || $date->lessThan(CarbonImmutable::parse($this->row->source_created_at))) {
                 continue;
             }
-            if ($match = $this->notices->match($m['text'], $reason)) {
+            $match = $leadReason !== null ? $this->notices->match($m['text'], $leadReason) : $this->notices->matchDeal($m['text'], $case['stage']);
+            if ($match) {
                 $matches[] = $match + ['message_id' => (string) $m['id'], 'date' => $m['date'],
                     'native_text_sha256' => hash('sha256', $m['text']), 'sender_id' => (string) $m['senderid'], 'connector_mid' => $connectorMid];
             }
@@ -300,7 +373,7 @@ class EdnaRejectedChatClosure
         return $matches[0];
     }
 
-    private function attention(array $result, array $lead): void
+    private function attention(array $result, array $case, ?object $cutover): void
     {
         $status = $result['status'] ?? 'waiting';
         if ($status === 'closed') {
@@ -311,8 +384,37 @@ class EdnaRejectedChatClosure
         }
         $parts = explode('|', (string) ($result['dialog']['entity_data_1'] ?? ''));
         $native = [$parts[1] ?? '', $parts[2] ?? ''];
-        if ($native !== ['LEAD', (string) $lead['ID']] && (! $this->id($lead['CONTACT_ID'] ?? null) || $native !== ['CONTACT', (string) $lead['CONTACT_ID']])) {
+        if ($cutover) {
+            if (! EdnaRejectedDealDiscovery::afterCutover($result['session_created_at'] ?? null, $cutover)) {
+                $this->decide('preserved', 'session_precedes_deal_cutover');
+            }
+            // Bitrix often leaves CONTACT as primary even after moving the activity to the deal.
+            $this->verifyDealBindings($result['dialog']['entity_data_2'] ?? '', $case);
+            if ($native === ['DEAL', $case['deal']]) {
+                return;
+            }
+        }
+        if ($native !== ['LEAD', $case['lead']] && (! $this->id($case['contact']) || $native !== ['CONTACT', $case['contact']])) {
             $this->decide('preserved', 'dialog_case_changed');
+        }
+    }
+
+    private function verifyDealBindings(string $encoded, array $case): void
+    {
+        $pairs = explode('|', $encoded);
+        if (count($pairs) % 2 !== 0 || count($pairs) > 8) {
+            $this->decide('waiting', 'dialog_crm_links_unavailable');
+        }
+        $expected = ['LEAD' => $case['lead'], 'DEAL' => $case['deal'], 'CONTACT' => $case['contact'], 'COMPANY' => null];
+        for ($i = 0; $i < count($pairs); $i += 2) {
+            [$type, $id] = [$pairs[$i], $pairs[$i + 1]];
+            if (! array_key_exists($type, $expected) || ($id !== '0' && ! $this->id($id))) {
+                $this->decide('waiting', 'dialog_crm_links_unavailable');
+            }
+            if ($id !== '0' && $expected[$type] !== $id) {
+                $this->decide('preserved', 'dialog_case_changed');
+            }
+            unset($expected[$type]);
         }
     }
 
@@ -341,7 +443,7 @@ class EdnaRejectedChatClosure
         return $this->finish('unknown', 'close_not_yet_observed');
     }
 
-    private function enabled(): bool
+    public function enabled(): bool
     {
         return config('edna.enabled') && config('edna.intake_crm_enabled') && config('edna.rejection_close_enabled');
     }
@@ -399,7 +501,7 @@ class EdnaRejectedChatClosure
         try {
             $r = DB::table('edna_rejected_chat_closures')->find($this->row->id);
             app(JourneyLedger::class)->record('whatsapp.rejection_close', ['closure_id' => $r->id, 'chat_id' => $r->chat_id,
-                'native_session_id' => $r->session_id, 'lead_id' => $r->lead_id, 'state' => $state, 'reason' => $reason,
+                'native_session_id' => $r->session_id, 'lead_id' => $r->lead_id, 'deal_id' => $r->deal_id ?? null, 'state' => $state, 'reason' => $reason,
                 'close_intent' => $r->close_intent ? json_decode($r->close_intent, true) : null, 'close_acknowledged' => (bool) $r->close_acknowledged], [], 'whatsapp.rejection');
             app(JourneyLedger::class)->flush();
         } catch (Throwable) { /* Durable SQL receipt is primary; journal failures never replay a close. */

@@ -30,6 +30,17 @@ class EdnaRejectedChatGuard
      */
     public function inspect(array $proof, array $notice): array
     {
+        return $this->inspectSession($proof, $notice, 2);
+    }
+
+    /** Refresh every attention source and the dialog around a single final verification. */
+    public function refresh(array $proof, array $notice): array
+    {
+        return $this->inspectSession($proof, $notice, 1);
+    }
+
+    private function inspectSession(array $proof, array $notice, int $rounds): array
+    {
         $this->calls = 0;
         $this->deadline = microtime(true) + 30;
         $owner = $sessionId = 0;
@@ -58,7 +69,7 @@ class EdnaRejectedChatGuard
             $firstDialog = $dialog;
             // Repeat all attention sources: taking a queue chat need not change
             // owner, and a newly arriving message may precede the dialog reread.
-            foreach ([1, 2] as $_) {
+            for ($round = 0; $round < $rounds; $round++) {
                 $session = $this->session($chatId, $sessionId, $epoch);
                 $createdAt = $session['dateCreate'];
                 if ($reason = $this->attention($session)) {
