@@ -105,8 +105,9 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
   };
 
   try {
-    await t.test("una corrección devuelve a Revisión de Riesgo, incluso frente a doble clic", async () => {
+    await t.test("una corrección con adjuntos devuelve a Revisión de Riesgo, incluso frente a doble clic", async () => {
       const row = await makeReview(Prisma.JsonNull);
+      await adjuntoRepository.create(attachment(row.id, "recibo.pdf"), row.sellerReviewStartedAt!);
       const body = { changes: { titular: { celular: "2222" } } };
       const responses = await Promise.all([post(row, body), post(row, body)]);
       assert.deepEqual(responses.map(r => r.status).sort(), [200, 409], await Promise.all(responses.filter(r => !r.ok).map(r => r.text())).then(bodies => bodies.join(" | ")));
@@ -118,8 +119,8 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       assert.equal(await persistedEvents(row.id), 1);
       assert.equal(financialChecks, 0);
     });
-    await t.test("adjuntar documentos durante la revisión basta para devolver la ficha a Riesgo", async () => {
-      const row = await makeReview(Prisma.JsonNull);
+    await t.test("agregar adjuntos permite avanzar a Verificar Firma y Documentación", async () => {
+      const row = await makeReview();
       const startedAt = row.sellerReviewStartedAt!;
       const first = attachment(row.id, "recibo.pdf");
       const second = attachment(row.id, "constancia.pdf");
@@ -129,16 +130,14 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       const response = await post(row);
       assert.equal(response.status, 200, await response.text());
       const saved = await read(row.id);
-      assert.equal(saved.estadoActual.code, "RevisionRiesgo");
-      assert.equal(saved.analisisFinalizadoAt, null);
-      assert.equal(financialChecks, 0);
-      const changes = [first, second].map(({ adjuntoId, archivoNombre }) => ({
-        field: `adjuntos.${adjuntoId}`, before: null, after: archivoNombre,
-      }));
-      assert(Array.isArray(saved.sellerReviewChanges));
-      assert.deepEqual(new Set(saved.sellerReviewChanges), new Set(changes));
+      assert.equal(saved.estadoActual.code, "VerificarFirmaYDocumentacion");
+      assert.equal(saved.analisisFinalizadoBy, seller.id);
+      assert(saved.analisisFinalizadoAt);
+      assert.equal(saved.sellerReviewStartedAt, null);
+      assert.deepEqual(saved.sellerReviewChanges, []);
+      assert.equal(financialChecks, 1);
       const event = await db.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: row.id } });
-      assert.deepEqual(event.metadata, { sellerReviewChanges: saved.sellerReviewChanges });
+      assert.equal(event.actionCode, "finalizar_revision_datos");
       assert.equal(await persistedEvents(row.id), 1);
 
       await assert.rejects(adjuntoRepository.createMany([attachment(row.id, "tardío.pdf")], startedAt), {
@@ -164,7 +163,7 @@ it("POST de revisión guarda y cambia de estado una sola vez o revierte todo", {
       assert(saved.analisisFinalizadoAt);
       assert.equal(saved.sellerReviewStartedAt, null);
       assert.equal(await persistedEvents(row.id), 1);
-      assert.equal(financialChecks, 1);
+      assert.equal(financialChecks, 2);
     });
     await t.test("sin registro, ni Liquidada ni los tres avances de Confirmada modifican el préstamo o el análisis", async () => {
       const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });

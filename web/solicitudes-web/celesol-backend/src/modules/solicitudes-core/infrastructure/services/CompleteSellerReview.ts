@@ -1,4 +1,4 @@
-import { activeWorkflowAreaWhere, hasWorkflowAreaId } from "../../../auth/domain/workflow-areas";
+import { hasWorkflowAreaId } from "../../../auth/domain/workflow-areas";
 import type { DbClient } from "../../../../db/prisma";
 import type { ChangeSolicitudStateInput } from "../../application/dtos/ChangeSolicitudState.dto";
 import type { UpdateSolicitudUseCase } from "../../application/use-cases/UpdateSolicitud.use-case";
@@ -49,32 +49,7 @@ export class CompleteSellerReview {
         ? await tx.solicitud.findUniqueOrThrow({ where: { id }, include: { titular: true } })
         : current;
       const changes = readSellerReviewChanges(reviewed.sellerReviewChanges);
-      const attachments = await tx.solicitudAdjunto.findMany({
-        where: {
-          solicitudId: id,
-          uploadedAt: { gte: current.sellerReviewStartedAt },
-          deletedAt: null,
-          archivoPath: { startsWith: `solicitudes/${id}/adjuntos/` },
-          uploadedByUser: { is: activeWorkflowAreaWhere({ id: current.estadoActual.ownerId }) },
-        },
-        select: { id: true, archivoNombre: true, tipoAdjunto: true },
-        orderBy: [{ uploadedAt: "asc" }, { id: "asc" }],
-      });
-      if (attachments.length) {
-        await tx.solicitud.update({
-          where: { id },
-          data: {
-            sellerReviewChanges: [
-              ...changes,
-              ...attachments.map(attachment => ({
-                field: `adjuntos.${attachment.id}`,
-                before: null,
-                after: attachment.archivoNombre ?? attachment.tipoAdjunto ?? "Documento adjunto",
-              })),
-            ],
-          },
-        });
-      } else if (!changes.length) {
+      if (!changes.length) {
         assertAnalysisControl(current, input.actionCode);
         if (!reviewed.titular || !(await new FindSolicitudTitularSocio({ sociosRepository: this.socios }).execute(reviewed.titular)))
           throw new SolicitudTitularSocioRequiredForWorkflowError();
