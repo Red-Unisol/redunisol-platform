@@ -29,7 +29,8 @@ class SalesChatReopening
             if (! $hash || ($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
                 || ($proof['evidence'] ?? '') !== 'external_message_id' || (string) ($proof['entry_event_id'] ?? '') !== (string) $entry->id
                 || (string) ($proof['entry_message_id'] ?? '') !== $entry->message_id
-                || ! $this->id($proof['chat_id'] ?? null) || ! $this->id($proof['session_id'] ?? null)) {
+                || ! $this->id($proof['chat_id'] ?? null) || ! $this->id($proof['session_id'] ?? null)
+                || ! $this->id($proof['activity_id'] ?? null) || ! $this->id($proof['message_id'] ?? null)) {
                 return $this->decision('retry', 'reopening_native_proof_unavailable');
             }
             // A short negative by itself does not warrant searching Bitrix for an unrelated customer.
@@ -44,20 +45,20 @@ class SalesChatReopening
             }
             $dialog = $this->crm->call('imopenlines.dialog.get', ['CHAT_ID' => (int) $proof['chat_id']]);
             $session = explode('|', (string) ($dialog['entity_data_1'] ?? ''));
-            $channel = explode('|', (string) ($dialog['entity_id'] ?? ''));
             if ((string) ($dialog['id'] ?? '') !== (string) $proof['chat_id'] || ($dialog['entity_type'] ?? '') !== 'LINES'
-                || count($channel) !== 4 || $channel[0] !== 'whatsappbyedna' || $channel[1] !== '1'
-                || $channel[2] !== $payload['subscriber']['identifier'].'@'.$entry->subject_id || ! $this->id($channel[3])
                 || count($session) < 7 || ! array_key_exists('text_field_enabled', $dialog)) {
                 return $this->decision('retry', 'reopening_dialog_unavailable');
             }
             if ((string) $proof['session_id'] !== $session[5] || ! in_array($dialog['text_field_enabled'], [true, 'Y', 1, '1'], true)) {
                 return $this->decision('hold', 'reopening_session_replaced_or_closed');
             }
-            if (! $this->id($session[6])) {
-                throw new RuntimeException('Missing current opening time.');
+            $tuple = app(EdnaOrganicAttention::class)->dialogTuple($dialog, $proof);
+            $opened = CarbonImmutable::createFromTimestampUTC((int) $tuple['session_epoch'])->toIso8601String();
+            $source = explode('|', $dialog['entity_id']);
+            [$nativePhone] = explode('@', $source[2]);
+            if ((new AttributionJourney)->phoneHash($nativePhone) !== $hash) {
+                return $this->decision('clarify', 'reopening_native_recipient_changed', $opened);
             }
-            $opened = CarbonImmutable::createFromTimestampUTC((int) $session[6])->toIso8601String();
             $at = $this->date($opened);
             $previous = $this->previous($proof, $at->subMinutes(10), $at);
             if (! $previous && $intent === 'status') {
@@ -95,12 +96,17 @@ class SalesChatReopening
             if (! is_array($deal) || (string) ($deal['ID'] ?? '') !== $dealIds[0]) {
                 throw new RuntimeException('Incomplete deal response.');
             }
-            if ((string) ($deal['CATEGORY_ID'] ?? '') !== '1') {
+            foreach (self::DEAL_FIELDS as $field) {
+                if (! array_key_exists($field, $deal)) {
+                    throw new RuntimeException('Incomplete deal response.');
+                }
+            }
+            if ((string) $deal['CATEGORY_ID'] !== '1' || $deal['CLOSED'] !== 'N' || $deal['STAGE_SEMANTIC_ID'] !== 'P'
+                || isset(EdnaRejectedDealDiscovery::STAGE_REASONS[$deal['STAGE_ID']])) {
                 return null;
             }
             $contact = $this->id($deal['CONTACT_ID'] ?? null);
             $lead = $this->id($deal['LEAD_ID'] ?? null);
-            $tuple = app(EdnaOrganicAttention::class)->dialogTuple($dialog, $proof);
             if (! $contact || ! $lead || ! $this->sameCase($tuple, $lead, $contact, $dealIds[0])) {
                 return $this->decision('clarify', 'reopening_identity_unconfirmed', $opened);
             }
@@ -126,6 +132,13 @@ class SalesChatReopening
                 if (! $this->id($row['ID'] ?? null) || (string) ($row['CONTACT_ID'] ?? '') !== $contact
                     || (string) ($row['CATEGORY_ID'] ?? '') !== '1' || ($row['CLOSED'] ?? '') !== 'N' || ($row['STAGE_SEMANTIC_ID'] ?? '') !== 'P') {
                     throw new RuntimeException('Unverified open loan.');
+                }
+                if ((string) $row['ID'] === $dealIds[0]) {
+                    foreach (self::DEAL_FIELDS as $field) {
+                        if ((string) ($row[$field] ?? '') !== (string) ($deal[$field] ?? '')) {
+                            return $this->decision('retry', 'reopening_deal_changed_during_inspection', $opened);
+                        }
+                    }
                 }
                 $ids[] = (string) $row['ID'];
                 $owners[(string) $row['ID']] = str_starts_with((string) ($row['STAGE_ID'] ?? ''), 'C1:')
