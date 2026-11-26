@@ -892,3 +892,18 @@ pedido específico.
 ### Respuesta de la campaña de beneficios
 
 Desde el corte `member-benefits-button-v1`, el botón «Quiero mis beneficios» de `aviso_soysocio_v6final` (matcher 63510) deriva el chat de VENTAS a Victoria Cornier (117941), incluso si sólo hay un contacto. El worker verifica el envío original y su teclado en Edna y vincula el mensaje entrante exacto a la sesión de Bitrix. Si la verificación está pendiente, espera. Si alguien ya atendió el chat o la sesión cambió, conserva la atención. La tabla `edna_benefit_chat_routes` guarda la evidencia del botón, la intención de pase, el acuse y la transferencia nativa. Un callback repetido no genera otro pase.
+
+### Respuestas a plantillas de VENTAS
+
+El corte `edna-campaign-templates-v1` habilita la política para callbacks nuevos. Se compara tanto el ID local del ingreso como la fecha del mensaje con el corte. El catálogo de `EdnaCampaignTemplate` identifica los 38 matchers aprobados del 25/11/2026 por ID y nombre. Los 60 botones de respuesta rápida se comprueban contra el teclado del envío real, incluidos el texto y el payload. Para texto o adjuntos se requiere el mensaje saliente citado. Las campañas nuevas necesitan una política explícita.
+
+| Respuesta verificada | Acción |
+| --- | --- |
+| Activación, información de billetera o beneficios | Entregar la sesión al responsable vigente de Beneficios. Cuando se acredita sólo la campaña y se descarta una negociación vigente de Beneficios, el destino es Victoria (117941). |
+| «Darse de baja» | Registrar el pedido de baja y entregarlo a Beneficios. El recibo acredita la solicitud y su atención. La ejecución de la baja se confirma por separado. |
+| Consentimiento, documentación o seguimiento de una operación | Vincular el envío y la sesión a la gestión en Bitrix y comprobar el vendedor vigente. Si la creación de la negociación o la asignación siguen pendientes, reintentar. |
+| Consulta sobre una oferta | Continuar la gestión comprobada. Si se verifica que no hay un caso activo, preguntar si quiere iniciar una solicitud. Sólo la elección explícita de préstamo habilita la reutilización del perfil o el v3. |
+| Negativa o postergación | Registrar la decisión con el envío correspondiente. Una postergación por sí sola no programa un contacto. |
+| Encuesta, reseña o enlace | Conservar la respuesta citada junto con el envío y la actividad nativa. El clic en una URL puede no producir un callback. El formulario web conserva su propio ingreso. |
+
+Las lecturas incompletas quedan en espera con un motivo. Antes de transferir se vuelven a comprobar la sesión, la ventana y la atención humana. La reconciliación de un POST incierto consulta el resultado sin repetir el pase. En `edna_organic_menus`, `form_consent` guarda el evento entrante, el envío saliente y la acción verificada. `campaign_prompt` conserva el origen de una pregunta de intención. Para bajas, `edna_campaign_unsubscribe_requests` identifica cada pedido y su ruta de Beneficios. Los IDs permiten ir del evento recibido a su sesión sin copiar texto libre ni datos de contacto al journal.

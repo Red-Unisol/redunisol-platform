@@ -186,6 +186,11 @@ class EdnaIncomingController extends Controller
                     }
                     $id = DB::table('edna_incoming_events')
                         ->where('subject_id', $subjectId)->where('message_id', $payload['id'])->value('id');
+                    if ($replyId !== null && in_array($content['type'], ['BUTTON', 'TEXT', 'IMAGE', 'DOCUMENT', 'VIDEO', 'AUDIO'], true)) {
+                        DB::table('edna_campaign_reply_inbox')->insert([
+                            'entry_event_id' => $id, 'subject_id' => $subjectId, 'outbound_message_id' => (string) $replyId,
+                        ]);
+                    }
                     // Same database connection and transaction as the inbox: either both commit or neither.
                     Queue::connection('edna')->push(new ReceiveEdnaInKestra((int) $id), '', 'edna-inbox');
                     $counts['accepted']++;

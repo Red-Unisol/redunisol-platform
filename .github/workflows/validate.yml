@@ -290,7 +290,7 @@ jobs:
       - name: Test new-only native V3 binding and manual attention guards
         run: php vendor/bin/pest tests/Feature/EdnaDealMessageBindingTest.php tests/Unit/EdnaMessageBindingTest.php tests/Unit/EdnaCurrentMessageBindingTest.php tests/Feature/EdnaFreshIntakeTest.php tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/WebFormContinuationTest.php tests/Feature/EdnaOrganicFlowTest.php tests/Feature/WebFormChatLinkerTest.php
       - name: Test template buttons and sales chat handoff
-        run: php vendor/bin/pest tests/Feature/EdnaFormConsentTest.php tests/Feature/EdnaConsentCaseTest.php tests/Feature/EdnaOrganicMenuTest.php tests/Feature/EdnaBenefitsRoutingTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaCampaignTemplateTest.php tests/Feature/EdnaFormConsentTest.php tests/Feature/EdnaConsentCaseTest.php tests/Feature/EdnaOrganicMenuTest.php tests/Feature/EdnaBenefitsRoutingTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

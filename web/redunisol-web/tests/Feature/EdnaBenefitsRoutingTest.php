@@ -4,6 +4,7 @@ use App\Jobs\RouteEdnaBenefitsChat;
 use App\Services\EdnaBenefitsCase;
 use App\Services\EdnaBenefitsRouting;
 use App\Services\EdnaBitrix;
+use App\Services\EdnaCampaignTemplate;
 use App\Services\WebFormChatGuard;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -27,6 +28,8 @@ class BenefitsRouteCrmFake extends EdnaBitrix
     public array $calls = [];
 
     public int $posts = 0;
+
+    public int $expectedTarget = 117941;
 
     public string $mode = 'ack';
 
@@ -55,11 +58,11 @@ class BenefitsRouteCrmFake extends EdnaBitrix
         }
         if ($method === 'imopenlines.operator.transfer') {
             $this->posts++;
-            expect($payload)->toBe(['CHAT_ID' => 601, 'USER_ID' => 117941]);
+            expect($payload)->toBe(['CHAT_ID' => 601, 'USER_ID' => $this->expectedTarget]);
             if ($this->mode !== 'lost_without_apply') {
-                $this->dialog['owner'] = 117941;
+                $this->dialog['owner'] = $this->expectedTarget;
                 $this->transfers[] = ['sessionId' => 501, 'date' => now()->toIso8601String(),
-                    'fromOperatorId' => 71283, 'toOperatorId' => 117941, 'fromConfigId' => 1,
+                    'fromOperatorId' => 71283, 'toOperatorId' => $this->expectedTarget, 'fromConfigId' => 1,
                     'toConfigId' => null, 'reason' => 'manual', 'mode' => 'MANUAL', 'type' => 'USER', 'initiatorId' => 71283];
             }
             if (in_array($this->mode, ['lost_without_apply', 'lost_after_apply'], true)) {
@@ -102,7 +105,7 @@ class BenefitsRouteCaseFake extends EdnaBenefitsCase
         }
         $parts = explode('|', $this->fake->dialog['entity_data_1']);
 
-        return ['status' => $this->status, 'reason' => $this->reason, 'case' => $this->case, 'chat_id' => '601', 'session_id' => '501',
+        return ['status' => $this->status, 'reason' => $this->reason, 'case' => $this->status === 'benefits' ? $this->case : null, 'chat_id' => '601', 'session_id' => '501',
             'snapshot' => ['dialog_tuple' => ['chat_id' => '601', 'session_id' => '501',
                 'source_hash' => hash_hmac('sha256', 'organic-source:'.$this->fake->dialog['entity_id'], config('app.key')),
                 'owner' => (string) $this->fake->dialog['owner'], 'session_epoch' => $parts[6],
@@ -184,6 +187,205 @@ function benefitsRouteRow(object $f): object
 {
     return DB::table('edna_benefit_chat_routes')->where('entry_event_id', $f->event->id)->first();
 }
+
+function benefitsCampaignReply(string $matcher, string $name, string $label, string $type = 'BUTTON', string $action = 'benefits'): array
+{
+    $event = benefitsRouteEvent(['replyOutMessageId' => '456', 'messageContent' => ['type' => $type, 'text' => $label, 'payload' => $label]]);
+    $outbound = ['messageId' => '456', 'subjectId' => '2423', 'matcherId' => $matcher, 'matcherName' => $name,
+        'sentOrReceivedAt' => now()->subMinute()->toISOString()];
+
+    return [$event, benefitsRouteProof($event), ['action' => $action, 'outbound' => $outbound]];
+}
+
+function enableBenefitsCampaigns(): void
+{
+    DB::table('edna_intake_cutovers')->updateOrInsert(['name' => EdnaCampaignTemplate::CUTOVER],
+        ['entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+}
+
+function walletReplyAt(string $label, CarbonImmutable $at, string $stage = 'verified', string $mid = '456', string $session = '501', string $phone = '5493510000000'): void
+{
+    $event = benefitsRouteEvent(['replyOutMessageId' => $mid, 'receivedAt' => $at->toISOString(), 'subscriber' => ['identifier' => $phone],
+        'messageContent' => ['type' => 'BUTTON', 'text' => $label, 'payload' => $label]]);
+    DB::table('edna_campaign_reply_inbox')->insert(['entry_event_id' => $event->id, 'subject_id' => '2423', 'outbound_message_id' => $mid]);
+    if ($stage === 'inbox') {
+        DB::table('edna_incoming_events')->where('id', $event->id)->update(['status' => 'pending']);
+        return;
+    }
+    if ($stage === 'unrelated') {
+        return;
+    }
+    $reply = ['entry_event_id' => $event->id, 'received_at' => $at->toISOString(), 'reply_out_message_id' => $mid];
+    if ($stage === 'verified') {
+        $reply += ['action' => $label === 'Ahora no' ? 'decline' : 'benefits',
+            'native_proof' => array_replace(benefitsRouteProof($event), ['session_id' => $session]),
+            'outbound' => ['subjectId' => '2423', 'messageId' => $mid, 'matcherId' => '62723', 'matcherName' => 'aviso_billetera_v3']];
+    }
+    DB::table('edna_organic_menus')->insert(['entry_event_id' => $event->id, 'request_id' => (string) \Illuminate\Support\Str::uuid(),
+        'subject_id' => '2423', 'cascade_id' => '1', 'phone_hash' => (new \App\Services\AttributionJourney)->phoneHash($phone),
+        'recipient' => Crypt::encryptString($phone), 'entry_received_at' => $at, 'expires_at' => $at->addDay(),
+        'form_consent' => json_encode($reply, JSON_THROW_ON_ERROR)]);
+}
+
+test('the last reply to a wallet send governs a pending transfer at its final guard', function (string $scenario, string $expected) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $args = benefitsCampaignReply('62723', 'aviso_billetera_v3', 'Quiero más info');
+    $f->service->reserveCampaign(...$args);
+    $at = CarbonImmutable::now();
+    $f->guard->beforeInspect = function ($call) use ($scenario, $at) {
+        if ($call !== 2) {
+            return;
+        }
+        match ($scenario) {
+            'pending inbox' => walletReplyAt('Ahora no', $at->addSecond(), 'inbox'),
+            'pending provider' => walletReplyAt('Ahora no', $at->addSecond(), 'candidate'),
+            'unrelated completed path' => walletReplyAt('Ahora no', $at->addSecond(), 'unrelated'),
+            'different outbound' => walletReplyAt('Ahora no', $at->addSecond(), 'inbox', '457'),
+            'different recipient' => walletReplyAt('Ahora no', $at->addSecond(), 'inbox', '456', '501', '5493510000001'),
+            'different native session' => walletReplyAt('Ahora no', $at->addSecond(), 'verified', '456', '502'),
+            'later callback carrying older refusal' => walletReplyAt('Ahora no', $at->subSecond()),
+            'equal timestamp refusal' => walletReplyAt('Ahora no', $at),
+            'verified refusal' => walletReplyAt('Ahora no', $at->addSecond()),
+            'yes received after no' => [walletReplyAt('Quiero más info', $at->addSeconds(2)), walletReplyAt('Ahora no', $at->addSecond())],
+        };
+    };
+    expect($f->service->process($args[0]->id)['state'])->toBe($expected)->and($f->crm->posts)->toBe($expected === 'routed' ? 1 : 0);
+    if ($expected !== 'routed') {
+        expect(DB::table('edna_benefit_chat_routes')->sole()->transfer_intent)->toBeNull();
+    }
+})->with([
+    ['pending inbox', 'waiting'], ['pending provider', 'waiting'], ['unrelated completed path', 'routed'], ['verified refusal', 'preserved'],
+    ['equal timestamp refusal', 'preserved'], ['different outbound', 'routed'], ['different recipient', 'routed'],
+    ['different native session', 'routed'], ['later callback carrying older refusal', 'routed'], ['yes received after no', 'routed'],
+]);
+
+test('a refusal does not hold the session hostage for separate requests, and a later affirmative can resume', function (string $next) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $first = benefitsCampaignReply('62723', 'aviso_billetera_v3', 'Quiero más info');
+    $f->service->reserveCampaign(...$first);
+    walletReplyAt('Ahora no', CarbonImmutable::now()->addSecond());
+    expect($f->service->process($first[0]->id)['reason'])->toBe('benefits_campaign_declined')->and($f->crm->posts)->toBe(0);
+    $this->travel(3)->seconds();
+    if ($next === 'positive again') {
+        $args = benefitsCampaignReply('62723', 'aviso_billetera_v3', 'Quiero más info');
+        $f->service->reserveCampaign(...$args);
+    } elseif ($next === 'unsubscribe') {
+        $args = benefitsCampaignReply('63271', 'aviso_soysocio_v5', 'Darse de baja', 'BUTTON', 'unsubscribe');
+        $f->service->reserveCampaign(...$args);
+        expect(DB::table('edna_campaign_unsubscribe_requests')->count())->toBe(1);
+    } else {
+        $event = benefitsRouteEvent();
+        if ($next === 'no native Benefits case') {
+            $f->cases->status = 'not_applicable';
+            expect($f->service->check($event, benefitsRouteProof($event)))->toBeNull()->and($f->crm->posts)->toBe(0);
+            return;
+        }
+        expect($f->service->check($event, benefitsRouteProof($event))['reason'])->toBe('benefits_routing');
+    }
+    expect($f->service->process($first[0]->id)['state'])->toBe('routed')->and($f->crm->posts)->toBe(1);
+})->with(['positive again', 'unsubscribe', 'separate native Benefits case', 'no native Benefits case']);
+
+test('a new verified wallet reply follows the currently assigned Benefits owner', function (string $id, string $name, string $label, string $type) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $f->crm->expectedTarget = 90233;
+    $f->cases->case['responsible_id'] = '90233';
+    $args = benefitsCampaignReply($id, $name, $label, $type);
+    expect($f->service->reserveCampaign(...$args)['reason'])->toBe('benefits_routing');
+    $id = $args[0]->id;
+    expect($f->service->process($id))->toBe(['state' => 'routed', 'reason' => 'benefits_transfer_confirmed'])
+        ->and($f->crm->posts)->toBe(1)->and($f->service->process($id)['state'])->toBe('not_claimed');
+    $row = DB::table('edna_benefit_chat_routes')->sole();
+    expect((int) $row->deal_id)->toBe(900)->and((int) $row->target_id)->toBe(90233)
+        ->and(json_decode($row->campaign_reply, true)['action'])->toBe('benefits')->and($row->transfer_state)->toBe('confirmed');
+})->with([
+    ['62129', 'primercontacto_billetera', 'Sí, quiero activarla', 'BUTTON'],
+    ['62718', 'aviso_billetera_v2', 'Si, quiero activarla', 'BUTTON'],
+    ['62723', 'aviso_billetera_v3', 'Quiero más info', 'BUTTON'],
+    ['62742', 'seguimiento_billetera_octubre', 'Si, quiero mi regalo', 'BUTTON'],
+    ['63042', 'aviso_billetera_v4link', 'Quiero más info', 'BUTTON'],
+    ['63507', 'aviso_billetera_v5link', 'Sí, quiero activarla', 'BUTTON'],
+    ['63508', 'aviso_billetera_v6link', 'Quiero más info', 'BUTTON'],
+    ['63510', 'aviso_soysocio_v6final', 'Más info', 'BUTTON'],
+    ['62826', 'billetera_datos', 'Estos son los datos solicitados', 'TEXT'],
+]);
+
+test('Victoria receives a verified campaign only when a current native read rules out an active Benefits case', function (string $scenario) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $args = benefitsCampaignReply('62723', 'aviso_billetera_v3', 'Quiero más info');
+    $f->service->reserveCampaign(...$args);
+    $f->cases->status = $scenario === 'api outage' ? 'review' : 'not_applicable';
+    $f->cases->reason = $scenario === 'api outage' ? 'native_benefits_case_unverified' : 'native_case_other_category';
+    if ($scenario === 'human takes at final check') {
+        $f->guard->beforeInspect = function ($call) use ($f) { $f->crm->attended = $call === 2; };
+    }
+    if ($scenario === 'deal appears') {
+        $f->cases->beforeResolve = function ($call) use ($f) {
+            if ($call === 2) {
+                $f->cases->status = 'benefits';
+            }
+        };
+    }
+    $result = $f->service->process($args[0]->id);
+    expect($result['state'])->toBe(match ($scenario) {
+        'deal appears', 'api outage' => 'waiting', 'no active Benefits deal' => 'routed', default => 'preserved',
+    })->and($f->crm->posts)->toBe($scenario === 'no active Benefits deal' ? 1 : 0);
+    if ($scenario === 'deal appears') {
+        $f->crm->expectedTarget = 90233;
+        $f->cases->case['responsible_id'] = '90233';
+        $this->travelTo(CarbonImmutable::parse(DB::table('edna_benefit_chat_routes')->value('available_at'))->addSecond());
+        expect($f->service->process($args[0]->id)['state'])->toBe('routed')->and($f->crm->posts)->toBe(1);
+    }
+})->with(['no active Benefits deal', 'api outage', 'human takes at final check', 'deal appears']);
+
+test('every explicit unsubscribe survives repeated callbacks or another route in this session', function () {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $first = benefitsCampaignReply('62718', 'aviso_billetera_v2', 'Quiero más información');
+    $f->service->reserveCampaign(...$first);
+    $f->service->process($first[0]->id);
+    foreach (range(1, 2) as $index) {
+        $args = benefitsCampaignReply('63271', 'aviso_soysocio_v5', 'Darse de baja', 'BUTTON', 'unsubscribe');
+        $args[1]['message_id'] = (string) (701 + $index);
+        $f->service->reserveCampaign(...$args);
+        $f->service->reserveCampaign(...$args);
+    }
+    expect(DB::table('edna_campaign_unsubscribe_requests')->count())->toBe(2)
+        ->and(DB::table('edna_campaign_unsubscribe_requests')->where('route_entry_event_id', $first[0]->id)->count())->toBe(2)
+        ->and(DB::table('edna_benefit_chat_routes')->count())->toBe(1)->and($f->crm->posts)->toBe(1);
+});
+
+test('a new unsubscribe is registered and handed to Benefits without acknowledging cancellation', function (bool $taken) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $f->crm->attended = $taken;
+    $args = benefitsCampaignReply('63271', 'aviso_soysocio_v5', 'Darse de baja', 'BUTTON', 'unsubscribe');
+    $f->service->reserveCampaign(...$args);
+    expect(DB::table('edna_campaign_unsubscribe_requests')->sole()->requested_at)->not->toBeNull()
+        ->and($f->service->process($args[0]->id)['state'])->toBe($taken ? 'preserved' : 'routed')
+        ->and($f->crm->posts)->toBe($taken ? 0 : 1);
+})->with([true, false]);
+
+test('stale or mismatched campaign evidence cannot reserve a handoff or an unsubscribe', function (string $change) {
+    enableBenefitsCampaigns();
+    $f = benefitsRouteFixture(false);
+    $args = benefitsCampaignReply('63271', 'aviso_soysocio_v5', 'Darse de baja', 'BUTTON', 'unsubscribe');
+    match ($change) {
+        'old' => DB::table('edna_intake_cutovers')->where('name', EdnaCampaignTemplate::CUTOVER)->update(['entry_id_after' => $args[0]->id]),
+        'outbound' => $args[2]['outbound']['messageId'] = '657',
+        'subject' => $args[2]['outbound']['subjectId'] = '12',
+        'matcher' => $args[2]['outbound']['matcherName'] = 'aviso_billetera_v3',
+        'decision' => $args[2]['action'] = 'benefits',
+        'proof' => $args[1]['entry_message_id'] = '14',
+    };
+    expect($f->service->reserveCampaign(...$args)['state'])->toBe('review')
+        ->and(DB::table('edna_campaign_unsubscribe_requests')->count())->toBe(0)
+        ->and(DB::table('edna_benefit_chat_routes')->count())->toBe(0)
+        ->and($f->crm->posts)->toBe(0);
+})->with(['old', 'outbound', 'subject', 'matcher', 'decision', 'proof']);
 
 test('only fresh authenticated callbacks can enter benefits routing', function (string $change) {
     $f = benefitsRouteFixture(false);

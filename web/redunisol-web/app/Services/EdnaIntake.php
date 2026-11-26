@@ -80,7 +80,8 @@ class EdnaIntake
     // The authenticated inbox worker owns the surrounding event transaction.
     public function receiveEntry(object $event, array $payload): bool
     {
-        if (app(EdnaOrganicMenu::class)->receiveMemberBenefitsCandidate($event, $payload)
+        if (app(EdnaOrganicMenu::class)->receiveCampaignCandidate($event, $payload)
+            || app(EdnaOrganicMenu::class)->receiveMemberBenefitsCandidate($event, $payload)
             || app(EdnaOrganicMenu::class)->receiveConsentCandidate($event, $payload)) {
             return true;
         }
