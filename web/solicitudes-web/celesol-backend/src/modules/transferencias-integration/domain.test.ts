@@ -166,3 +166,41 @@ test("renewal remains explicit and changes the plan version", () => {
   assert.equal(plan.payments[0]?.cbu, memberCbu);
   assert.notEqual(plan.version, old.version);
 });
+
+test("Beex plan reconciles the lot in cents and the signed member net", () => {
+  const { source, loan } = fixture();
+  const id = randomUUID();
+  source.montoAFinanciar = new Prisma.Decimal("4000000.00");
+  source.cancelaciones = [
+    {
+      id,
+      socio: "Acreedor",
+      socioLegacyId: "45",
+      cbu: "0000000000000000000002",
+      monto: new Prisma.Decimal("1589081.35"),
+    },
+  ];
+  loan.lineId = "2705";
+  loan.coinag = "-4000000";
+  loan.cashInHand = "-2410918.65";
+  loan.cancellationCents = "158908135";
+  const creditors = new Map([[id, "30123456789"]]);
+  assert.deepEqual(
+    buildPlan(source, loan, creditors).payments.map((p) => [p.kind, p.amount]),
+    [
+      ["member", "2410918.65"],
+      ["creditor", "1589081.35"],
+    ],
+  );
+  loan.cancellationCents = "158908134";
+  assert.throws(
+    () => buildPlan(source, loan, creditors),
+    code("TOTAL_MISMATCH"),
+  );
+  loan.cancellationCents = "158908135";
+  loan.cashInHand = "2410918.65";
+  assert.throws(
+    () => buildPlan(source, loan, creditors),
+    code("TOTAL_MISMATCH"),
+  );
+});

@@ -128,6 +128,13 @@ distinto de cero; se toma su valor absoluto. Sin cancelaciones, ese importe es
 el pago al socio. Si es menor al solicitado, `requiresRenewalReview=true`;
 si lo supera, se bloquea.
 
+Para cancelaciones cargadas en BEEX en las líneas financieras 2704 y 2705
+(Cruz del Eje), con egreso por Coinag, CMF en cero y sin solicitud de Vimarx
+vinculada al préstamo, el plan evalúa en el core la expresión activa **Monto En
+Mano Beex** (fórmula 284). El lote guarda el total cancelado en centavos.
+BEEX comprueba que coincida con la suma de los acreedores y que el neto
+contable sea cero o negativo. Los demás casos siguen usando la fórmula 260.
+
 Con cancelaciones, la suma de sus detalles + abs(neto en mano) debe coincidir
 exactamente con el monto solicitado y el total bancario. Un neto cero omite el
 pago al socio. Los cálculos usan Decimal, sin tolerancias ni redondeos. Los

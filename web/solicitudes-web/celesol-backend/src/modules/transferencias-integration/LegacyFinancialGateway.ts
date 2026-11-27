@@ -1,5 +1,9 @@
 import { fail, type FinancialGateway, type LoanFinancials } from "./domain";
 
+const loanType = "F.Module.Cuentas.Prestamos.Prestamo";
+const beexCancellationScope =
+  "[LineaPrestamo.ID] In (2704,2705) And [Solicitud] Is Null And [Bco Coinag Cba] < 0 And [Bco CMF] = 0";
+
 type Fetcher = (
   input: string | URL,
   init?: RequestInit,
@@ -18,6 +22,7 @@ export class LegacyFinancialGateway implements FinancialGateway {
     id: string,
     fields: string[],
     memberLegacyId?: string,
+    criteria?: string,
   ): Promise<unknown[]> {
     if (!/^\d+$/.test(id))
       fail("INVALID_LEGACY_ID", "Identificador legado inválido.");
@@ -35,7 +40,8 @@ export class LegacyFinancialGateway implements FinancialGateway {
               `[ID]=${id}` +
               (memberLegacyId
                 ? ` And Integrantes[Socio.ID = ${memberLegacyId}].Count() > 0`
-                : ""),
+                : "") +
+              (criteria ? ` And (${criteria})` : ""),
             campos: fields.join(";"),
           }),
           signal: AbortSignal.timeout(this.config.timeoutMs),
@@ -66,19 +72,64 @@ export class LegacyFinancialGateway implements FinancialGateway {
       );
     }
   }
-  async loan(id: string, memberLegacyId: string): Promise<LoanFinancials> {
-    const row = await this.row(
-      "F.Module.Cuentas.Prestamos.Prestamo",
-      id,
-      [
-        "ID",
-        "LineaPrestamo.ID",
-        "[Bco CMF]",
-        "[Bco Coinag Cba]",
-        "[Monto En Mano]",
-      ],
-      memberLegacyId,
-    );
+  async loan(
+    id: string,
+    memberLegacyId: string,
+    hasCancellations = false,
+  ): Promise<LoanFinancials> {
+    const bankFields = [
+      "ID",
+      "LineaPrestamo.ID",
+      "[Bco CMF]",
+      "[Bco Coinag Cba]",
+    ];
+    const fields = [...bankFields, "[Monto En Mano]"];
+    if (hasCancellations) fields.push(`Iif(${beexCancellationScope},1,0)`);
+    let row = await this.row(loanType, id, fields, memberLegacyId);
+    let cancellationCents: string | undefined;
+    if (hasCancellations && !["0", "1"].includes(String(row[5])))
+      return fail(
+        "CORE_UNAVAILABLE",
+        "El core no pudo identificar el origen de la cancelación.",
+        503,
+      );
+    if (hasCancellations && String(row[5]) === "1") {
+      // Evaluate the active stored expression even on core instances whose loan
+      // metadata has not yet discovered the new calculated property.
+      const [, formula] = await this.row(
+        "ClasesBase.FormulaAlmacenada",
+        "284",
+        ["ID", "Formula"],
+        undefined,
+        `[Activo]=True And [Descripcion]='Monto En Mano Beex' And [Tipo]='${loanType}'`,
+      );
+      if (
+        typeof formula !== "string" ||
+        !formula.trim() ||
+        formula.includes(";")
+      )
+        return fail(
+          "CORE_UNAVAILABLE",
+          "La fórmula Monto En Mano Beex no está disponible.",
+          503,
+        );
+      row = await this.row(
+        loanType,
+        id,
+        [...bankFields, formula, "NroLote"],
+        memberLegacyId,
+        beexCancellationScope,
+      );
+      cancellationCents = String(row[5] ?? "");
+      if (
+        !/^\d+$/.test(cancellationCents) ||
+        (typeof row[5] === "number" && !Number.isSafeInteger(row[5]))
+      )
+        return fail(
+          "INVALID_AMOUNT",
+          "El lote debe expresar la cancelación en centavos enteros.",
+        );
+    }
     // Above this conservative numeric bound JSON numbers may lose cent precision.
     // Large amounts must be serialized as decimal strings by the core.
     for (const value of row.slice(2, 5)) {
@@ -98,6 +149,7 @@ export class LegacyFinancialGateway implements FinancialGateway {
       cmf: String(row[2] ?? ""),
       coinag: String(row[3] ?? ""),
       cashInHand: String(row[4] ?? ""),
+      cancellationCents,
       memberCuit: member.cuit,
     };
   }

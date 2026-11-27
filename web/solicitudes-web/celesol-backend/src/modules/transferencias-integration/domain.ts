@@ -80,10 +80,15 @@ export type LoanFinancials = {
   cmf: string;
   coinag: string;
   cashInHand: string;
+  cancellationCents?: string | undefined;
   memberCuit: string;
 };
 export interface FinancialGateway {
-  loan(id: string, memberLegacyId: string): Promise<LoanFinancials>;
+  loan(
+    id: string,
+    memberLegacyId: string,
+    hasCancellations: boolean,
+  ): Promise<LoanFinancials>;
   creditor(id: string): Promise<{ cuit: string }>;
 }
 export type PlanSource = {
@@ -209,7 +214,17 @@ export function buildPlan(
     });
   }
   // Con cancelaciones el neto lo calcula el préstamo; nunca se infiere del bruto.
-  const net = payments.length ? money(loan.cashInHand).abs() : total;
+  const signedNet = payments.length ? money(loan.cashInHand) : total;
+  if (
+    loan.cancellationCents !== undefined &&
+    (signedNet.gt(0) ||
+      !cancellationTotal.times(100).eq(loan.cancellationCents))
+  )
+    fail(
+      "TOTAL_MISMATCH",
+      "El neto Beex o el lote no concuerda con las cancelaciones.",
+    );
+  const net = signedNet.abs();
   if (
     payments.length &&
     (!cancellationTotal.add(net).eq(requested) || !total.eq(requested))
