@@ -98,7 +98,8 @@ test("Beex cancellations evaluate the active stored expression on the linked loa
   assert.equal(loan.cashInHand, "-2410918.65");
   assert.equal(loan.cancellationCents, "158908135");
   assert.match(calls[1]!.cmd, /284.*Activo.*Monto En Mano Beex/);
-  assert.match(calls[2]!.cmd, /Integrantes.*77.*2704,2705.*Solicitud/);
+  assert.match(calls[0]!.campos, /\[LineaPrestamo.ID\] In \(2684,2704,2705\)/);
+  assert.match(calls[2]!.cmd, /Integrantes.*77.*2684,2704,2705.*Solicitud/);
   assert.ok(calls[2]!.campos.endsWith(formula + ";NroLote"));
 });
 

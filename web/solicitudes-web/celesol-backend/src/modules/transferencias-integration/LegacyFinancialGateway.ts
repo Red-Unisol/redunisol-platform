@@ -2,7 +2,7 @@ import { fail, type FinancialGateway, type LoanFinancials } from "./domain";
 
 const loanType = "F.Module.Cuentas.Prestamos.Prestamo";
 const beexCancellationScope =
-  "[LineaPrestamo.ID] In (2704,2705) And [Solicitud] Is Null And [Bco Coinag Cba] < 0 And [Bco CMF] = 0";
+  "[LineaPrestamo.ID] In (2684,2704,2705) And [Solicitud] Is Null And [Bco Coinag Cba] < 0 And [Bco CMF] = 0";
 
 type Fetcher = (
   input: string | URL,
