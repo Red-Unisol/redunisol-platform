@@ -330,7 +330,8 @@ class SendEdnaFlow implements ShouldQueue
                 return false;
             }
 
-            return ['menu_id' => (int) $menu->id, 'proof' => $proof];
+            return app(EdnaPaidFlowGuard::class)->organicSessionConflict($send, $menu, $proof, $entry, $choicePayload)
+                ?? ['menu_id' => (int) $menu->id, 'proof' => $proof];
         } catch (Throwable) {
             return false;
         }

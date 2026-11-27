@@ -93,7 +93,8 @@ class EdnaFlowRouter
             if (DB::table('edna_flow_sends')->where('entry_event_id', $entry->id)->exists()) {
                 return null;
             }
-            $sendId = $this->reserve($entry, $payload, $menu->request_id);
+            $requestedAt = CarbonImmutable::parse($choicePayload['receivedAt']);
+            $sendId = $this->reserve($entry, $payload, $menu->request_id, organicChoiceAt: $requestedAt);
             if ($sendId !== null) {
                 DB::table('edna_organic_menus')->where('id', $menu->id)->update([
                     'flow_send_id' => $sendId, 'updated_at' => now(),
@@ -122,7 +123,8 @@ class EdnaFlowRouter
         return $payload;
     }
 
-    private function reserve(object $event, array $payload, ?string $organicRequestId = null, ?array $paidRouting = null): ?int
+    private function reserve(object $event, array $payload, ?string $organicRequestId = null, ?array $paidRouting = null,
+        ?CarbonImmutable $organicChoiceAt = null): ?int
     {
         if (! config('edna.router_enabled')) {
             $this->record($event->id, 'disabled');
@@ -175,13 +177,18 @@ class EdnaFlowRouter
         }
         // Both entry paths share this lock; distinct organic menus for a phone
         // cannot reserve two active Flows concurrently.
-        $recipientScope = hash_hmac('sha256', 'flow-recipient:'.$event->subject_id.':'.$phone, (string) config('app.key'));
-        DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $recipientScope, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('edna_router_contacts')->where('scope', $recipientScope)->lockForUpdate()->first();
+        $this->lockRecipient($event->subject_id, $phone);
         $specialScope = $paidRouting !== null
             ? hash_hmac('sha256', 'paid-entry:'.$event->id, (string) config('app.key'))
             : ($organicRequestId !== null ? hash_hmac('sha256', 'organic-menu:'.$organicRequestId, (string) config('app.key')) : null);
-        if ($specialScope !== null && $this->hasActiveFlow($event->subject_id, $phone, $specialScope, $paidRouting !== null)) {
+        $requestedAt = $specialScope !== null && app(EdnaFreshIntake::class)->entry($event, EdnaFreshIntake::V3_VALIDITY)
+            ? ($organicChoiceAt ?? $received)->min(CarbonImmutable::now()) : null;
+        if ($requestedAt !== null && EdnaOrganicLoan::competingReuse($event->subject_id, $phone, (int) $event->id, $requestedAt)) {
+            $this->record($event->id, 'profile_reuse_in_progress');
+
+            return null;
+        }
+        if ($specialScope !== null && $this->hasActiveFlow($event->subject_id, $phone, $specialScope, $paidRouting !== null, $requestedAt)) {
             $this->record($event->id, $paidRouting !== null ? 'paid_active_flow' : 'organic_active_flow');
 
             return null;
@@ -266,16 +273,62 @@ class EdnaFlowRouter
         return $id;
     }
 
-    private function hasActiveFlow(string $subject, string $phone, string $scope, bool $allowExpiredConfirmed = false): bool
+    /** Edna replies identify their exact send. Its last admissible instant is inclusive. */
+    public static function responseWindowExpired(object $send, CarbonImmutable $at): bool
+    {
+        if (! is_string($send->created_at ?? null) || trim($send->created_at) === '') {
+            throw new RuntimeException('Flow creation timestamp unavailable.');
+        }
+
+        return $at->gt(CarbonImmutable::parse($send->created_at)->addHours(24));
+    }
+
+    public static function blocksCurrentV3(object $send, CarbonImmutable $requestedAt): bool
+    {
+        if ($send->state !== 'confirmed') {
+            return in_array($send->state, ['pending', 'sending', 'accepted', 'unknown'], true);
+        }
+        try {
+            return ! self::responseWindowExpired($send, $requestedAt);
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
+    /** Serialize the local decision inside the caller's transaction, before queuing any provider request. */
+    public function lockRecipient(string $subject, string $phone): void
+    {
+        $scope = hash_hmac('sha256', 'flow-recipient:'.$subject.':'.$phone, (string) config('app.key'));
+        DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('edna_router_contacts')->where('scope', $scope)->lockForUpdate()->first();
+    }
+
+    public function hasBlockingV3(string $subject, string $phone, CarbonImmutable $requestedAt): bool
+    {
+        return $this->hasActiveFlow($subject, $phone, '', true, $requestedAt);
+    }
+
+    private function hasActiveFlow(string $subject, string $phone, string $scope, bool $paidEntry, ?CarbonImmutable $requestedAt): bool
     {
         $hash = (new AttributionJourney)->phoneHash($phone);
         $admissions = DB::table('edna_intake_admissions as a')
             ->join('edna_intake_pilots as p', 'p.id', '=', 'a.pilot_key')
             ->where('p.subject_id', $subject)->where('a.recipient_hash', $hash)->pluck('a.id')->all();
+        $v3 = (new EdnaIntake)->flowId();
         $active = DB::table('edna_flow_sends')->where('subject_id', $subject)->where('scope', '!=', $scope)
-            ->whereIn('state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed'])->get();
-        foreach ($active as $send) {
-            if ($allowExpiredConfirmed && $send->state === 'confirmed') {
+            ->whereIn('state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed']);
+        if ($requestedAt !== null && $v3 !== null) {
+            // Exclude obsolete receipts in SQL before loading encrypted recipients. Keep incomplete timestamps
+            // and the boundary second for the same exact check used when a Flow answer arrives.
+            $active->where(fn ($q) => $q->where('state', '!=', 'confirmed')->orWhere('flow_id', '!=', $v3)
+                ->orWhereNull('created_at')->orWhere('created_at', '>=', $requestedAt->utc()->subHours(24)));
+        }
+        foreach ($active->lazyById(250) as $send) {
+            if ($requestedAt !== null && $send->flow_id === $v3) {
+                if (! self::blocksCurrentV3($send, $requestedAt)) {
+                    continue;
+                }
+            } elseif ($paidEntry && $send->state === 'confirmed') {
                 try {
                     if (CarbonImmutable::parse($send->entry_received_at)->lt(now()->subHours(23))) {
                         continue;
@@ -320,8 +373,8 @@ class EdnaFlowRouter
             return null;
         }
         $received = CarbonImmutable::parse($payload['receivedAt']);
-        if (! $send->send_started_at || $received->lt(CarbonImmutable::parse($send->send_started_at)->subMinute())
-            || $received->gt(CarbonImmutable::parse($send->created_at)->addHours(24))) {
+        if (! $send->created_at || ! $send->send_started_at || $received->lt(CarbonImmutable::parse($send->send_started_at)->subMinute())
+            || self::responseWindowExpired($send, $received)) {
             $this->record($event->id, 'response_outside_window', $send->id);
 
             return null;

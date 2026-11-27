@@ -252,12 +252,30 @@ de pedir v3 por pauta no completa datos de campaña por inferencia.
 
 La vía paga reserva el v3 real de forma idempotente, sin menú ni elección de
 cliente ficticios. Espera el vínculo nativo exacto y verifica atención humana
-justo antes de enviar, con el lock compartido por chat. Otra entrada de la misma
-sesión no envía otro v3 ni reabre el menú. Un vínculo pago todavía pendiente
+justo antes de enviar, con el lock compartido por chat. Mientras la solicitud
+sigue activa, los mensajes siguientes de esa sesión conservan su recorrido. Un vínculo pago todavía pendiente
 aplaza el saludo mientras se resuelve, sin atribuirlo como origen confirmado.
-Un Flow confirmado de más de 23 horas permite reservar otra consulta paga, pero
-su envío exige demostrar una sesión distinta; las escrituras inciertas siguen
-bloqueadas. Los recorridos orgánicos y web conservan su comportamiento previo.
+Antes del corte `v3-validity-v1`, pauta podía reservar después de 23 horas y
+exigía una sesión distinta para enviar. En los ingresos posteriores al corte,
+la consulta paga y la elección orgánica «Quiero un préstamo» verifican si hay
+un perfil completo, vigente y atribuible a la persona. Si lo hay, reutilizan
+los datos. El ingreso pago conserva su origen y omite el saludo orgánico.
+
+Si hace falta un formulario, ambos recorridos respetan el plazo que el receptor
+aplica a sus respuestas. Un v3 confirmado se puede contestar hasta 24 horas
+inclusive desde la creación del registro de envío. Una solicitud posterior al
+vencimiento puede recibir otro v3 incluso en la misma sesión de Bitrix.
+Si hay un formulario anterior todavía contestable para ese destinatario,
+se conserva el trámite en curso y se evita abrir una segunda solicitud en paralelo.
+Los envíos de resultado incierto quedan en conciliación. El worker verifica
+la sesión y la atención humana antes de enviar. Las confirmaciones repetidas
+se asocian al mismo envío.
+
+El despliegue registra la hora UTC y el último ID de entrada en el corte
+`v3-validity-v1`. Se consulta con `php artisan edna:intake-cutover status --v3-validity`.
+La fecha original del evento en Edna y su ID local
+determinan si ingresa por la regla nueva. El despliegue conserva los envíos y
+las solicitudes anteriores.
 
 Los menús pendientes capturados antes de esta corrección se redirigen sólo si
 todavía no se intentó el saludo. Un envío ya aceptado, confirmado o incierto

@@ -98,13 +98,18 @@ class EdnaIntake
         if (! $this->salesChannelEntry($event, $payload)) {
             return false;
         }
-        if (config('edna.organic_menu_enabled')) {
+        $newValidity = app(EdnaFreshIntake::class)->entry($event, EdnaFreshIntake::V3_VALIDITY);
+        if ($newValidity || config('edna.organic_menu_enabled')) {
             if (! $continuationChecked && app(WebFormContinuation::class)->receive($event, $payload)) {
                 return true;
             }
             $paid = app(EdnaPaidEntry::class)->classify($event, $payload);
             if ($paid) {
-                (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
+                if ($newValidity) {
+                    app(EdnaOrganicMenu::class)->receivePaidEntry($event, $payload);
+                } else {
+                    (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
+                }
 
                 return true;
             }

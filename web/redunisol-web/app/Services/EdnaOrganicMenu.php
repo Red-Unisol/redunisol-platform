@@ -97,6 +97,18 @@ class EdnaOrganicMenu
         return DB::transaction(fn () => $this->captureEntry($event, $payload));
     }
 
+    public function receivePaidEntry(object $event, array $payload): bool
+    {
+        return DB::transaction(function () use ($event, $payload): bool {
+            $captured = $this->captureEntry($event, $payload, 'paid_profile');
+            if (! $captured) {
+                $this->record((int) $event->id, 'paid_profile_intake_ineligible');
+            }
+
+            return $captured;
+        });
+    }
+
     /** Only reserve locally here. Provider reads belong to the durable worker. */
     public function receiveConsentCandidate(object $event, array $payload): bool
     {
@@ -138,7 +150,9 @@ class EdnaOrganicMenu
         $stored = $this->authenticatedPayload($event, $payload);
         $ordinary = $sendState === 'pending';
         $quoted = in_array($sendState, ['verify_consent', 'verify_campaign'], true);
-        if (! $stored || ! $this->eligible($event, $stored, $ordinary)
+        $paidMarker = $sendState === 'paid_profile' && $stored ? app(EdnaPaidEntry::class)->currentMarker($event, $stored) : null;
+        if (! $stored || ! $this->eligible($event, $stored, $ordinary || $sendState === 'paid_profile', $sendState === 'paid_profile')
+            || ($sendState === 'paid_profile' && ! $paidMarker)
             || ($sendState === 'verify_campaign' && ! app(EdnaCampaignTemplate::class)->candidate($stored))
             || ($ordinary && app(EdnaPaidEntry::class)->classify($event, $stored))) {
             return false;
@@ -158,7 +172,8 @@ class EdnaOrganicMenu
             'transfer_state' => 'pending',
             'entry_received_at' => $received, 'expires_at' => $received->addHours(24),
             'available_at' => now(), 'enqueued_at' => now(), 'created_at' => now(), 'updated_at' => now(),
-        ] + ($quoted ? ['form_consent' => json_encode(['entry_event_id' => (int) $event->id,
+        ] + ($paidMarker ? ['paid_entry_routing' => json_encode($paidMarker, JSON_THROW_ON_ERROR)] : [])
+            + ($quoted ? ['form_consent' => json_encode(['entry_event_id' => (int) $event->id,
             'reply_out_message_id' => (string) $stored['replyOutMessageId'], 'received_at' => $stored['receivedAt']],
             JSON_THROW_ON_ERROR)] : []));
         if ($inserted) {
@@ -166,6 +181,7 @@ class EdnaOrganicMenu
             app(EdnaWorkQueue::class)->push(new ProcessEdnaOrganicMenu((int) $id));
         }
         $this->record($event->id, match ($sendState) {
+            'paid_profile' => 'paid_profile_reserved',
             'verify_campaign' => 'campaign_reply_verification',
             'verify_benefits' => 'member_benefits_verification',
             'verify_consent' => 'form_consent_verification',
@@ -221,7 +237,7 @@ class EdnaOrganicMenu
             }
             $uncertainTransfer = in_array($menu->transfer_state, ['sending', 'unknown'], true);
             $uncertainSend = in_array($menu->send_state, ['sending', 'accepted', 'unknown'], true);
-            if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false)) {
+            if (! $uncertainTransfer && ! $uncertainSend && ! $this->eligible($event, $payload, false, $menu->send_state === 'paid_profile')) {
                 return $this->finish('waiting', 'organic_menu_disabled_or_outside_pilot');
             }
             if ($consent !== null && ! $uncertainTransfer && CarbonImmutable::parse($menu->expires_at)->lte(now())) {
@@ -268,12 +284,17 @@ class EdnaOrganicMenu
             // sends keep their original receipt and are never followed by a replay.
             if ($menu->send_state === 'pending' && ! $menu->choice_event_id
                 && ($paid = app(EdnaPaidEntry::class)->classify($event, $payload))) {
-                return DB::transaction(function () use ($event, $payload, $paid): array {
-                    $sendId = (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
+                if ($marker = app(EdnaPaidEntry::class)->currentMarker($event, $payload)) {
+                    $this->write(['send_state' => 'paid_profile', 'paid_entry_routing' => json_encode($marker, JSON_THROW_ON_ERROR)]);
+                    $menu = $this->current();
+                } else {
+                    return DB::transaction(function () use ($event, $payload, $paid): array {
+                        $sendId = (new EdnaFlowRouter)->startPaidEntry($event, $payload, $paid);
 
-                    return $this->finish('preserved', $sendId ? 'paid_entry_routed_direct_v3' : 'paid_existing_flow_preserved',
-                        $sendId ? ['flow_send_id' => $sendId, 'transfer_state' => 'preserved'] : ['transfer_state' => 'preserved']);
-                });
+                        return $this->finish('preserved', $sendId ? 'paid_entry_routed_direct_v3' : 'paid_existing_flow_preserved',
+                            $sendId ? ['flow_send_id' => $sendId, 'transfer_state' => 'preserved'] : ['transfer_state' => 'preserved']);
+                    });
+                }
             }
             $proof = $consent['native_proof'] ?? ($menu->proof ? json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR) : null);
             if (! $proof) {
@@ -313,7 +334,14 @@ class EdnaOrganicMenu
                 return $this->wait('template_reply_binding_pending');
             }
             $other = DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)
-                ->where('chat_id', $proof['chat_id'])->where('session_id', $proof['session_id'])->where('id', '!=', $menu->id)->first();
+                ->where('chat_id', $proof['chat_id'])->where('session_id', $proof['session_id'])->orderByDesc('request_generation')->first();
+            $generation = (int) $menu->request_generation;
+            if ($other && (int) $other->id === (int) $menu->id) {
+                $other = null;
+            } elseif ($other && $this->newSessionRequest($menu, $event, $payload, $other, $proof)) {
+                $generation = (int) $other->request_generation + 1;
+                $other = null;
+            }
             // Every new free-text callback has its own proof, including one arriving after
             // an acknowledgement or a greeting in this same session.
             if ($consent === null && $menu->send_state === 'pending' && ! $menu->choice_event_id && ! $menu->transfer_intent
@@ -349,7 +377,7 @@ class EdnaOrganicMenu
                 ]);
             }
             if (! $menu->chat_id || ! isset($consent['native_proof'])) {
-                $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+                $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'], 'request_generation' => $generation,
                     'proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
             }
             $menu = $this->current();
@@ -392,11 +420,12 @@ class EdnaOrganicMenu
 
                 return $this->transfer($this->current(), $proof, (int) $case['ASSIGNED_BY_ID'], $case);
             }
-            if ($menu->send_state === 'pending'
-                && app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash)) {
+            if (in_array($menu->send_state, ['pending', 'paid_profile'], true) && $menu->state !== 'route_pending'
+                && app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash, $event)) {
                 return $this->wait('paid_intake_binding_pending');
             }
-            if ($menu->send_state === 'pending' && app(EdnaPaidFlowGuard::class)->continuesSession($proof, $menu->subject_id)) {
+            if (in_array($menu->send_state, ['pending', 'paid_profile'], true) && $menu->state !== 'route_pending'
+                && app(EdnaPaidFlowGuard::class)->continuesSession($proof, $menu->subject_id)) {
                 return $this->finish('preserved', 'paid_intake_session_preserved', ['transfer_state' => 'preserved']);
             }
             if ($uncertainTransfer) {
@@ -426,7 +455,7 @@ class EdnaOrganicMenu
             if ($menu->send_state === 'pending') {
                 return $this->send($menu, $proof);
             }
-            if ($menu->send_state !== 'confirmed') {
+            if ($menu->send_state !== 'confirmed' && $menu->send_state !== 'paid_profile') {
                 return $this->finish('review', 'menu_outgoing_not_confirmed');
             }
             if ($menu->state === 'route_pending') {
@@ -435,6 +464,13 @@ class EdnaOrganicMenu
                 }
 
                 return $this->transfer($menu, $proof, (int) $menu->seller_id);
+            }
+            if ($menu->send_state === 'paid_profile') {
+                if (! $menu->paid_entry_routing || ! app(EdnaPaidEntry::class)->currentMarker($event, $payload, $menu->paid_entry_routing)) {
+                    return $this->finish('review', 'paid_entry_evidence_changed');
+                }
+
+                return $this->queueLoan($proof);
             }
             if (! $menu->choice_event_id) {
                 return $this->finish('awaiting_choice', 'menu_waiting_for_choice');
@@ -494,20 +530,7 @@ class EdnaOrganicMenu
                         : $this->wait($resolution['reason']);
                 }
             }
-            $this->assertBudget(35);
-            $attention = $this->attention->inspectWelcome($proof);
-            if (($attention['status'] ?? '') !== 'ready') {
-                return $this->attentionDecision($attention);
-            }
-
-            return DB::transaction(function (): array {
-                $result = $this->finish('loan_pending', 'loan_profile_pending', ['available_at' => now(), 'enqueued_at' => null]);
-                if ($result['state'] === 'loan_pending') {
-                    app(EdnaOrganicLoan::class)->enqueue($this->menuId);
-                }
-
-                return $result;
-            });
+            return $this->queueLoan($proof);
         } catch (Throwable) {
             $current = $this->current();
             $transfer = in_array($current?->transfer_state, ['sending', 'unknown'], true);
@@ -522,6 +545,79 @@ class EdnaOrganicMenu
                 // Expiry releases a lost lock; no failed release can replay an effect.
             }
         }
+    }
+
+    /** A later ad entry or an explicit new loan request can renew an expired request in the same native session. */
+    private function newSessionRequest(object $menu, object $event, array $payload, object $previous, array $proof): bool
+    {
+        if ($menu->chat_id || $menu->form_consent || $menu->campaign_prompt || $previous->transfer_intent
+            || $previous->phone_hash !== $menu->phone_hash || $previous->form_consent || $previous->campaign_prompt
+            || (int) $event->id === (int) $previous->entry_event_id
+            || ! app(EdnaFreshIntake::class)->entry($event, EdnaFreshIntake::V3_VALIDITY)) {
+            return false;
+        }
+        $at = CarbonImmutable::parse($payload['receivedAt'])->min(now());
+        if ($at->lte(CarbonImmutable::parse($previous->entry_received_at))) {
+            return false;
+        }
+        $paid = $menu->send_state === 'paid_profile';
+        $text = trim(strtolower(Str::ascii((string) ($payload['messageContent']['text'] ?? ''))), " \t\r\n.!¡");
+        if (! $paid && (($payload['messageContent']['type'] ?? '') !== 'TEXT'
+            || ! preg_match('/^quiero (?:(?:pedir|solicitar) )?(?:un (?:nuevo )?|otro )prestamo$/D', $text))) {
+            return false;
+        }
+        if ($paid && $previous->state === 'awaiting_choice' && ! $previous->choice_event_id && ! $previous->flow_send_id) {
+            // A simultaneous tap of the original menu wins if it has already committed.
+            return DB::transaction(function () use ($previous, $proof): bool {
+                $won = DB::table('edna_organic_menus')->where('id', $previous->id)->where('state', 'awaiting_choice')
+                    ->whereNull('choice_event_id')->whereNull('transfer_intent')->update([
+                        'state' => 'preserved', 'reason' => 'new_paid_entry_took_precedence', 'updated_at' => now(),
+                    ]);
+                if ($won) {
+                    $this->write(['chat_id' => $proof['chat_id'], 'session_id' => $proof['session_id'],
+                        'request_generation' => $previous->request_generation + 1, 'proof' => json_encode($proof, JSON_THROW_ON_ERROR)]);
+                }
+
+                return $won === 1;
+            });
+        }
+        if ($previous->state === 'loan_submitted' && $previous->case_id && $previous->profile_evidence) {
+            return CarbonImmutable::parse($previous->reuse_completed_at ?? $previous->updated_at)->addDay()->lt($at);
+        }
+        if ($previous->state === 'preserved' && $previous->reason === 'existing_flow_or_context_preserved'
+            && ($previous->choice === 'loan' || $previous->paid_entry_routing) && ! $previous->flow_send_id) {
+            // The previous choice ended locally with zero writes. Recheck current transport/attention before a new intake.
+            return CarbonImmutable::parse($previous->choice_received_at ?? $previous->entry_received_at)->lt($at)
+                && ! app(EdnaFlowRouter::class)->hasBlockingV3($menu->subject_id, (string) $payload['subscriber']['identifier'], $at);
+        }
+        if ($previous->state !== 'flow_scheduled' || ! $previous->flow_send_id) {
+            return false;
+        }
+        $send = DB::table('edna_flow_sends')->find($previous->flow_send_id);
+
+        return $send && in_array($send->state, ['confirmed', 'completed'], true) && $send->flow_id === (new EdnaIntake)->flowId()
+            && $send->subject_id === $menu->subject_id && (int) $send->entry_event_id === (int) $previous->entry_event_id
+            && hash_equals(Crypt::decryptString($send->recipient), (string) $payload['subscriber']['identifier'])
+            && EdnaFlowRouter::responseWindowExpired($send, $at)
+            && ($send->state !== 'completed' || ($send->completed_at && CarbonImmutable::parse($send->completed_at)->addDay()->lt($at)));
+    }
+
+    private function queueLoan(array $proof): array
+    {
+        $this->assertBudget(35);
+        $attention = $this->attention->inspectWelcome($proof);
+        if (($attention['status'] ?? '') !== 'ready') {
+            return $this->attentionDecision($attention);
+        }
+
+        return DB::transaction(function (): array {
+            $result = $this->finish('loan_pending', 'loan_profile_pending', ['available_at' => now(), 'enqueued_at' => null]);
+            if ($result['state'] === 'loan_pending') {
+                app(EdnaOrganicLoan::class)->enqueue($this->menuId);
+            }
+
+            return $result;
+        });
     }
 
     /** A callback can arrive after an ordinary greeting in the same session. Keep one writer and its original receipt. */
@@ -567,7 +663,8 @@ class EdnaOrganicMenu
         // effect, never authorize one. The session lease serializes the two writers after binding.
         return DB::table('edna_organic_menus')->where('subject_id', $menu->subject_id)->where('phone_hash', $menu->phone_hash)
             ->where('id', '!=', $menu->id)->whereNull('session_id')->whereNull('canonical_menu_id')->where('expires_at', '>', now())
-            ->where(fn ($q) => $q->whereIn('send_state', ['verify_campaign', 'verify_benefits'])
+            ->where(fn ($q) => $q->whereIn('send_state', $menu->send_state === 'pending'
+                ? ['verify_campaign', 'verify_benefits', 'paid_profile'] : ['verify_campaign', 'verify_benefits'])
                 ->orWhereNotNull('form_consent->action')->orWhere(fn ($c) => $c
                 ->whereNotNull('form_consent')->where('entry_received_at', '<=', $menu->entry_received_at)))
             ->whereIn('state', ['consent_pending', 'waiting', 'pending'])->exists();
@@ -803,7 +900,7 @@ class EdnaOrganicMenu
             return $this->finish('preserved', 'web_continuity_priority');
         }
         if ($this->pendingTemplateReply($menu)
-            || app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash)) {
+            || app(EdnaPaidFlowGuard::class)->pendingForRecipient($menu->subject_id, $menu->phone_hash, $event)) {
             return $this->wait('reopening_explicit_entry_pending');
         }
         if (app(EdnaPaidFlowGuard::class)->continuesSession($proof, $menu->subject_id)) {
@@ -1129,18 +1226,19 @@ class EdnaOrganicMenu
         }
     }
 
-    private function enabled(): bool
+    private function enabled(bool $paid = false): bool
     {
-        return config('edna.enabled') && config('edna.router_enabled') && config('edna.intake_enabled') && config('edna.organic_menu_enabled');
+        return config('edna.enabled') && config('edna.router_enabled') && config('edna.intake_enabled')
+            && ($paid || config('edna.organic_menu_enabled'));
     }
 
-    private function eligible(object $event, array $payload, bool $entryWindow = true): bool
+    private function eligible(object $event, array $payload, bool $entryWindow = true, bool $paid = false): bool
     {
-        if (! $this->enabled() || ! (new EdnaIntake)->salesChannelEntry($event, $payload)
+        if (! $this->enabled($paid) || ! (new EdnaIntake)->salesChannelEntry($event, $payload)
             || ! preg_match('/^[1-9][0-9]{0,63}$/D', (string) config('edna.cascade_id'))) {
             return false;
         }
-        $start = config('edna.organic_menu_start_at');
+        $start = config($paid ? 'edna.router_start_at' : 'edna.organic_menu_start_at');
         if (! is_string($start) || ! preg_match('/(?:Z|[+-][0-9]{2}:[0-9]{2})$/D', $start)) {
             return false;
         }
@@ -1153,7 +1251,8 @@ class EdnaOrganicMenu
         } catch (Throwable) {
             return false;
         }
-        foreach (['router_recipients', 'intake_recipients', 'organic_menu_recipients'] as $name) {
+        $pilotLists = $paid ? ['router_recipients', 'intake_recipients'] : ['router_recipients', 'intake_recipients', 'organic_menu_recipients'];
+        foreach ($pilotLists as $name) {
             $allowed = config('edna.'.$name, []);
             if (! is_array($allowed) || ($allowed && ! in_array($payload['subscriber']['identifier'], $allowed, true))) {
                 return false;
@@ -1295,6 +1394,7 @@ class EdnaOrganicMenu
                 'choice_event_id' => $row->choice_event_id, 'chat_id' => $row->chat_id ?? $nativeProof['chat_id'] ?? null,
                 'native_session_id' => $row->session_id ?? $nativeProof['session_id'] ?? null,
                 'state' => $state, 'reason' => $reason, 'choice' => $row->choice, 'send_state' => $row->send_state,
+                'paid_entry' => $row->paid_entry_routing !== null, 'request_generation' => (int) $row->request_generation,
                 'outgoing_message_id' => $row->outgoing_message_id, 'flow_send_id' => $row->flow_send_id,
                 'seller_id' => $row->seller_id, 'transfer_state' => $row->transfer_state,
                 'transfer_acknowledged' => (bool) $row->transfer_acknowledged,

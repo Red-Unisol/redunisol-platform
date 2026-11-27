@@ -291,7 +291,7 @@ jobs:
         run: >-
           php vendor/bin/pest tests/Feature/EdnaDealMessageBindingTest.php tests/Unit/EdnaMessageBindingTest.php
           tests/Unit/EdnaCurrentMessageBindingTest.php tests/Feature/EdnaFreshIntakeTest.php
-          tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/WebFormContinuationTest.php
+          tests/Feature/PaidEdnaFlowGuardTest.php tests/Feature/PaidProfileValidityTest.php tests/Feature/WebFormContinuationTest.php
           tests/Feature/EdnaOrganicFlowTest.php tests/Feature/WebFormChatLinkerTest.php
           tests/Feature/CommercialChatCandidatesTest.php tests/Feature/CommercialChatStatusTest.php
       - name: Test template buttons and sales chat handoff

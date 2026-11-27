@@ -21,6 +21,17 @@ class EdnaOrganicLoan
 {
     public const CONTRACT = 'organic-profile-reuse-v1';
 
+    /** Checked with the same recipient lock used to reserve v3, including across distinct chats. */
+    public static function competingReuse(string $subject, string $phone, int $entryId, CarbonImmutable $requestedAt): bool
+    {
+        $phoneHash = (new AttributionJourney)->phoneHash($phone);
+
+        return ! $phoneHash || DB::table('edna_organic_menus')->where('subject_id', $subject)->where('phone_hash', $phoneHash)
+            ->where('entry_event_id', '!=', $entryId)->whereNotNull('case_id')
+            ->where(fn ($q) => $q->whereIn('state', ['submitting', 'loan_unknown'])
+                ->orWhere('reuse_completed_at', '>=', $requestedAt->utc()))->exists();
+    }
+
     private EdnaOrganicProfile $profiles;
 
     private EdnaOrganicAttention $attention;
@@ -58,7 +69,14 @@ class EdnaOrganicLoan
             return;
         }
         try {
-            if (! $this->enabled() || $menu->choice !== 'loan' || $menu->send_state !== 'confirmed') {
+            $paid = $menu->send_state === 'paid_profile' && $menu->paid_entry_routing !== null;
+            if ($paid && ! config('edna.intake_crm_enabled') && config('edna.enabled') && config('edna.router_enabled') && config('edna.intake_enabled')) {
+                // The borrowing channel can accept a declaration while CRM processing is paused.
+                $this->fallback($menu, 'paid_profile_processing_disabled');
+
+                return;
+            }
+            if (! $this->enabled($paid) || (! $paid && ($menu->choice !== 'loan' || $menu->send_state !== 'confirmed'))) {
                 $this->finish($menu, 'preserved', 'organic_loan_disabled');
 
                 return;
@@ -83,7 +101,7 @@ class EdnaOrganicLoan
             }
             $snapshot = $this->attention->snapshot($proof);
             $proof['contact_id'] = ($snapshot['dialog_tuple']['bindings']['contact'] ?? null) ?: null;
-            $preferFresh = app(EdnaFreshIntake::class)->declaration($menu);
+            $preferFresh = $paid || app(EdnaFreshIntake::class)->declaration($menu);
             $profile = $this->profiles->resolve($menu, $proof, $preferFresh);
             if (($profile['status'] ?? '') === 'pending') {
                 $this->finish($menu, $menu->attempts >= 12 ? 'review' : 'loan_pending', $profile['reason']);
@@ -105,7 +123,7 @@ class EdnaOrganicLoan
             $contactId = $snapshot['dialog_tuple']['bindings']['contact'] ?? null;
             $binding = $proof;
             $binding['contact_id'] = $contactId ?: null;
-            $binding['native_lead_id'] = $proof['native_lead_id'] ?: null;
+            $binding['native_lead_id'] = $proof['native_lead_id'] ?? null;
             if (! $binding['native_lead_id'] && ! $binding['contact_id']) {
                 if ($preferFresh) {
                     $this->fallback($menu, 'organic_native_crm_identity_unavailable');
@@ -137,7 +155,8 @@ class EdnaOrganicLoan
         $lock = null;
         $started = false;
         try {
-            if (! $this->enabled() || ! $menu->profile_snapshot || ! $menu->profile_evidence) {
+            $paid = $menu->send_state === 'paid_profile' && $menu->paid_entry_routing !== null;
+            if (! $this->enabled($paid) || ! $menu->profile_snapshot || ! $menu->profile_evidence) {
                 $this->finish($menu, 'review', 'organic_reuse_disabled_or_unavailable');
 
                 return;
@@ -172,9 +191,15 @@ class EdnaOrganicLoan
                 return;
             }
             $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
-            $choice = DB::table('edna_incoming_events')->find($menu->choice_event_id);
+            $intent = $paid ? $entry : DB::table('edna_incoming_events')->find($menu->choice_event_id);
             $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
-            $choicePayload = json_decode(Crypt::decryptString($choice->payload), true, 32, JSON_THROW_ON_ERROR);
+            $intentPayload = $paid ? $payload : json_decode(Crypt::decryptString($intent->payload), true, 32, JSON_THROW_ON_ERROR);
+            $marker = $paid ? app(EdnaPaidEntry::class)->currentMarker($entry, $payload, $menu->paid_entry_routing) : null;
+            if ($paid && ! $marker) {
+                $this->finish($menu, 'review', 'paid_entry_evidence_changed');
+
+                return;
+            }
             $evidence = json_decode($menu->profile_evidence, true, 16, JSON_THROW_ON_ERROR);
             $preferFresh = ($evidence['fresh_declaration'] ?? false) === true;
             $phone = Crypt::decryptString($menu->recipient);
@@ -194,11 +219,11 @@ class EdnaOrganicLoan
                 return;
             }
             if (! hash_equals($phone, (string) ($payload['subscriber']['identifier'] ?? ''))
-                || ! hash_equals($phone, (string) ($choicePayload['subscriber']['identifier'] ?? ''))
+                || ! hash_equals($phone, (string) ($intentPayload['subscriber']['identifier'] ?? ''))
                 || $menu->subject_id !== (string) ($payload['subjectId'] ?? '')
-                || $menu->subject_id !== (string) ($choicePayload['subjectId'] ?? '')
+                || $menu->subject_id !== (string) ($intentPayload['subjectId'] ?? '')
                 || (string) $entry->message_id !== (string) ($payload['id'] ?? '')
-                || (string) $choice->message_id !== (string) ($choicePayload['id'] ?? '')) {
+                || (string) $intent->message_id !== (string) ($intentPayload['id'] ?? '')) {
                 $this->finish($menu, 'review', 'organic_reuse_entry_changed');
 
                 return;
@@ -206,10 +231,19 @@ class EdnaOrganicLoan
             $frozen = (new EdnaIntake)->freezeEntryAttribution($entry, $payload,
                 (new AttributionJourney)->bind((string) ($payload['messageContent']['text'] ?? ''), $phone, $menu->subject_id), (string) (new EdnaIntake)->flowId());
             $attribution = $frozen['snapshot'];
+            if ($marker) {
+                if ($marker['evidence']['kind'] === 'tracked_paid_click'
+                    && (($attribution['status'] ?? '') !== 'resolved' || $marker['evidence']['journey_id'] !== ($attribution['journey_id'] ?? null))) {
+                    $this->finish($menu, 'review', 'paid_attribution_unavailable');
+
+                    return;
+                }
+                $attribution['entry_routing'] = array_replace($marker, ['route' => 'paid_profile_reuse']);
+            }
             unset($attribution['wa']['WA_FLOW_ID']);
             $attribution['wa']['WA_FLOW'] = 'organic_profile_reuse';
             $body = ['contract' => self::CONTRACT, 'case_id' => $menu->request_id, 'phone' => $phone, 'dry_run' => false,
-                'received_at' => CarbonImmutable::parse($choicePayload['receivedAt'])->toIso8601String(),
+                'received_at' => CarbonImmutable::parse($intentPayload['receivedAt'])->toIso8601String(),
                 'answer' => $answer,
                 'provenance' => $evidence['provenance'], 'crm_binding' => $evidence['crm_binding'], 'attribution' => $attribution,
                 'entry_context' => ['version' => 1, 'source' => 'edna_authenticated', 'event_id' => (int) $entry->id,
@@ -241,16 +275,36 @@ class EdnaOrganicLoan
             }
             // Serialize the local check and claim with reference capture, then
             // release the recipient lock before the one application POST.
-            $claim = function () use ($menu, $proof): bool {
+            $claim = function () use ($menu, $proof, $entry, $intentPayload, $phone, $paid): bool {
                 if ($this->preserveWebContext($menu, $proof)) {
                     return false;
+                }
+                if (app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::V3_VALIDITY)) {
+                    $requestedAt = CarbonImmutable::parse($intentPayload['receivedAt'])->min(now());
+                    $router = app(EdnaFlowRouter::class);
+                    $router->lockRecipient($menu->subject_id, $phone);
+                    if ($router->hasBlockingV3($menu->subject_id, $phone, $requestedAt)
+                        || self::competingReuse($menu->subject_id, $phone, (int) $entry->id, $requestedAt)) {
+                        $this->finish($menu, 'preserved', 'existing_flow_or_context_preserved');
+
+                        return false;
+                    }
+                    if ($paid) {
+                        $intake = app(EdnaIntake::class);
+                        $admission = $intake->admit($menu->subject_id, $phone, null, $requestedAt, true);
+                        if (! $admission || $admission->flow_id !== $intake->flowId()) {
+                            $this->finish($menu, 'preserved', 'paid_intake_admission_unavailable');
+
+                            return false;
+                        }
+                    }
                 }
                 $this->update($menu, ['state' => 'submitting', 'reason' => 'organic_reuse_request_started']);
 
                 return true;
             };
             $claimed = app(WebChatContinuity::class)->eligibleEntry($entry)
-                ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : $claim();
+                ? app(WebFormReceipt::class)->serialized($menu->phone_hash, $claim) : DB::transaction($claim, 5);
             if (! $claimed) {
                 return;
             }
@@ -264,6 +318,8 @@ class EdnaOrganicLoan
                 throw new RuntimeException('Organic inquiry acknowledgement unavailable.');
             }
             $action = $result['action'] ?? '';
+            $completed = app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::V3_VALIDITY)
+                ? ['reuse_completed_at' => now()] : [];
             $requestFresh = ($result['request_fresh_profile'] ?? null) === true
                 || ($action === 'reused_not_valid' && ($result['reason'] ?? '') === 'current_person_unproven');
             $canFallback = $preferFresh ? $requestFresh && in_array($action, ['reused_not_valid', 'manual_review'], true) : $action === 'reused_not_valid';
@@ -288,12 +344,13 @@ class EdnaOrganicLoan
                 $assigned['profile_identity_hash'] = (new WebFormReceipt)->identityHash($answer['cuil']);
                 $this->finish($menu, 'route_pending', 'existing_commercial_case', ['deal_id' => (string) $result['deal_id'],
                     'seller_id' => (string) $result['seller_id'], 'available_at' => now(), 'enqueued_at' => null,
-                    'profile_evidence' => json_encode($evidence + ['assigned_case' => $assigned], JSON_THROW_ON_ERROR)]);
+                    'profile_evidence' => json_encode($evidence + ['assigned_case' => $assigned], JSON_THROW_ON_ERROR)] + $completed);
             } elseif (in_array($action, ['queued', 'already_processed', 'rejected'], true)
                 && preg_match('/^[1-9][0-9]*$/D', (string) ($result['lead_id'] ?? ''))) {
-                $this->finish($menu, 'loan_submitted', $action, ['profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result, array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)]);
+                $this->finish($menu, 'loan_submitted', $action, ['profile_evidence' => json_encode($evidence + ['result' => array_intersect_key($result, array_flip(['action', 'lead_id', 'contact_id', 'deal_id', 'seller_id', 'write_attempted']))], JSON_THROW_ON_ERROR)] + $completed);
             } else {
-                $this->finish($menu, 'review', 'organic_reuse_'.(in_array($action, ['manual_review', 'disabled'], true) ? $action : 'acknowledgement_invalid'));
+                $this->finish($menu, 'review', 'organic_reuse_'.(in_array($action, ['manual_review', 'disabled'], true) ? $action : 'acknowledgement_invalid'),
+                    $result['write_attempted'] ? $completed : []);
             }
         } catch (Throwable) {
             if ($menu->state === 'fallback_pending') {
@@ -334,7 +391,19 @@ class EdnaOrganicLoan
                 return;
             }
             $this->update($menu, ['state' => 'selected', 'reason' => $reason]);
-            $sendId = app(EdnaFlowRouter::class)->startOrganicChoice((int) $menu->id);
+            if ($menu->send_state === 'paid_profile') {
+                $entry = DB::table('edna_incoming_events')->where('id', $menu->entry_event_id)->firstOrFail();
+                $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
+                $marker = app(EdnaPaidEntry::class)->currentMarker($entry, $payload, $menu->paid_entry_routing);
+                if (! $marker) {
+                    $this->finish($menu, 'review', 'paid_entry_evidence_changed');
+
+                    return;
+                }
+                $sendId = app(EdnaFlowRouter::class)->startPaidEntry($entry, $payload, $marker);
+            } else {
+                $sendId = app(EdnaFlowRouter::class)->startOrganicChoice((int) $menu->id);
+            }
             $this->finish($menu, $sendId ? 'flow_scheduled' : 'preserved', $sendId ? 'new_profile_requested' : 'existing_flow_or_context_preserved',
                 $sendId ? ['flow_send_id' => $sendId] : []);
         });
@@ -389,10 +458,10 @@ class EdnaOrganicLoan
         return $ids->sum(fn ($id) => (int) $this->enqueue((int) $id));
     }
 
-    private function enabled(): bool
+    private function enabled(bool $paid): bool
     {
         return config('edna.enabled') && config('edna.router_enabled') && config('edna.intake_enabled')
-            && config('edna.organic_menu_enabled') && config('edna.intake_crm_enabled');
+            && ($paid || config('edna.organic_menu_enabled')) && config('edna.intake_crm_enabled');
     }
 
     private function claim(int $id, string $state): ?object
