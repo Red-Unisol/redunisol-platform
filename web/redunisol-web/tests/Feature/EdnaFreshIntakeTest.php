@@ -3,6 +3,7 @@
 use App\Jobs\RouteEdnaIntakeChat;
 use App\Jobs\SendEdnaFlow;
 use App\Services\AttributionJourney;
+use App\Services\CommercialChatReadiness;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFreshIntake;
@@ -271,13 +272,11 @@ test('the exact new lead hands its session to its assigned seller once, preservi
     $attention->shouldReceive('canTransfer')->once()->andReturn(true);
     $snapshot = ['dialog_tuple' => ['owner' => '74827'], 'records' => [['entity' => 'lead', 'id' => '101', 'owner' => '42', 'creator' => '42']]];
     $ready = ['status' => 'ready', 'owner_id' => '74827', 'native_snapshot' => $snapshot];
-    $attention->shouldReceive('inspect')->twice()->andReturn($ready, $scenario === 'manual'
+    $attention->shouldReceive('inspect')->times($scenario === 'foreign' ? 1 : 2)->andReturn($ready, $scenario === 'manual'
         ? ['status' => 'preserved', 'reason' => 'operator_attention_preserved'] : $ready);
-    if ($scenario !== 'manual') {
-        $attention->shouldReceive('compatible')->andReturn(true);
-        $crm->shouldReceive('call')->once()->with('imopenlines.config.get', ['CONFIG_ID' => 1])->andReturn(['ID' => 1,
-            'CRM_TRANSFER_CHANGE' => $scenario === 'safe' ? 'N' : 'Y']);
-    }
+    $attention->allows('compatible')->andReturn(true);
+    $crm->shouldReceive('call')->once()->with('imopenlines.config.get', ['CONFIG_ID' => 1])->andReturn(['ID' => 1,
+        'CRM_TRANSFER_CHANGE' => $scenario === 'foreign' ? 'Y' : 'N']);
     app()->instance(EdnaBitrix::class, $crm);
     app()->instance(EdnaOrganicAttention::class, $attention);
     if ($scenario === 'safe') {
@@ -292,6 +291,149 @@ test('the exact new lead hands its session to its assigned seller once, preservi
         'safe' => 'target_confirmed', 'manual' => 'operator_attention_preserved', 'foreign' => 'native_crm_transfer_would_change_owner',
     });
 })->with(['safe', 'manual', 'foreign']);
+
+/** Independent declaration, original native source and completed Kestra handoff for a review-stage deal. */
+function freshReviewRoute(int $chat = 146591, int $session = 322559, int $lead = 433611, int $deal = 1257075, int $seller = 68579): array
+{
+    [$request, $send, $proof] = independentCompletedFlow();
+    DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::REVIEW_SELLER,
+        'starts_at' => now()->subMinute(), 'entry_id_after' => 0]);
+    $proof['chat_id'] = (string) $chat;
+    $proof['session_id'] = (string) $session;
+    DB::table('edna_intake_bindings')->where('flow_send_id', $send->id)->update(['proof' => json_encode($proof)]);
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => 'synced', 'lead_id' => (string) $lead]);
+    $case = ['lead_id' => (string) $lead, 'request_uuid' => $send->request_id, 'identity_hash' => (new WebFormReceipt)->identityHash('20123456786')];
+    DB::table('edna_intake_chat_routes')->insert(['request_id' => $request->id, 'proof' => json_encode($proof),
+        'assigned_case' => json_encode($case), 'state' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+
+    $registry = Mockery::mock(\App\Support\BitrixSellerRegistry::class);
+    $registry->allows('enabledIds')->andReturn([68579, 29]);
+    app()->instance(\App\Support\BitrixSellerRegistry::class, $registry);
+    $crm = Mockery::mock(EdnaBitrix::class);
+    $crm->allows('call')->with('crm.lead.get', ['id' => (string) $lead])->andReturn(['ID' => (string) $lead,
+        'STATUS_SEMANTIC_ID' => 'S', 'CONTACT_ID' => '0', 'UF_CRM_1693840106704' => '20123456786',
+        'ORIGINATOR_ID' => 'redunisol.edna.fresh-v3', 'ORIGIN_ID' => $send->request_id, 'UF_CRM_WA_ASSISTANCE_ID' => $send->request_id]);
+    $crm->allows('call')->with('imopenlines.session.history.get', ['SESSION_ID' => $session])->andReturn([
+        'chatId' => (string) $chat, 'sessionId' => (string) $session, 'hasNextPage' => false, 'message' => []]);
+    $record = ['ID' => (string) $deal, 'LEAD_ID' => (string) $lead, 'CATEGORY_ID' => '1', 'CONTACT_ID' => '0',
+        'CLOSED' => 'N', 'STAGE_ID' => 'C1:KESTRA_REVIEW', 'STAGE_SEMANTIC_ID' => 'P', 'ASSIGNED_BY_ID' => (string) $seller,
+        'UF_CRM_KQ_ACTION' => '', 'UF_CRM_KQ_REASON' => implode(':', ['review-seller-v1', $send->request_id, $lead, $deal, $chat, $session, $seller])];
+    app()->instance(EdnaBitrix::class, $crm);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->allows('targetActive')->with($seller)->andReturn(true);
+    $attention->allows('canTransfer')->andReturn(true);
+    $attention->allows('compatible')->andReturn(true);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    $ready = ['status' => 'ready', 'owner_id' => '74827', 'native_snapshot' => ['dialog_tuple' => ['owner' => '74827'],
+        'records' => [['entity' => 'lead', 'id' => '101', 'owner' => '42', 'creator' => '42']]]];
+
+    return [$request, $send, $record, $crm, $attention, $ready];
+}
+
+test('Kestra receives review handoff capability only for a ready v3 chat whose original entry crossed the cutover', function (string $scenario) {
+    [$request, $send, $record, $crm, $attention] = freshReviewRoute();
+    DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::OWNERSHIP,
+        'starts_at' => now()->subMinute(), 'entry_id_after' => 0]);
+    if ($scenario === 'old entry') {
+        DB::table('edna_intake_cutovers')->where('name', EdnaFreshIntake::REVIEW_SELLER)
+            ->update(['entry_id_after' => $send->entry_event_id]);
+    } elseif ($scenario === 'post already attempted') {
+        DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->update(['state' => 'unknown']);
+    }
+    $case = ['channel' => 'v3', 'request_id' => $send->request_id, 'deal_id' => (int) $record['ID'], 'lead_id' => (int) $record['LEAD_ID']];
+    $crm->allows('call')->with('crm.deal.get', ['id' => $case['deal_id']])->andReturn($record);
+    $attention->allows('inspectWelcome')->andReturn(['status' => $scenario === 'human took chat' ? 'preserved' : 'ready']);
+    $response = (new CommercialChatReadiness($crm, $attention))->check([$case], true)[0];
+    expect($response['state'])->toBe(in_array($scenario, ['fresh', 'old entry'], true) ? 'ready' : 'waiting')
+        ->and($response['review_seller'] ?? false)->toBe($scenario === 'fresh');
+})->with(['fresh', 'old entry', 'human took chat', 'post already attempted']);
+
+test('a reviewed credit transfers its still-live chat to the seller selected for that declaration exactly once', function (
+    int $chat, int $session, int $lead, int $deal, int $seller
+) {
+    [$request, , $record, $crm, $attention, $ready] = freshReviewRoute($chat, $session, $lead, $deal, $seller);
+    $crm->allows('call')->withArgs(fn ($method, $payload) => $method === 'crm.deal.list' && $payload['filter']['=LEAD_ID'] === (string) $lead)
+        ->andReturnUsing(fn ($method, $payload) => [array_intersect_key($record, array_flip($payload['select']))]);
+    $crm->allows('call')->with('imopenlines.config.get', ['CONFIG_ID' => 1])->andReturn(['ID' => 1, 'CRM_TRANSFER_CHANGE' => 'N']);
+    $crm->expects('call')->once()->with('imopenlines.operator.transfer', ['CHAT_ID' => $chat, 'USER_ID' => $seller])->andReturn(true);
+    $attention->allows('inspect')->andReturn($ready);
+    $attention->allows('snapshot')->andReturn(['dialog_tuple' => ['owner' => (string) $seller]]);
+    $routing = new EdnaIntakeChatRouting;
+    expect(fn () => $routing->route($request->id))->toThrow(RuntimeException::class, 'Transfer requires read-only reconciliation.');
+    $routing->route($request->id);
+    $routing->route($request->id);
+    $route = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->sole();
+    expect($route->state)->toBe('confirmed')->and((bool) $route->transfer_acknowledged)->toBeTrue()
+        ->and(json_decode($route->transfer_intent, true))->toMatchArray(['target_id' => (string) $seller, 'session_id' => (string) $session]);
+})->with([
+    '146591, payment bank requires review' => [146591, 322559, 433611, 1257075, 68579],
+    '105821, renewal requires review' => [105821, 322569, 433625, 1257083, 29],
+]);
+
+test('a review-stage ownership field alone cannot authorize a chat transfer', function (string $invalid) {
+    [$request, $send, $record, $crm] = freshReviewRoute();
+    $cut = DB::table('edna_intake_cutovers')->where('name', EdnaFreshIntake::REVIEW_SELLER);
+    if ($invalid === 'cutover absent') {
+        $cut->delete();
+    } elseif ($invalid === 'old inbox') {
+        $cut->update(['entry_id_after' => $send->entry_event_id]);
+    } elseif ($invalid === 'late old entry') {
+        $cut->update(['starts_at' => now()->addSecond()]);
+        $this->travel(2)->seconds();
+    } elseif ($invalid === 'stage') {
+        $record['STAGE_ID'] = 'C1:KESTRA_ROUTE_REVIEW';
+    } elseif ($invalid === 'queue action') {
+        $record['UF_CRM_KQ_ACTION'] = 'WAIT_REQUEST_CHAT';
+    } elseif ($invalid === 'queue action unreadable') {
+        unset($record['UF_CRM_KQ_ACTION']);
+    } elseif ($invalid === 'receipt missing') {
+        unset($record['UF_CRM_KQ_REASON']);
+    } else {
+        $parts = explode(':', $record['UF_CRM_KQ_REASON']);
+        $parts[(int) $invalid] = '99999';
+        $record['UF_CRM_KQ_REASON'] = implode(':', $parts);
+    }
+    $crm->allows('call')->withArgs(fn ($method) => $method === 'crm.deal.list')->andReturn([$record]);
+    $crm->shouldNotReceive('call')->withArgs(fn ($method) => $method === 'imopenlines.operator.transfer');
+    (new EdnaIntakeChatRouting)->route($request->id);
+    $row = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->sole();
+    expect($row->transfer_intent)->toBeNull()->and((bool) $row->transfer_acknowledged)->toBeFalse();
+})->with(['cutover absent', 'old inbox', 'late old entry', 'stage', 'queue action', 'queue action unreadable', 'receipt missing',
+    'different request' => '1', 'different lead' => '2', 'different deal' => '3',
+    'different chat' => '4', 'different session' => '5', 'different seller' => '6']);
+
+test('an exact review-stage handoff never overrides attention, a new owner or the messaging deadline', function (string $scenario) {
+    [$request, , $record, $crm, $attention, $ready] = freshReviewRoute();
+    $second = $scenario === 'reassigned' ? array_replace($record, ['ASSIGNED_BY_ID' => '29']) : $record;
+    $crm->allows('call')->withArgs(fn ($method) => $method === 'crm.deal.list')->andReturn([$record], [$second]);
+    $taken = ['status' => 'preserved', 'reason' => 'operator_attention_preserved'];
+    $takenDuringRead = false;
+    if ($scenario === 'taken during config read') {
+        $attention->allows('inspect')->andReturnUsing(function () use (&$takenDuringRead, $taken, $ready) {
+            return $takenDuringRead ? $taken : $ready;
+        });
+    } else {
+        $attention->allows('inspect')->andReturn($ready, $scenario === 'taken' ? $taken : $ready);
+    }
+    if ($scenario === 'expired') {
+        $this->travel(25)->hours();
+    } elseif ($scenario === 'expires during last provider read') {
+        $this->travelTo(now()->addDay()->subSeconds(15));
+    }
+    $crm->allows('call')->with('imopenlines.config.get', ['CONFIG_ID' => 1])->andReturnUsing(function () use ($scenario, &$takenDuringRead) {
+        if ($scenario === 'expires during last provider read') {
+            $this->travel(16)->seconds();
+        }
+        $takenDuringRead = $scenario === 'taken during config read';
+
+        return ['ID' => 1, 'CRM_TRANSFER_CHANGE' => 'N'];
+    });
+    $crm->shouldNotReceive('call')->withArgs(fn ($method) => $method === 'imopenlines.operator.transfer');
+    (new EdnaIntakeChatRouting)->route($request->id);
+    $row = DB::table('edna_intake_chat_routes')->where('request_id', $request->id)->sole();
+    expect($row->state)->toBe(str_starts_with($scenario, 'expire') ? 'expired' : 'preserved')
+        ->and($row->transfer_intent)->toBeNull();
+})->with(['taken', 'taken during config read', 'reassigned', 'expired', 'expires during last provider read']);
 
 test('fresh completed v3 reuses the existing identity contract and enqueues its assigned chat once', function () {
     [$request, $send, $proof] = freshCompletedRequest();
@@ -443,15 +585,19 @@ test('an old completed intake stays untouched even if its worker is called again
     Http::assertNothingSent();
 });
 
-test('cutover activation is idempotent and never moves its old-entry boundary', function () {
+test('cutover activation is idempotent and never moves its old-entry boundary', function (string $option, string $name) {
     DB::table('edna_intake_cutovers')->delete();
-    [$send, $entry] = freshV3Fixture();
-    $this->artisan('edna:intake-cutover activate')->assertSuccessful();
-    $cut = DB::table('edna_intake_cutovers')->first();
+    [, $entry] = freshV3Fixture();
+    $this->travelTo(now()->setMicrosecond(750000));
+    $this->artisan('edna:intake-cutover activate'.$option)->assertSuccessful();
+    $cut = DB::table('edna_intake_cutovers')->where('name', $name)->sole();
     expect((int) $cut->entry_id_after)->toBe((int) $entry->id)
-        ->and((new EdnaFreshIntake)->applies($send))->toBeFalse();
+        ->and((new EdnaFreshIntake)->entry($entry, $name))->toBeFalse();
+    if ($name === EdnaFreshIntake::REVIEW_SELLER) {
+        expect(\Carbon\CarbonImmutable::parse($cut->starts_at)->eq(now()->ceilSecond()))->toBeTrue();
+    }
     $this->travel(1)->minutes();
-    $this->artisan('edna:intake-cutover activate')->assertSuccessful();
+    $this->artisan('edna:intake-cutover activate'.$option)->assertSuccessful();
     expect(DB::table('edna_intake_cutovers')->first())->toEqual($cut);
     Queue::assertNotPushed(RouteEdnaIntakeChat::class);
-});
+})->with([['', 'native-v3-v1'], [' --review-seller', EdnaFreshIntake::REVIEW_SELLER]]);

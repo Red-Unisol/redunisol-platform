@@ -85,7 +85,7 @@ class CommercialChatStatus
             $intent = json_decode($row->transfer_intent ?? '{}', true, 32, JSON_THROW_ON_ERROR);
             $selection = $intent['commercial_case'] ?? $case;
             if (isset($case['request_uuid']) && ! isset($selection['seller_id'])) {
-                $selection = (new EdnaFreshCaseRoute)->target($case, $this->crm);
+                $selection = (new EdnaFreshCaseRoute)->target($case, $this->crm, $proof);
             }
             $add('WhatsApp v3 #', $row->request_id, $selection['seller_id'] ?? $case['seller_id'] ?? null,
                 $selection['deal_id'] ?? $case['deal_id'] ?? null);

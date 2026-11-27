@@ -9,34 +9,28 @@ use Illuminate\Support\Facades\DB;
 
 class EdnaIntakeCutover extends Command
 {
-    protected $signature = 'edna:intake-cutover {action=status : status or activate} {--fresh-declaration : Enable the new declaration contract after Kestra is deployed} {--ownership : Enable the commercial ownership contract for new requests} {--sales-chat-routing : Enable unified Benefits and reopening handoffs for new entries} {--v3-validity : Use shared v3 validity and profile reuse for new organic and paid entries}';
+    protected $signature = 'edna:intake-cutover {action=status : status or activate} {--fresh-declaration : Enable the new declaration contract after Kestra is deployed} {--ownership : Enable the commercial ownership contract for new requests} {--sales-chat-routing : Enable unified Benefits and reopening handoffs for new entries} {--v3-validity : Use shared v3 validity and profile reuse for new organic and paid entries} {--review-seller : Honor a verified Kestra seller for a new v3 in credit review}';
 
     protected $description = 'Activate native V3 binding once for new incoming messages, without recovering old work';
 
     public function handle(): int
     {
         $action = $this->argument('action');
-        if (! in_array($action, ['status', 'activate'], true)) {
+        $options = ['fresh-declaration', 'ownership', 'sales-chat-routing', 'v3-validity', 'review-seller'];
+        if (! in_array($action, ['status', 'activate'], true) || count(array_filter($options, fn ($option) => $this->option($option))) > 1) {
             return self::INVALID;
         }
         $name = $this->option('fresh-declaration') ? EdnaFreshIntake::DECLARATION : 'native-v3-v1';
-        if ($this->option('v3-validity')) {
-            if ($this->option('fresh-declaration') || $this->option('ownership') || $this->option('sales-chat-routing')) {
-                return self::INVALID;
-            }
+        if ($this->option('review-seller')) {
+            $name = EdnaFreshIntake::REVIEW_SELLER;
+        } elseif ($this->option('v3-validity')) {
             $name = EdnaFreshIntake::V3_VALIDITY;
         } elseif ($this->option('sales-chat-routing')) {
-            if ($this->option('fresh-declaration') || $this->option('ownership')) {
-                return self::INVALID;
-            }
             $name = SalesChatRoutingPolicy::CUTOVER;
             if ($action === 'activate' && ! DB::table('edna_intake_cutovers')->where('name', $name)->exists()) {
                 app(SalesChatRoutingPolicy::class)->assertTransferIsolation();
             }
         } elseif ($this->option('ownership')) {
-            if ($this->option('fresh-declaration')) {
-                return self::INVALID;
-            }
             $name = EdnaFreshIntake::OWNERSHIP;
             if ($action === 'activate') {
                 $line = app(\App\Services\EdnaBitrix::class)->call('imopenlines.config.get', ['CONFIG_ID' => 1]);
@@ -55,7 +49,8 @@ class EdnaIntakeCutover extends Command
                 DB::table('edna_intake_cutovers')->insertOrIgnore([
                     'name' => $name, 'entry_id_after' => DB::table('edna_incoming_events')->max('id') ?? 0,
                     // Provider callbacks can have only second precision. Exclude the partial activation second.
-                    'starts_at' => $name === EdnaFreshIntake::V3_VALIDITY ? $startsAt->ceilSecond() : $startsAt,
+                    'starts_at' => in_array($name, [EdnaFreshIntake::V3_VALIDITY, EdnaFreshIntake::REVIEW_SELLER], true)
+                        ? $startsAt->ceilSecond() : $startsAt,
                 ]);
             });
         }

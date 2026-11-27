@@ -15,6 +15,7 @@ class CommercialChatReadiness
         $results = [];
         $withoutChat = [];
         foreach ($cases as $case) {
+            $case = array_intersect_key($case, array_flip(['deal_id', 'request_id', 'lead_id', 'channel']));
             $id = (int) $case['deal_id'];
             $results[$id] = $case + ['state' => 'waiting'];
             $evidence = $case['channel'] === 'web' ? $this->web($case) : $this->v3($case, $live);
@@ -46,6 +47,9 @@ class CommercialChatReadiness
             }
             $results[$id] = $case + ['state' => 'ready', 'chat_id' => (int) $proof['chat_id'],
                 'session_id' => (int) $proof['session_id'], 'expires_at' => $expires->utc()->toIso8601String()];
+            if ($case['channel'] === 'v3' && $evidence[2] === true) {
+                $results[$id]['review_seller'] = true;
+            }
         }
         if ($withoutChat) {
             // One search per batch. A named commercial owner or a completed, incoming,
@@ -155,6 +159,6 @@ class CommercialChatReadiness
             $expires = (new EdnaFreshCaseRoute)->expiresAt($send, $request, $proof, $this->crm);
         }
 
-        return [$proof, $expires];
+        return [$proof, $expires, app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::REVIEW_SELLER)];
     }
 }

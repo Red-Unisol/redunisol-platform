@@ -991,6 +991,14 @@ consumidor compatible con los jobs reservados; no borrar recibos ni resetear el
 corte para rescatar históricos. Una recuperación de casos anteriores requiere un
 pedido específico.
 
+### Pase al vendedor de un v3 con crédito en revisión
+
+Cuando la solicitud v3 ya tiene una sesión de VENTAS disponible, Kestra puede elegir vendedor aunque el crédito siga en `C1:KESTRA_REVIEW`. En la misma actualización de Bitrix guarda el vendedor y un comprobante en `UF_CRM_KQ_REASON` con la versión `review-seller-v1`, el UUID del formulario y los IDs de prospecto, negociación, chat, sesión y vendedor. La acción de cola queda vacía. Una asignación previa de la ficha por sí sola no genera ese comprobante.
+
+Laravel verifica el comprobante contra el ingreso original, la negociación vigente y la sesión del chat. Antes de transferir vuelve a comprobar la atención humana y la vigencia de WhatsApp. Si el acuse se pierde, reconcilia la intención registrada mediante lecturas. La decisión sobre el crédito conserva su estado.
+
+Después de desplegar Laravel y el namespace de marketing-crm de Kestra, ejecutar una vez `php artisan edna:intake-cutover activate --review-seller` en el servicio web. Consultar el corte con `php artisan edna:intake-cutover status --review-seller`. Sólo entran mensajes con ID local posterior al corte y fecha original en Edna igual o posterior a la activación. Volver a ejecutar el comando conserva el primer corte.
+
 ### Respuesta de la campaña de beneficios
 
 Desde el corte `member-benefits-button-v1`, el botón «Quiero mis beneficios» de `aviso_soysocio_v6final` (matcher 63510) deriva el chat de VENTAS a Victoria Cornier (117941), incluso si sólo hay un contacto. El worker verifica el envío original y su teclado en Edna y vincula el mensaje entrante exacto a la sesión de Bitrix. Si la verificación está pendiente, espera. Si alguien ya atendió el chat o la sesión cambió, conserva la atención. La tabla `edna_benefit_chat_routes` guarda la evidencia del botón, la intención de pase, el acuse y la transferencia nativa. Un callback repetido no genera otro pase.

@@ -272,11 +272,14 @@ test('queue readiness binds the actual request and rechecks current attention be
     $f->crm->deal['ASSIGNED_BY_ID'] = '57';
     DB::table('edna_intake_cutovers')->insert(['name' => \App\Services\EdnaFreshIntake::OWNERSHIP,
         'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
+    DB::table('edna_intake_cutovers')->insert(['name' => \App\Services\EdnaFreshIntake::REVIEW_SELLER,
+        'entry_id_after' => 0, 'starts_at' => now()->subMinute()]);
     $f->linker->process($f->event->id);
     $case = ['channel' => 'web', 'request_id' => $f->submission, 'deal_id' => 900, 'lead_id' => 700];
     $app = new \App\Services\CommercialChatReadiness($f->crm, new \App\Services\EdnaOrganicAttention($f->crm, $f->guard));
     expect($app->check([$case], false)[0]['state'])->toBe('ready');
-    expect($app->check([$case], true)[0]['state'])->toBe('ready');
+    $live = $app->check([$case], true)[0];
+    expect($live['state'])->toBe('ready')->and($live['review_seller'] ?? false)->toBeFalse();
     $f->crm->deal['STAGE_ID'] = 'C1:5';
     expect($app->check([$case], true)[0]['state'])->toBe('waiting');
     $f->crm->deal['STAGE_ID'] = 'C1:KESTRA_QUEUE';

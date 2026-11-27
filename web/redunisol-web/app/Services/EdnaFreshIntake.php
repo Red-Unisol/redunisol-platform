@@ -17,6 +17,8 @@ class EdnaFreshIntake
 
     public const V3_VALIDITY = 'v3-validity-v1';
 
+    public const REVIEW_SELLER = 'review-seller-v1';
+
     public function webOwnership(string $receivedAt): bool
     {
         $cut = DB::table('edna_intake_cutovers')->where('name', self::OWNERSHIP)->value('starts_at');

@@ -57,7 +57,7 @@ class EdnaFreshCaseRoute
         return $expires;
     }
 
-    public function target(array $case, EdnaBitrix $crm): array
+    public function target(array $case, EdnaBitrix $crm, ?array $proof = null): array
     {
         $lead = $crm->call('crm.lead.get', ['id' => $case['lead_id']]);
         $identity = (new WebFormReceipt)->identityHash((string) ($lead['UF_CRM_1693840106704'] ?? ''));
@@ -70,7 +70,8 @@ class EdnaFreshCaseRoute
             return ['state' => 'preserved', 'reason' => 'fresh_request_closed'];
         }
         $deals = $crm->call('crm.deal.list', ['filter' => ['=LEAD_ID' => $case['lead_id'], '=CATEGORY_ID' => 1],
-            'select' => ['ID', 'LEAD_ID', 'CATEGORY_ID', 'CONTACT_ID', 'CLOSED', 'STAGE_ID', 'STAGE_SEMANTIC_ID', 'ASSIGNED_BY_ID'], 'start' => -1]);
+            'select' => ['ID', 'LEAD_ID', 'CATEGORY_ID', 'CONTACT_ID', 'CLOSED', 'STAGE_ID', 'STAGE_SEMANTIC_ID',
+                'ASSIGNED_BY_ID', 'UF_CRM_KQ_REASON', 'UF_CRM_KQ_ACTION'], 'start' => -1]);
         if (! is_array($deals) || ! array_is_list($deals)) {
             throw new RuntimeException('Incomplete commercial assignment response.');
         }
@@ -103,7 +104,8 @@ class EdnaFreshCaseRoute
         if ($stage === 'C1:5') {
             return ['state' => 'preserved', 'reason' => 'fresh_request_deal_rejected'];
         }
-        if (! str_starts_with($stage, 'C1:') || str_starts_with($stage, 'C1:KESTRA_')
+        if (! str_starts_with($stage, 'C1:') || (str_starts_with($stage, 'C1:KESTRA_')
+                && ! ($stage === 'C1:KESTRA_REVIEW' && $this->verifiedReviewSeller($case, $deal, $proof)))
             || ! ctype_digit($seller) || in_array($seller, ['0', '57', '71283', '74827'], true)) {
             return ['state' => 'waiting', 'reason' => 'fresh_request_waiting_seller'];
         }
@@ -113,6 +115,26 @@ class EdnaFreshCaseRoute
 
         return ['state' => 'assigned', 'deal_id' => (string) $deal['ID'], 'seller_id' => $seller,
             'stage' => $stage, 'lead_id' => $case['lead_id'], 'contact_id' => $contact];
+    }
+
+    private function verifiedReviewSeller(array $case, array $deal, ?array $proof): bool
+    {
+        if (($proof['verified'] ?? null) !== true || ($proof['source'] ?? '') !== 'bitrix_openline_session'
+            || ($proof['evidence'] ?? '') !== 'external_message_id' || empty($proof['entry_event_id'])
+            || empty($proof['chat_id']) || empty($proof['session_id']) || ! array_key_exists('UF_CRM_KQ_ACTION', $deal)
+            || ! in_array($deal['UF_CRM_KQ_ACTION'], [null, false, ''], true)) {
+            return false;
+        }
+        // Kestra commits this receipt together with the seller and the credit-review stage.
+        $expected = implode(':', [EdnaFreshIntake::REVIEW_SELLER, $case['request_uuid'], $case['lead_id'],
+            $deal['ID'], $proof['chat_id'], $proof['session_id'], $deal['ASSIGNED_BY_ID']]);
+        if (($deal['UF_CRM_KQ_REASON'] ?? null) !== $expected) {
+            return false;
+        }
+        $event = DB::table('edna_incoming_events')->find($proof['entry_event_id']);
+
+        return $event && $event->message_id === ($proof['entry_message_id'] ?? null)
+            && app(EdnaFreshIntake::class)->entry($event, EdnaFreshIntake::REVIEW_SELLER);
     }
 
     public function protectsHistoricalOwners(array $snapshot, array $case, int $target, EdnaBitrix $crm): bool
