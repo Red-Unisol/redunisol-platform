@@ -156,6 +156,7 @@ export class TransferenciasService {
     const loan = await this.deps.financials.loan(
       source.legacyOid,
       socio.nroSocioLegacy,
+      source.cancelaciones.length > 0,
     );
     const creditors = new Map<string, string>();
     for (const cancellation of source.cancelaciones) {
