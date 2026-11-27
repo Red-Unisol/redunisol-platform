@@ -12,6 +12,7 @@ from typing import Any
 from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .logger import Logger
+from ._rejection_notices import is_rejection_notice
 from .receipt_file import build_bitrix_file_data
 from .volume_compensation import apply_volume_compensation
 
@@ -801,8 +802,37 @@ def _counter(value):
     return int(value)
 
 
-def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, verify_window=False,
-                              failed_at=None, now=None, window_evidence=None):
+CHAT_CHANGE_REVERIFICATIONS = 2
+
+
+def _unattended_sales_session(client, chat_id, initial, **kwargs):
+    """Verify attention; repeat the whole verification if only the chat moved on.
+
+    A customer writing while Kestra distributes changes the native dialog between
+    the first and the final read (1254489, 1256739). When the chat keeps its
+    identity, owner and session, the change is not evidence of attention: the
+    full check is repeated on the fresh dialog, which still detects any human
+    message, acceptance or transfer. A different owner, line or session, or a
+    chat that keeps changing, stays preserved as before.
+    """
+    for attempt in range(CHAT_CHANGE_REVERIFICATIONS + 1):
+        ready, reason = _unattended_sales_session_once(client, chat_id, initial, **kwargs)
+        if reason != "chat_changed_before_transfer" or attempt == CHAT_CHANGE_REVERIFICATIONS:
+            return ready, reason
+        try:
+            current = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        except Exception:
+            return False, "attention_inspection_unavailable"
+        if (not isinstance(current, dict)
+                or active_open_line_session_id(current) != active_open_line_session_id(initial)
+                or any(current.get(key) != initial.get(key) for key in ("id", "owner", "entity_type", "entity_id"))):
+            return False, "chat_changed_before_transfer"
+        initial = current
+    return False, "chat_changed_before_transfer"
+
+
+def _unattended_sales_session_once(client, chat_id, initial, *, entry_binding=None, verify_window=False,
+                                   failed_at=None, now=None, window_evidence=None):
     """Read the exact current session twice, then reread its identity/owner.
 
     No accepting/starting/transfer is used for inspection. The external transfer
@@ -855,8 +885,10 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, v
             rows = stats.get("sessions") if isinstance(stats, dict) else None
             if not isinstance(rows, list) or len(rows) != 1 or str(rows[0].get("sessionId")) != str(session_id):
                 raise ValueError("Attention statistics are incomplete.")
-            if _counter(rows[0].get("messagesOperatorCount")) > 0:
-                return False, "operator_message_preserved"
+            # Bitrix also counts the rejection robot's notice (posted as user 57) as
+            # an operator message. Only notices identified in the history below may
+            # explain this count; any other operator message preserves the chat.
+            operator_count = _counter(rows[0].get("messagesOperatorCount"))
             count = _counter(rows[0].get("transfersCount"))
             transfers = read("imopenlines.v2.Session.Transfer.list", {"sessionId": [session_id]})
             rows = transfers.get("transfers") if isinstance(transfers, dict) else None
@@ -881,6 +913,7 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, v
             seen = set()
             entry_matches = []
             last_customer_message = None
+            robot_notices = 0
             for message in messages:
                 if not isinstance(message, dict) or str(message.get("chatid")) != str(chat_id):
                     raise ValueError("Native message identity is unknown.")
@@ -903,6 +936,10 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, v
                 if not isinstance(user, dict) or not isinstance(user.get("connector"), bool):
                     raise ValueError("Native sender is unknown.")
                 if user["connector"] is False:
+                    if (message.get("system") in (None, False)
+                            and is_rejection_notice(sender, message.get("text"))):
+                        robot_notices += 1
+                        continue
                     return False, "operator_message_preserved"
                 if verify_window:
                     if str(sender) != channel[3] or message.get("system") not in (None, False):
@@ -920,6 +957,8 @@ def _unattended_sales_session(client, chat_id, initial, *, entry_binding=None, v
                     values = external if isinstance(external, list) else [external]
                     if entry_binding["entry_message_id"] in [str(value) for value in values]:
                         entry_matches.append((str(mid), str(sender)))
+            if operator_count > robot_notices:
+                return False, "operator_message_preserved"
             if entry_binding is not None and entry_matches != [(entry_binding["message_id"], channel[3])]:
                 return False, "native_message_unverified"
             if verify_window and last_customer_message is None:

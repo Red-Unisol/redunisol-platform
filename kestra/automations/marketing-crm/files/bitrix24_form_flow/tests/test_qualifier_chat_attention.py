@@ -99,6 +99,47 @@ class QualifierAttentionTests(unittest.TestCase):
         self.assertEqual(result["reason"], "operator_message_preserved")
         self.assert_no_assignment()
 
+    # Exact copy Bitrix posted with user 57 on 2026-11-25 (chat 147191) after an earlier
+    # submission of the same customer was rejected for "OTRO BANCO".
+    REJECTION_NOTICE = ("Por el momento no tenemos convenio con tu banco de cobro. \nAgradecemos tu contacto y te "
+                        "invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay "
+                        "algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊")
+
+    def post_operator_messages(self, *messages, operator_count=None):
+        self.client.history_changes = {
+            "message": {str(index): {"id": str(index), "chatid": "777", "senderid": str(sender), "text": text}
+                        for index, (sender, text) in enumerate(messages, start=1)},
+            "users": {str(sender): {"connector": False} for sender, _ in messages}}
+        self.client.stat_changes = {"messagesOperatorCount": len(messages) if operator_count is None else operator_count}
+
+    def test_bitrix_rejection_notices_of_an_earlier_submission_are_not_attention(self):
+        self.post_operator_messages((57, self.REJECTION_NOTICE), (57, "\r\n" + self.REJECTION_NOTICE + " "))
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        self.assertEqual(self.client.deals[930]["assignedById"], 68579)
+
+    def test_any_other_operator_message_still_preserves_the_chat(self):
+        cases = {
+            "maru_writes_by_hand": [(57, "Hola, ¿con qué banco cobrás?")],
+            "notice_from_another_user": [(90231, self.REJECTION_NOTICE)],
+            "edited_notice": [(57, self.REJECTION_NOTICE.replace("convenio", "acuerdo"))],
+            "notice_plus_human_reply": [(57, self.REJECTION_NOTICE), (90231, "Te escribo yo")],
+        }
+        for name, messages in cases.items():
+            with self.subTest(case=name):
+                self.reset_client()
+                self.post_operator_messages(*messages)
+                result = self.run_qualification()
+                self.assertEqual(result["reason"], "operator_message_preserved")
+                self.assert_no_assignment()
+
+    def test_an_operator_count_not_explained_by_visible_notices_preserves_the_chat(self):
+        self.post_operator_messages((57, self.REJECTION_NOTICE), operator_count=2)
+        result = self.run_qualification()
+        self.assertEqual(result["reason"], "operator_message_preserved")
+        self.assert_no_assignment()
+
     def set_chat_owner(self, chat_id, owner):
         dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
         self.client.open_line_dialogs[chat_id] = {**dialog, "owner": owner}
@@ -168,6 +209,81 @@ class QualifierAttentionTests(unittest.TestCase):
         with patch.object(qualify, "resolve_routing_bucket", side_effect=moved):
             result = self.run_qualification()
         self.assertEqual(result["reason"], "manual_owner_preserved")
+        self.assert_no_assignment()
+
+    def change_chat_during_history_reads(self, times, **fields):
+        """Mutate the native dialog while its history is read (a customer writing)."""
+        dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777})
+        self.client.open_line_dialogs[777] = dict(dialog)
+        state = {"left": times, "n": 0}
+        def change(method, body):
+            if method == "imopenlines.session.history.get" and state["left"]:
+                state["left"] -= 1
+                state["n"] += 1
+                current = self.client.open_line_dialogs[777]
+                current.update({key: (value(state["n"]) if callable(value) else value) for key, value in fields.items()})
+        self.client.before = change
+
+    def test_a_customer_writing_during_distribution_does_not_park_the_deal(self):
+        # 1256739: the customer wrote 30 s after the chat opened, while Kestra distributed.
+        self.change_chat_during_history_reads(1, entity_data_2=lambda n: f"LEAD|0|CONTACT|101|DEAL|930|{n}")
+        result = self.run_qualification()
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(self.client.deals[930]["assignedById"], 68579)
+        self.assertEqual(int(self.client.leads[920]["ASSIGNED_BY_ID"]), 68579)
+        self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+
+    def test_a_customer_writing_right_after_the_lead_write_completes_the_distribution(self):
+        # Exact 1256739 timing: the lead already had the seller when the final check saw the change.
+        dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777})
+        self.client.open_line_dialogs[777] = dict(dialog)
+        state = {"lead_written": False, "changed": False}
+        def change(method, body):
+            if method == "crm.lead.update" and body["fields"].get("ASSIGNED_BY_ID"):
+                state["lead_written"] = True
+            elif (method == "imopenlines.session.history.get" and state["lead_written"]
+                  and not state["changed"]):
+                state["changed"] = True
+                self.client.open_line_dialogs[777]["entity_data_2"] = "LEAD|0|CONTACT|101|DEAL|930"
+        self.client.before = change
+        result = self.run_qualification()
+        self.assertTrue(state["changed"])
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(self.client.deals[930]["assignedById"], 68579)
+        self.assertEqual(int(self.client.leads[920]["ASSIGNED_BY_ID"]), 68579)
+        self.assertEqual(self.client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+
+    def test_a_chat_that_keeps_changing_or_changes_owner_is_still_preserved(self):
+        for name, fields in {
+            "keeps_changing": {"entity_data_2": lambda n: f"LEAD|0|CONTACT|101|DEAL|930|{n}"},
+            "owner_changes": {"owner": 90231},
+        }.items():
+            with self.subTest(case=name):
+                self.reset_client()
+                self.change_chat_during_history_reads(100, **fields)
+                result = self.run_qualification()
+                self.assertEqual(result["action"], "routing_review")
+                self.assertFalse(self.client.chat_transfers)
+                self.assertEqual(self.client.deals[930]["assignedById"], 57)
+                self.assertIn(self.client.leads[920].get("ASSIGNED_BY_ID"), (None, 57, "57"))
+
+    def test_the_reverification_still_detects_a_human_reply_written_meanwhile(self):
+        self.client.before = None
+        dialog = self.client.call("imopenlines.dialog.get", {"CHAT_ID": 777})
+        self.client.open_line_dialogs[777] = dict(dialog)
+        state = {"n": 0}
+        def change(method, body):
+            if method == "imopenlines.session.history.get":
+                state["n"] += 1
+                if state["n"] == 1:
+                    self.client.open_line_dialogs[777]["entity_data_2"] = "LEAD|0|CONTACT|101|DEAL|930|1"
+                    self.client.stat_changes = {"messagesOperatorCount": 1}
+                    self.client.history_changes = {
+                        "message": {"9": {"id": "9", "chatid": "777", "senderid": "90231", "text": "Hola"}},
+                        "users": {"90231": {"connector": False}}}
+        self.client.before = change
+        result = self.run_qualification()
+        self.assertEqual(result["reason"], "operator_message_preserved")
         self.assert_no_assignment()
 
     def test_new_queue_uses_actual_crm_ownership_and_unattended_receiver_evidence(self):
