@@ -337,7 +337,7 @@ class EdnaOrganicProfile
         $date = CarbonImmutable::parse($provenance['confirmed_at'] ?? '0001-01-01');
         $cutoff = CarbonImmutable::now()->subMonthsNoOverflow((int) config('edna.organic_profile_max_age_months', 6));
         if (! $complete || $date->lte($cutoff) || $date->gt(now()->addMinutes(5))
-            || $date->gt(CarbonImmutable::parse($menu->choice_received_at)->addMinutes(5))) {
+            || $date->gt(CarbonImmutable::parse($menu->choice_received_at ?? $menu->entry_received_at)->addMinutes(5))) {
             return false;
         }
         $identity = (new WebFormReceipt)->identityHash($complete['cuil']);

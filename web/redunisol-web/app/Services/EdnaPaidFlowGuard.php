@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,10 @@ class EdnaPaidFlowGuard
         $context = $this->baseContext($send);
         if (($context['status'] ?? '') !== 'ready') {
             return $context;
+        }
+        $entry = DB::table('edna_incoming_events')->find($send->entry_event_id);
+        if ($at = $this->newEntryTime($entry)) {
+            return $this->sessionConflict($send, $context['proof'], $context['phone_hash'], $at) ?? $context;
         }
         foreach ($this->sessionSends($context['proof'], $send->subject_id, $context['phone_hash']) as $previous) {
             if ((int) $previous->id === (int) $send->id) {
@@ -46,7 +51,12 @@ class EdnaPaidFlowGuard
             if (! $phoneHash) {
                 return false;
             }
+            $at = $this->newEntryTime($entry);
             foreach ($this->sessionSends($proof, $subject, $phoneHash) as $send) {
+                if ($at && (! in_array($send->state, ['pending', 'sending', 'accepted', 'unknown', 'confirmed', 'completed'], true)
+                    || $this->pastAnswerWindow($send, $at))) {
+                    continue;
+                }
                 $previous = $this->baseContext($send);
                 if (($previous['status'] ?? '') === 'ready' && $previous['phone_hash'] === $phoneHash) {
                     return true;
@@ -60,18 +70,23 @@ class EdnaPaidFlowGuard
     }
 
     /** A phone match only postpones a second greeting while its native proof is unresolved. */
-    public function pendingForRecipient(string $subject, string $phoneHash): bool
+    public function pendingForRecipient(string $subject, string $phoneHash, ?object $entry = null): bool
     {
         if ($subject !== (string) config('edna.subject_id') || ! preg_match('/^[a-f0-9]{64}$/D', $phoneHash)) {
             return false;
         }
+        $at = $this->newEntryTime($entry);
         $rows = DB::table('edna_flow_sends as s')->join('edna_intake_admissions as a', 'a.id', '=', 's.intake_admission_id')
             ->leftJoin('edna_intake_bindings as b', 'b.flow_send_id', '=', 's.id')
             ->where('s.subject_id', $subject)->where('a.recipient_hash', $phoneHash)
             ->whereIn('s.state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed'])
-            ->where('s.entry_received_at', '>=', now()->subHours(23))->where('s.entry_received_at', '<=', now()->addMinutes(5))
+            ->when(! $at, fn ($q) => $q->where('s.entry_received_at', '>=', now()->subHours(23)))
+            ->where('s.entry_received_at', '<=', now()->addMinutes(5))
             ->where(fn ($q) => $q->whereNull('b.id')->orWhere('b.state', '!=', 'verified'))->orderBy('s.id')->get(['s.*']);
         foreach ($rows as $send) {
+            if ($at && $this->pastAnswerWindow($send, $at)) {
+                continue;
+            }
             $context = $this->baseContext($send);
             if (($context['status'] ?? '') === 'waiting'
                 || ($context['reason'] ?? '') === 'paid_native_binding_requires_review') {
@@ -80,6 +95,56 @@ class EdnaPaidFlowGuard
         }
 
         return false;
+    }
+
+    /** A later callback may renew an expired invitation on the same open native session. */
+    public function organicSessionConflict(object $send, object $menu, array $proof, object $entry, array $choice): ?array
+    {
+        if (! $this->newEntryTime($entry)) {
+            return null;
+        }
+        $at = CarbonImmutable::parse($choice['receivedAt'])->min(now());
+
+        return $this->sessionConflict($send, $proof, $menu->phone_hash, $at);
+    }
+
+    private function newEntryTime(?object $entry): ?CarbonImmutable
+    {
+        if (! $entry || ! app(EdnaFreshIntake::class)->entry($entry, EdnaFreshIntake::V3_VALIDITY)) {
+            return null;
+        }
+        $payload = json_decode(Crypt::decryptString($entry->payload), true, 32, JSON_THROW_ON_ERROR);
+
+        return CarbonImmutable::parse($payload['receivedAt'])->min(now());
+    }
+
+    private function pastAnswerWindow(object $send, CarbonImmutable $at): bool
+    {
+        if (! in_array($send->state, ['confirmed', 'completed'], true)
+            || $send->flow_id !== (new EdnaIntake)->flowId()) {
+            return false;
+        }
+        try {
+            return EdnaFlowRouter::responseWindowExpired($send, $at);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function sessionConflict(object $send, array $proof, string $phoneHash, CarbonImmutable $requestedAt): ?array
+    {
+        foreach ($this->sessionSends($proof, $send->subject_id, $phoneHash) as $previous) {
+            if ((int) $previous->id === (int) $send->id || $previous->flow_id !== $send->flow_id
+                || $this->pastAnswerWindow($previous, $requestedAt)) {
+                continue;
+            }
+            if (in_array($previous->state, ['sending', 'accepted', 'unknown', 'confirmed', 'completed'], true)
+                || ($previous->state === 'pending' && (int) $previous->id < (int) $send->id)) {
+                return ['status' => 'duplicate', 'reason' => 'v3_session_already_has_flow'];
+            }
+        }
+
+        return null;
     }
 
     public function marker(array $decision, int $entryEventId): ?array

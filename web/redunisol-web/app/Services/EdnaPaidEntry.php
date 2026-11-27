@@ -27,6 +27,18 @@ class EdnaPaidEntry
     private const PAID_MEDIA = ['cpc', 'ppc', 'paid', 'paidsearch', 'paidsocial',
         'paidmedia', 'socialpaid', 'display', 'cpm', 'cpv'];
 
+    /** Verify the original paid evidence before capture or before using a previously captured receipt. */
+    public function currentMarker(object $event, array $payload, ?string $receipt = null): ?array
+    {
+        if (! app(EdnaFreshIntake::class)->entry($event, EdnaFreshIntake::V3_VALIDITY)) {
+            return null;
+        }
+        $decision = $this->classify($event, $payload);
+        $marker = $decision ? app(EdnaPaidFlowGuard::class)->marker($decision, (int) $event->id) : null;
+
+        return $marker && ($receipt === null || $marker == json_decode($receipt, true, 16, JSON_THROW_ON_ERROR)) ? $marker : null;
+    }
+
     public function classify(object $event, array $payload): ?array
     {
         try {

@@ -4,6 +4,7 @@ use App\Jobs\ResolveEdnaIntakeBinding;
 use App\Jobs\SendEdnaFlow;
 use App\Services\AttributionJourney;
 use App\Services\EdnaFlowRouter;
+use App\Services\EdnaFreshIntake;
 use App\Services\EdnaIntake;
 use App\Services\EdnaOrganicAttention;
 use App\Services\EdnaPaidFlowGuard;
@@ -158,6 +159,51 @@ test('a completed old case allows a fresh paid scope while preserving its admiss
         ->and($next->intake_admission_id)->toBe($first->intake_admission_id)
         ->and(DB::table('edna_intake_admissions')->count())->toBe(1)
         ->and(DB::table('edna_organic_menus')->count())->toBe(0);
+});
+
+test('a fresh authenticated request after expiry can renew once on the same session, unless an operator takes it', function (bool $taken) {
+    $first = paidFlowReserve();
+    paidFlowBinding($first);
+    DB::table('edna_flow_sends')->where('id', $first->id)->update(['state' => 'confirmed',
+        'created_at' => now()->subDays(2), 'entry_received_at' => now()->subDays(2)]);
+    $this->artisan('edna:intake-cutover activate --v3-validity')->assertSuccessful();
+    $event = paidFlowEvent(['receivedAt' => now()->toIso8601String()]);
+    $second = paidFlowReserve($event);
+    paidFlowBinding($second);
+    $this->artisan('edna:intake-cutover activate --v3-validity')->assertSuccessful();
+    expect((new EdnaFlowRouter)->startPaidEntry($event, paidFlowPayload($event), paidFlowDecision()))->toBe($second->id);
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturn(paidFlowReady(),
+        $taken ? array_replace(paidFlowReady(), ['status' => 'preserved', 'owner_id' => '74827']) : paidFlowReady());
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    paidFlowHttp();
+    (new SendEdnaFlow($second->id))->handle();
+    (new SendEdnaFlow($second->id))->handle();
+    expect(DB::table('edna_flow_sends')->find($first->id)->state)->toBe('confirmed')
+        ->and(DB::table('edna_flow_sends')->find($second->id)->state)->toBe($taken ? 'cancelled' : 'accepted')
+        ->and(Http::recorded(fn ($r) => str_ends_with($r->url(), '/cascade/schedule'))->count())->toBe($taken ? 0 : 1);
+})->with([true, false]);
+
+test('an old paid callback delivered after activation does not gain the new same-session exception', function () {
+    $old = paidFlowReserve();
+    paidFlowBinding($old);
+    DB::table('edna_flow_sends')->where('id', $old->id)->update([
+        'state' => 'confirmed', 'created_at' => now()->subDays(2), 'entry_received_at' => now()->subDays(2)]);
+    $this->artisan('edna:intake-cutover activate --v3-validity')->assertSuccessful();
+    $late = paidFlowReserve(paidFlowEvent(['receivedAt' => now()->subMinutes(5)->toIso8601String()]));
+    paidFlowBinding($late);
+    expect((new EdnaPaidFlowGuard)->context($late)['status'])->toBe('duplicate');
+    Http::assertNothingSent();
+});
+
+test('activation excludes the partial second of an old provider callback arriving late', function () {
+    $this->travelTo(now()->setMicrosecond(750000));
+    $this->artisan('edna:intake-cutover activate --v3-validity')->assertSuccessful();
+    $late = paidFlowEvent(['receivedAt' => now()->startOfSecond()->toIso8601String()]);
+    $fresh = paidFlowEvent(['receivedAt' => now()->addSecond()->startOfSecond()->toIso8601String()]);
+    $boundary = new EdnaFreshIntake;
+    expect($boundary->entry($late, EdnaFreshIntake::V3_VALIDITY))->toBeFalse()
+        ->and($boundary->entry($fresh, EdnaFreshIntake::V3_VALIDITY))->toBeTrue();
 });
 
 test('paid sending waits for an exact stored native binding without posting or inventing a menu', function (bool $pendingRow) {
@@ -434,3 +480,64 @@ test('the expired confirmed exception does not change organic loan admission pro
     expect((new EdnaFlowRouter)->startOrganicChoice($menu))->toBeNull()
         ->and(DB::table('edna_flow_sends')->count())->toBe(1);
 });
+
+function validityOrganicMenu(object $entry, object $choice): int
+{
+    return DB::table('edna_organic_menus')->insertGetId(['request_id' => (string) Str::uuid(),
+        'entry_event_id' => $entry->id, 'choice_event_id' => $choice->id, 'subject_id' => '2423', 'cascade_id' => '2557',
+        'phone_hash' => (new AttributionJourney)->phoneHash('5493510000000'), 'recipient' => Crypt::encryptString('5493510000000'),
+        'state' => 'selected', 'choice' => 'loan', 'send_state' => 'confirmed',
+        'entry_received_at' => paidFlowPayload($entry)['receivedAt'], 'expires_at' => now()->addDay(), 'created_at' => now(), 'updated_at' => now()]);
+}
+
+test('new organic and paid requests honor the exact response deadline and keep uncertain sends protected',
+    function (string $channel, string $state, int $secondsPastDeadline) {
+        $old = paidFlowReserve();
+        $requestedAt = now()->subMinute()->setMicrosecond(0);
+        DB::table('edna_flow_sends')->where('id', $old->id)->update([
+            'state' => $state, 'entry_received_at' => now()->subDays(3),
+            'created_at' => $requestedAt->copy()->subDay()->subSeconds($secondsPastDeadline),
+        ]);
+        DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::V3_VALIDITY,
+            'entry_id_after' => $old->entry_event_id, 'starts_at' => now()->subHour()]);
+        $at = $requestedAt->copy()->setTimezone('+03:00')->toIso8601String();
+        $router = new EdnaFlowRouter;
+        if ($channel === 'paid') {
+            $entry = paidFlowEvent(['receivedAt' => $at]);
+            $reserve = fn () => $router->startPaidEntry($entry, paidFlowPayload($entry), paidFlowDecision());
+        } else {
+            $entry = paidFlowEvent(['receivedAt' => $requestedAt->copy()->subMinutes(10)->toIso8601String()]);
+            $choice = paidFlowEvent(['receivedAt' => $at, 'messageContent' => ['type' => 'LIST_PICKER', 'text' => 'Quiero un préstamo']]);
+            $menuId = validityOrganicMenu($entry, $choice);
+            $reserve = fn () => $router->startOrganicChoice($menuId);
+        }
+        $new = $reserve();
+        $renewed = $state === 'confirmed' && $secondsPastDeadline > 0;
+        expect($new !== null)->toBe($renewed)
+            ->and($reserve())->toBe($new)
+            ->and(DB::table('edna_flow_sends')->count())->toBe($renewed ? 2 : 1)
+            ->and(DB::table('edna_flow_sends')->find($old->id)->state)->toBe($state);
+        Queue::assertPushed(SendEdnaFlow::class, $renewed ? 2 : 1);
+    })->with(['organic', 'paid'])->with([
+        ['confirmed', 1], ['confirmed', 0], ['confirmed', -1], ['pending', 86400], ['sending', 86400],
+        ['accepted', 86400], ['unknown', 86400],
+    ]);
+
+test('both channel orders reserve only one replacement for the same recipient', function (bool $paidFirst) {
+    $old = paidFlowReserve();
+    DB::table('edna_flow_sends')->where('id', $old->id)->update(['state' => 'confirmed', 'created_at' => now()->subDays(3)]);
+    DB::table('edna_intake_cutovers')->insert(['name' => EdnaFreshIntake::V3_VALIDITY,
+        'entry_id_after' => $old->entry_event_id, 'starts_at' => now()->subHour()]);
+    $paid = paidFlowEvent();
+    $entry = paidFlowEvent();
+    $choice = paidFlowEvent(['messageContent' => ['type' => 'LIST_PICKER', 'text' => 'Quiero un préstamo']]);
+    $menuId = validityOrganicMenu($entry, $choice);
+    $router = new EdnaFlowRouter;
+    $paidReserve = fn () => $router->startPaidEntry($paid, paidFlowPayload($paid), paidFlowDecision());
+    $organicReserve = fn () => $router->startOrganicChoice($menuId);
+    [$first, $second] = $paidFirst ? [$paidReserve, $organicReserve] : [$organicReserve, $paidReserve];
+    $id = $first();
+    expect($id)->toBeInt()->and($second())->toBeNull()->and($first())->toBe($id)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(2);
+    Queue::assertPushed(SendEdnaFlow::class, 2);
+})->with([true, false]);
