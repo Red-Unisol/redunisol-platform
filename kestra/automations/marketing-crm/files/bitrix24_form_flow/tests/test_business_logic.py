@@ -5907,7 +5907,7 @@ class BusinessLogicTests(unittest.TestCase):
             self.assertEqual(run()["distributed_count"], 0)
             self.assertEqual([client.deals[i]["assignedById"] for i in (960, 961)], [57, 57])
 
-        chat = {961: ("chat", 146801, 234)}
+        chat = {961: ownership.ReadinessWitness("chat", 146801, 234)}
         with patch.object(ownership, "readiness", side_effect=[chat, {}, chat, chat, {}]):
             # A stale signal, then a human taking it between reads, must not assign.
             self.assertEqual(run()["distributed_count"], 0)
@@ -5929,13 +5929,71 @@ class BusinessLogicTests(unittest.TestCase):
             self.assertEqual(client.deals[962]["assignedById"], 10451)
             self.assertEqual(client.deals[960]["assignedById"], 57)
         client.deals[960]["assignedById"] = 29
-        with patch.object(ownership, "readiness", return_value={960: ("outbound", 567)}), patch(
+        with patch.object(ownership, "readiness", return_value={960: ownership.ReadinessWitness("outbound", 567)}), patch(
             "bitrix24_form_flow.form_processor.catamarca_deal_qualification.resolve_round_robin_assignee"
         ) as selector:
             result = run()
             self.assertEqual(result["events"][0]["reason"], "existing_request_owner_preserved")
             self.assertEqual(client.deals[960]["assignedById"], 29)
             selector.assert_not_called()
+
+    def test_chat_review_selection_is_recorded_only_with_matching_live_witness(self):
+        from bitrix24_form_flow.form_processor import _chat_ownership as ownership
+
+        instant = datetime.fromisoformat("2026-11-27T09:09:00-03:00")
+        uuid = "82e06277-0d55-4383-996f-eabcd3180961"
+        # Both historical decisions retained the manual commercial review stage.
+        for chat, session, deal, lead, seller, reason in (
+            (146591, 322559, 1257075, 433611, 68579, "payment_bank_not_identifiable"),
+            (105821, 322569, 1257083, 433625, 29, "missing_recurrent_membership_data"),
+        ):
+            for mode in ("selected", "legacy", "web", "protected", "outbound", "approved",
+                         "session_changed", "capability_lost", "chat_changed", "human_took_session"):
+                with self.subTest(chat=chat, mode=mode):
+                    channel = "web" if mode == "web" else "v3"
+                    target = "C1:NEW" if mode == "approved" else "C1:KESTRA_REVIEW"
+                    client = FakeBitrixClient()
+                    client.online_user_ids = {seller}
+                    case_lead = self._cordoba_enriched_lead(lead, employment_id="1239", bcra_entities=[])
+                    case_lead.update(ORIGINATOR_ID=ownership.WEB_ORIGIN if channel == "web" else "redunisol.edna.fresh-v3",
+                                     ORIGIN_ID=uuid, SOURCE_DESCRIPTION=ownership.V3_DESCRIPTION)
+                    client.leads[lead] = case_lead
+                    queued = self._queued_deal(deal, lead, "cordoba_general", instant.isoformat())
+                    queued.update(ufCrmKqReason=ownership.queue_marker((channel, uuid), reason),
+                                  ufCrmKqAction=ownership.WAIT, ufCrmKqStage=target,
+                                  assignedById=seller if mode == "protected" else 57)
+                    client.deals[deal] = queued
+                    witness = ownership.ReadinessWitness("chat", chat, session, mode not in ("legacy", "web"))
+                    if mode == "outbound":
+                        witness = ownership.ReadinessWitness("outbound", 567)
+                    first = {deal: witness}
+                    final = first
+                    if mode == "session_changed":
+                        final = {deal: witness._replace(session_id=session + 1)}
+                    elif mode == "capability_lost":
+                        final = {deal: witness._replace(review_seller=False)}
+                    elif mode == "chat_changed":
+                        final = {deal: witness._replace(resource_id=chat + 1)}
+                    elif mode == "human_took_session":
+                        final = {}
+                    with patch.object(ownership, "candidate_filters", return_value=[{"@leadId": [lead]}]), patch.object(
+                        ownership, "readiness", side_effect=[first, first, final]
+                    ):
+                        result = process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(), now=instant)
+                        if final != first:
+                            self.assertEqual(result["distributed_count"], 0)
+                            self.assertEqual(queued["stageId"], "C1:KESTRA_QUEUE")
+                            self.assertEqual(queued["ufCrmKqReason"], ownership.queue_marker((channel, uuid), reason))
+                            continue
+                        self.assertEqual(result["distributed_count"], 1)
+                        assigned = client.deals[deal]
+                        self.assertEqual((assigned["assignedById"], assigned["stageId"]), (seller, target))
+                        expected = f"review-seller-v1:{uuid}:{lead}:{deal}:{chat}:{session}:{seller}" if mode == "selected" else ""
+                        self.assertEqual((assigned["ufCrmKqAction"], assigned["ufCrmKqReason"]), ("", expected))
+                        # The transferred deal has exited the queue; its review proof must not re-enroll it.
+                        again = process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(), now=instant)
+                        self.assertEqual(again["distributed_count"], 0)
+                        self.assertEqual(client.chat_transfers, [])
 
     def test_assignment_queue_processes_each_bucket_independently(self) -> None:
         client = FakeBitrixClient()

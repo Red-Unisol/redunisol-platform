@@ -1134,14 +1134,22 @@ def _assign_ready_request(client, config, row, case, logger, source, instant):
               config.deal.queue_target_stage_field: "", config.deal.queue_enqueued_at_field: ""}
     if not protected:
         fields["assignedById"] = assignment.assigned_by_id
+        if (witness.review_seller and witness.kind == "chat" and case["channel"] == "v3"
+                and target_stage == config.deal.manual_review_stage_id):
+            # Commit proof of the choice together with its owner and commercial stage.
+            # If the write was lost neither the owner nor this receipt can authorize a transfer.
+            fields[config.deal.queue_reason_field] = (
+                f"review-seller-v1:{case['request_id']}:{case['lead_id']}:{deal_id}:"
+                f"{witness.resource_id}:{witness.session_id}:{assignment.assigned_by_id}"
+            )
     client.call("crm.item.update", {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": deal_id, "fields": fields})
     return _queue_context_result(
         client, config, row, logger, action="queue_distributed",
-        reason="existing_request_owner_preserved" if protected else "seller_selected_for_" + witness[0],
+        reason="existing_request_owner_preserved" if protected else "seller_selected_for_" + witness.kind,
         processed_at=instant(), assigned_by_id=assignment.assigned_by_id, stage_id=target_stage,
         assignment_strategy=assignment.strategy,
-        found_chat_ids=(witness[1],) if witness[0] == "chat" else (),
-        chat_transfer_status="delegated_to_request_receipt" if witness[0] == "chat" else "not_applicable",
+        found_chat_ids=(witness.resource_id,) if witness.kind == "chat" else (),
+        chat_transfer_status="delegated_to_request_receipt" if witness.kind == "chat" else "not_applicable",
         message="Responsable comercial confirmado para esta solicitud.",
     )
 

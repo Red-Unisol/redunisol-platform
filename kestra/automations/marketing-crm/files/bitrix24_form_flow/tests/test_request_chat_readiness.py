@@ -26,11 +26,24 @@ class RequestChatReadinessTests(unittest.TestCase):
 
     def test_only_exact_unexpired_chat_or_verified_activity_can_wake(self):
         row = {**self.case, "state": "ready", "chat_id": 12, "session_id": 14, "expires_at": "2026-12-07T12:01:00Z"}
-        self.assertEqual(self.check(row), {408: ("chat", 12, 14)})
+        self.assertEqual(self.check(row), {408: ownership.ReadinessWitness("chat", 12, 14)})
+        self.assertFalse(self.check({**row, "review_seller": True})[408].review_seller)
         self.assertEqual(self.check({**row, "expires_at": self.now.isoformat()}), {})
         self.assertEqual(self.check({**self.case, "state": "waiting"}), {})
-        self.assertEqual(self.check({**self.case, "state": "outbound", "activity_id": 16}), {408: ("outbound", 16)})
+        self.assertEqual(self.check({**self.case, "state": "outbound", "activity_id": 16}),
+                         {408: ownership.ReadinessWitness("outbound", 16)})
         for bad in ({**row, "lead_id": 31}, {**row, "request_id": "different"}, {**row, "session_id": 0},
                     {**row, "deal_id": 409}, {**row, "state": "unknown"}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 self.check(bad)
+
+    def test_only_explicit_v3_capability_authorizes_a_review_receipt(self):
+        self.case = {**self.case, "channel": "v3"}
+        row = {**self.case, "state": "ready", "chat_id": 12, "session_id": 14, "expires_at": "2026-12-07T12:01:00Z"}
+        for value in (False, None, "true", 1, True):
+            with self.subTest(value=value):
+                self.assertEqual(self.check({**row, "review_seller": value})[408],
+                                 ownership.ReadinessWitness("chat", 12, 14, value is True))
+        for changes in ({"chat_id": True}, {"session_id": 14.5}, {"channel": "web"}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.check({**row, "review_seller": True, **changes})

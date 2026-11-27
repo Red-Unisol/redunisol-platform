@@ -2,6 +2,7 @@
 from datetime import datetime
 from http.client import HTTPSConnection, HTTPException
 import json
+from typing import NamedTuple
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -9,6 +10,13 @@ from uuid import UUID
 WEB_ORIGIN = "redunisol.web.chat-owner-v1"
 V3_DESCRIPTION = "redunisol.chat-owner-v1"
 WAIT = "waiting_for_request_chat"
+
+
+class ReadinessWitness(NamedTuple):
+    kind: str
+    resource_id: int
+    session_id: int | None = None
+    review_seller: bool = False
 
 
 def request_id(value):
@@ -99,16 +107,25 @@ def readiness(cases, source, *, live, now):
         for row in rows:
             deal = int(row["deal_id"])
             case = expected.pop(deal, None)
-            if not case or row.get("request_id") != case["request_id"] or int(row["lead_id"]) != case["lead_id"]:
+            if (not case or row.get("request_id") != case["request_id"] or int(row["lead_id"]) != case["lead_id"]
+                    or row.get("channel", case["channel"]) != case["channel"]):
                 raise ValueError("Unexpected request availability binding.")
             if row["state"] == "waiting":
                 continue
             if row["state"] == "outbound" and int(row.get("activity_id") or 0) > 0:
-                available[deal] = ("outbound", int(row["activity_id"]))
+                available[deal] = ReadinessWitness("outbound", int(row["activity_id"]))
             elif row["state"] == "ready" and min(int(row.get("chat_id") or 0), int(row.get("session_id") or 0)) > 0:
                 expires = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
                 if expires > now:
-                    available[deal] = ("chat", int(row["chat_id"]), int(row["session_id"]))
+                    # Older services omit this capability. Never upgrade an existing receipt
+                    # based on the worker's current clock or a truthy string.
+                    review_seller = case["channel"] == "v3" and row.get("review_seller") is True
+                    if review_seller and any(type(row[key]) is not int for key in ("chat_id", "session_id")):
+                        raise ValueError("Invalid native chat or session in review seller receipt.")
+                    available[deal] = ReadinessWitness(
+                        "chat", int(row["chat_id"]), int(row["session_id"]),
+                        review_seller,
+                    )
             else:
                 raise ValueError("Invalid request availability evidence.")
     return available

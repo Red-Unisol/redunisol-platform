@@ -65,7 +65,7 @@ class EdnaIntakeChatRouting
                 $owner = $snapshot['dialog_tuple']['owner'];
                 if ($owner === (string) $target && isset($intent['snapshot'])
                     && $attention->compatible($intent['snapshot'], $snapshot, $target, true, false, $verifiedContact, $independent, $independent ? $case['lead_id'] : null)
-                    && $this->caseSnapshot($case, $crm) === ($intent['commercial_case'] ?? null)) {
+                    && $this->caseSnapshot($case, $crm, $proof) === ($intent['commercial_case'] ?? null)) {
                     $this->finish($requestId, $row->transfer_acknowledged ? 'confirmed' : 'observed',
                         $row->transfer_acknowledged ? 'target_confirmed' : 'target_observed');
                 } elseif ($owner !== (string) ($intent['owner_before'] ?? '')) {
@@ -94,7 +94,7 @@ class EdnaIntakeChatRouting
 
                 return;
             }
-            $beforeCase = $this->caseSnapshot($case, $crm);
+            $beforeCase = $this->caseSnapshot($case, $crm, $proof);
             if ($independent && $beforeCase['state'] !== 'assigned') {
                 if ($beforeCase['state'] === 'waiting') {
                     // Only this request wakes up again. Bound the delay by the
@@ -135,8 +135,13 @@ class EdnaIntakeChatRouting
                 return;
             }
             // Recheck the commercial identity first, then live human attention last.
-            if ($this->caseSnapshot($case, $crm) !== $beforeCase) {
+            if ($this->caseSnapshot($case, $crm, $proof) !== $beforeCase) {
                 $this->finish($requestId, 'preserved', 'commercial_assignment_changed');
+
+                return;
+            }
+            if ($independent && ! (new EdnaFreshCaseRoute)->protectsHistoricalOwners($before['native_snapshot'], $case, $target, $crm)) {
+                $this->finish($requestId, 'preserved', 'native_crm_transfer_would_change_owner');
 
                 return;
             }
@@ -150,19 +155,14 @@ class EdnaIntakeChatRouting
 
                 return;
             }
-            if ($independent && $expires->lte(now()->addSeconds(6))) {
-                $this->finish($requestId, 'expired', 'whatsapp_window_expired');
-
-                return;
-            }
-            if ($independent && ! (new EdnaFreshCaseRoute)->protectsHistoricalOwners($fresh['native_snapshot'], $case, $target, $crm)) {
-                $this->finish($requestId, 'preserved', 'native_crm_transfer_would_change_owner');
-
-                return;
-            }
             if ($verifiedContact !== null && ! $attention->confirmContactDeal($proof, $fresh['native_snapshot'],
                 $verifiedContact, (string) $case['deal_id'], $target, $case['contact_deal_stage'])) {
                 $this->finish($requestId, 'preserved', 'contact_deal_or_attention_changed');
+
+                return;
+            }
+            if ($independent && $expires->lte(now()->addSeconds(6))) {
+                $this->finish($requestId, 'expired', 'whatsapp_window_expired');
 
                 return;
             }
@@ -195,10 +195,10 @@ class EdnaIntakeChatRouting
         }
     }
 
-    private function caseSnapshot(array $case, EdnaBitrix $crm): ?array
+    private function caseSnapshot(array $case, EdnaBitrix $crm, array $proof): ?array
     {
         if (isset($case['request_uuid'])) {
-            return (new EdnaFreshCaseRoute)->target($case, $crm);
+            return (new EdnaFreshCaseRoute)->target($case, $crm, $proof);
         }
         $deal = $crm->call('crm.deal.get', ['id' => $case['deal_id']]);
         $lead = in_array($case['lead_id'] ?? null, ['', '0', 0, null], true) ? '' : (string) $case['lead_id'];
